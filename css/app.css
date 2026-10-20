@@ -150,7 +150,12 @@ input[type=color] { width: 36px; height: 30px; padding: 0 2px; border: 1px solid
 .tool[aria-pressed="true"] { background: var(--navy); border-color: var(--navy); color: #fff; }
 .tool kbd { font: 10px/1 var(--font); opacity: .55; border: 1px solid currentColor; border-radius: 3px; padding: 1px 3px; }
 .toolbar .spacer { flex: 1; }
-.canvas-wrap { flex: 1; display: flex; align-items: center; justify-content: center; padding: 22px; min-height: 0; }
+.canvas-wrap { flex: 1; display: flex; align-items: center; justify-content: center; padding: 22px; min-height: 0; position: relative; }
+.seam-card { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); width: min(560px, calc(100% - 28px)); display: flex; gap: 10px; background: var(--panel); border: 1px solid #e3c98f; border-left: 4px solid var(--accent); border-radius: 10px; box-shadow: var(--shadow); padding: 10px 12px; font-size: 12.5px; z-index: 2; animation: tin .2s ease-out; }
+.seam-card[hidden] { display: none; }
+.seam-card .sc-icon { font-size: 18px; line-height: 1.2; }
+.seam-card .btn-row { margin-top: 8px; }
+.seam-card .btn-row > .btn { flex: 0 0 auto; }
 .canvas-wrap svg { max-width: 100%; max-height: calc(100vh - 150px); width: auto; height: auto; display: block; filter: drop-shadow(0 3px 10px rgba(31,41,51,.18)); background: #fff; }
 .canvas-wrap svg.editor { width: min(100%, calc(100vh - 150px)); aspect-ratio: 1; background: transparent; filter: none; touch-action: none; user-select: none; -webkit-user-select: none; }
 .canvas-wrap svg.quilt-svg { touch-action: none; }
@@ -202,6 +207,22 @@ table.t .fabcell { display: flex; align-items: center; gap: 8px; }
 .cutrows li:first-child { border-top: 0; }
 .cutrows .head { font-weight: 700; }
 .cutrows .parts { color: var(--ink-2); margin-top: 2px; }
+.docview.wide { max-width: 1180px; }
+.cut-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: start; }
+.cutsteps { list-style: none; margin: 0; padding: 0; }
+.cutsteps li { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 10px; padding: 9px 6px; border-top: 1px dashed var(--line); border-radius: 6px; }
+.cutsteps li:first-child { border-top: 0; }
+.cutsteps li.hl { background: var(--accent-soft); }
+.cutsteps .stepno { width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid var(--navy); color: var(--navy); font-weight: 800; display: flex; align-items: center; justify-content: center; font-size: 12px; }
+.cutsteps .head { font-weight: 700; }
+.cutsteps .parts { color: var(--ink-2); margin-top: 2px; }
+.cutsteps .uses { display: flex; align-items: center; gap: 4px; margin-top: 6px; flex-wrap: wrap; font-size: 11.5px; }
+.cutsteps .use-thumb { border-radius: 3px; box-shadow: 0 0 0 1px var(--line-2); background: #fff; }
+.step-icons { display: flex; gap: 4px; }
+.sheet-wrap { position: sticky; top: 56px; }
+.sheet path[data-step].hl { stroke: #f2b134; stroke-width: 0.35; }
+.sheet .sb.hl circle { fill: #f2b134; }
+@media (max-width: 1100px) { .cut-grid { grid-template-columns: 1fr; } .sheet-wrap { position: static; } }
 .stripdiag { margin-top: 6px; overflow-x: auto; }
 .stripdiag svg { display: block; max-width: 100%; height: auto; }
 .tpl-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
@@ -282,9 +303,17 @@ table.t .fabcell { display: flex; align-items: center; gap: 8px; }
 .page table.grid-key td, .page table.grid-key th { text-align: center; }
 .page .note { background: #f6f2ea; border-left: 4px solid var(--accent); padding: 7px 10px; margin: 10px 0; font-size: 9.5pt; }
 .page .note.warn { border-left-color: var(--danger); background: #fdf1ec; }
-.page .cut-fab { break-inside: avoid; margin-bottom: 6px; }
-.page .cut-list { margin: 0; padding-left: 18px; }
-.page .cut-list li { margin-bottom: 4px; }
+.page .cut-fab { margin-bottom: 10px; break-inside: avoid; }
+.page .cut-cols { display: flex; gap: 14px; align-items: flex-start; }
+.page .cut-list { margin: 0; padding: 0; list-style: none; flex: 1; }
+.page .cut-list li { display: flex; gap: 8px; margin-bottom: 6px; break-inside: avoid; }
+.page .cut-list .stepno { flex: none; width: 17px; height: 17px; border-radius: 50%; border: 1.2px solid var(--navy); color: var(--navy); font-weight: 800; font-size: 8pt; display: flex; align-items: center; justify-content: center; }
+.page .cut-list .uses { display: flex; gap: 4px; margin-top: 3px; }
+.page .cut-map { flex: none; }
+.page .use-thumb { border: 1px solid #ddd5c6; background: #fff; }
+.page .piece-key { display: grid; grid-template-columns: repeat(auto-fill, minmax(2.3in, 1fr)); gap: 6px 12px; font-size: 9pt; }
+.page .piece-key > div { display: flex; gap: 8px; align-items: center; break-inside: avoid; }
+.page .howto-wrap { margin-top: 4px; }
 .page .block-head { display: flex; gap: 18px; align-items: flex-start; }
 .page .block-head .callout { display: inline-block; }
 .page .fab-key { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 9.5pt; }

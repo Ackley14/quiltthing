@@ -221,7 +221,15 @@ function toast(msg, ms = 2600) {
 }
 
 /* ---------- global actions ---------- */
-Actions.view = v => { ui.view = v; ui.drawing = []; saveUi(); render(); $('#main').focus({ preventScroll: true }); document.body.classList.remove('show-sidebar', 'show-inspector'); };
+Actions.view = v => {
+  // gentle reminder when leaving a block that still has unsewable pieces
+  if (ui.view === 'block' && v !== 'block' && typeof _seamState !== 'undefined') {
+    const b = activeBlock();
+    if (b && _seamState.block === b.id && _seamState.key === blockKey(b) && _seamState.s?.required.length && !seamDismissed(b)) {
+      toast(`“${b.name}” has ${plural(_seamState.s.reqPieces, 'piece')} that need seams — see the suggestion in Blocks`, 4200);
+    }
+  }
+  ui.view = v; ui.drawing = []; saveUi(); render(); $('#main').focus({ preventScroll: true }); document.body.classList.remove('show-sidebar', 'show-inspector'); };
 Actions.undo = () => { if (!undo()) toast('Nothing to undo'); };
 Actions.redo = () => { if (!redo()) toast('Nothing to redo'); };
 Actions.toggleUnits = () => { ui.units = ui.units === 'cm' ? 'in' : 'cm'; saveUi(); render(); toast(ui.units === 'cm' ? 'Showing centimetres' : 'Showing inches'); };

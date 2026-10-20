@@ -24,13 +24,12 @@ Views.block = {
         <div class="status-bar">${ui.activeSlot != null ? `<b>Slot ${ui.activeSlot + 1} selected</b> — pick a block from <b>My blocks</b> or the <b>library</b> to fill it.` : 'Click a slot, then pick the block to put in it. Rotate or mirror slots on the right.'}</div></div>`;
     }
     const tools = BLOCK_TOOLS.map(t => `<button class="tool" data-act="blockTool" data-arg="${t.key}" aria-pressed="${ui.tool === t.key}" title="${t.label} (${t.kb})">${t.icon} ${t.label} <kbd>${t.kb}</kbd></button>`).join('');
-    const probs = pieceProblems(b, S).filter(p => p.kind !== 'tiny');
     return `<div class="stage"><div class="toolbar">${tools}<span class="sep"></span>
         <button class="tool" data-act="toggleUi" data-arg="showPieces" aria-pressed="${!!ui.showPieces}" title="Outline the actual pieces you'll cut">Cut pieces</button>
-        <div class="spacer"></div>
-        ${probs.length ? `<button class="tool" data-act="autoSeams" style="border-color:#e2a593;color:var(--danger)" title="Add seam lines so every piece can be sewn with straight seams">⚠ ${plural(probs.length, "piece")} ${probs.length === 1 ? "needs" : "need"} seams — fix</button>` : ''}
+        <div class="spacer"></div><span id="seam-tool-slot"></span>
       </div>
-      <div class="canvas-wrap"><svg id="editor" class="editor tool-${ui.tool}" viewBox="${-m} ${-m} ${S + 2 * m} ${S + 2 * m}" aria-label="Block editor"><g id="ed-c">${editorContent(b)}</g><g id="ed-ov" pointer-events="none"></g></svg></div>
+      <div class="canvas-wrap"><svg id="editor" class="editor tool-${ui.tool}" viewBox="${-m} ${-m} ${S + 2 * m} ${S + 2 * m}" aria-label="Block editor"><g id="ed-c">${editorContent(b)}</g><g id="ed-ov" pointer-events="none"></g></svg>
+        <div id="seam-card" class="seam-card" hidden></div></div>
       <div class="status-bar" id="ed-status">${blockStatus(b)}</div></div>`;
   },
   afterMain(el) {
@@ -44,6 +43,7 @@ Views.block = {
     svg.addEventListener('pointerleave', () => { ed.hover = null; drawOverlay(); });
     svg.addEventListener('dblclick', edDbl);
     svg.addEventListener('contextmenu', e => e.preventDefault());
+    scheduleSeamCheck();
   },
   inspector() { return blockInspector(); },
   key(e) { return blockViewKey(e); },
@@ -131,6 +131,12 @@ function drawOverlay() {
   if (ui.tool === 'seam' && dr.length === 1 && h) s += `<line x1="${dr[0][0] * k}" y1="${dr[0][1] * k}" x2="${h[0] * k}" y2="${h[1] * k}" stroke="#b5482f" stroke-width="${hair * 2}" stroke-dasharray="${hair * 4} ${hair * 2}"/>`;
   if (ui.tool === 'tri' && ed.triPreview) s += `<path d="${polyToPath(ed.triPreview.map(([x, y]) => [x * k, y * k]))}" fill="${fabricFill(ui.fabric)}" fill-opacity=".75" stroke="#c98a1f" stroke-width="${hair * 2}"/>`;
   if (h && ['polygon', 'rect', 'seam'].includes(ui.tool)) s += `<circle cx="${h[0] * k}" cy="${h[1] * k}" r="${S * .016}" fill="#f2b134" stroke="#1f3a5f" stroke-width="${hair}"/>`;
+  if (ui.seamPreview && _seamState.block === b.id && _seamState.s) {
+    const sg = _seamState.s;
+    for (const [list, col] of [[sg.required, '#b5482f'], [sg.optional, '#2e7d4f']]) {
+      for (const [A, B] of list) s += `<line x1="${A[0] * k}" y1="${A[1] * k}" x2="${B[0] * k}" y2="${B[1] * k}" stroke="${col}" stroke-width="${hair * 3}" stroke-dasharray="${hair * 6} ${hair * 4}" stroke-linecap="round"/>`;
+    }
+  }
   ov.innerHTML = s;
 }
 function blockStatus(b) {
@@ -364,14 +370,57 @@ function blockViewKey(e) {
 
 /* ---------- actions ---------- */
 Actions.blockTool = t => { ui.tool = t; ui.drawing = []; ed.triPreview = null; if (t !== 'select') ui.selEdge = null; saveUi(); renderView(); };
-Actions.autoSeams = () => {
+/* ---------- seam suggestions (computed after render so drawing stays snappy) ---------- */
+const _seamState = { block: null, key: null, s: null, timer: null };
+function scheduleSeamCheck() {
+  clearTimeout(_seamState.timer);
   const b = activeBlock();
-  const add = suggestSeams(b);
-  if (!add.length) { toast("Couldn't find straight seams for those pieces — they may need appliqué or set-in seams"); return; }
+  if (!b || b.kind !== 'drawn') return;
+  _seamState.timer = setTimeout(() => {
+    if (activeBlock() !== b || ui.view !== 'block') return;
+    _seamState.block = b.id; _seamState.key = blockKey(b);
+    _seamState.s = seamSuggestions(b);
+    showSeamCard();
+  }, _seamState.key === blockKey(b) ? 0 : 250);
+}
+function seamDismissed(b) { return (ui.seamDismiss || {})[b.id] === blockKey(b); }
+function showSeamCard() {
+  const card = $('#seam-card'), slot = $('#seam-tool-slot'), b = activeBlock();
+  if (!card || !b) return;
+  const sg = _seamState.s;
+  const has = sg && (sg.required.length || sg.optional.length);
+  if (slot) slot.innerHTML = has && seamDismissed(b) ? `<button class="tool" data-act="undismissSeams" title="Show the piecing suggestions again">💡 Piecing tips</button>` : '';
+  if (!has || seamDismissed(b)) { card.hidden = true; drawOverlay(); return; }
+  const lines = [];
+  if (sg.required.length) lines.push(`<b>${plural(sg.reqPieces, 'piece')}</b> can't be sewn with straight seams as drawn — <b>${plural(sg.required.length, 'seam line')}</b> fix${sg.required.length === 1 ? 'es' : ''} that.`);
+  if (sg.optional.length) lines.push(`<b>${plural(sg.optPieces, 'piece')}</b> would need a paper template — ${plural(sg.optional.length, 'more seam')} turn${sg.optional.length === 1 ? 's' : ''} ${sg.optPieces === 1 ? 'it' : 'them'} into rotary-cut shapes.`);
+  if (sg.setInAfter) lines.push('Some pieces will still meet in a set-in (Y) seam — fine for English paper piecing.');
+  const total = sg.required.length + sg.optional.length;
+  card.innerHTML = `<div class="sc-icon">💡</div><div class="sc-body"><b>Piecing suggestion</b><br>${lines.join('<br>')}
+    <div class="btn-row"><button class="btn small" data-act="seamPreview">${ui.seamPreview ? 'Hide preview' : 'Preview'}</button>
+    <button class="btn small primary" data-act="applySeams" data-arg="all">Add ${total === 1 ? 'seam' : `${total} seams`}</button>
+    ${sg.required.length && sg.optional.length ? '<button class="btn small" data-act="applySeams" data-arg="required">Only the required ones</button>' : ''}
+    <button class="btn small ghost" data-act="dismissSeams">Not now</button></div></div>`;
+  card.hidden = false;
+  drawOverlay();
+}
+Actions.seamPreview = () => { ui.seamPreview = !ui.seamPreview; saveUi(); showSeamCard(); };
+Actions.dismissSeams = () => { const b = activeBlock(); ui.seamDismiss = { ...(ui.seamDismiss || {}), [b.id]: blockKey(b) }; ui.seamPreview = false; saveUi(); showSeamCard(); };
+Actions.undismissSeams = () => { const b = activeBlock(); if (ui.seamDismiss) delete ui.seamDismiss[b.id]; saveUi(); showSeamCard(); };
+Actions.applySeams = mode => {
+  const b = activeBlock(), sg = seamSuggestions(b);
+  const add = mode === 'required' ? sg.required : [...sg.required, ...sg.optional];
+  if (!add.length) { toast('No seams to add'); return; }
   b.seams = [...(b.seams || []), ...add];
+  ui.seamPreview = false;
   commit();
-  const left = pieceProblems(b, doc.layout.blockSize).filter(p => p.kind !== 'tiny').length;
-  toast(left ? `Added ${plural(add.length, 'seam')}; ${left} still need attention` : `Added ${plural(add.length, 'seam')} — all pieces can be sewn with straight seams`);
+  const an = analyzeBlock(b, doc.layout.blockSize);
+  toast(an.setIn ? `Added ${plural(add.length, 'seam')} — some pieces still meet in a Y-seam` : `Added ${plural(add.length, 'seam')} — the block now sews with straight seams`);
+};
+Actions.autoSeams = () => {
+  const sg = seamSuggestions(activeBlock());
+  if (!sg.required.length && !sg.optional.length) { toast(sg.unresolved ? "Couldn't find straight seams for those pieces — they may need appliqué or set-in seams" : 'Nothing to improve — every piece is already a rotary-cut shape'); return; }
+  Actions.applySeams('all');
 };
 Actions.clearSeams = () => { const b = activeBlock(); b.seams = []; commit(); };
 Actions.blockName = v => { const b = activeBlock(); if (b) { b.name = v.trim() || 'Untitled block'; commit(); } };
@@ -516,7 +565,7 @@ function blockInspector() {
   }
   h += section(`Shapes (${b.regions.length})`, list ? `<p class="hint" style="margin-top:0">Top of the list is in front.</p>${list}` : '<p class="hint">No shapes yet — the whole block is quilt background. Use the tools above the canvas to draw.</p>', { key: 'shapes' });
   h += section('Seams', `<p class="hint" style="margin-top:0">${b.seams?.length ? `${plural(b.seams.length, 'seam line')} split this block's pieces.` : 'No extra seam lines.'} Use the ✂ Seam tool to add more.</p>
-    <div class="btn-row"><button class="btn small" data-act="autoSeams">Suggest seams</button>${b.seams?.length ? '<button class="btn small" data-act="clearSeams">Remove all</button>' : ''}</div>`, { key: 'seams' });
+    <div class="btn-row"><button class="btn small" data-act="autoSeams">Add suggested seams</button>${b.seams?.length ? '<button class="btn small" data-act="clearSeams">Remove all</button>' : ''}</div>`, { key: 'seams' });
   h += constructionSection(b, S);
   return h;
 }

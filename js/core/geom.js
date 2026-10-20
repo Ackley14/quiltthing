@@ -267,7 +267,8 @@ function splitRegionByLine(outer, holes, A, B) {
   if (!a || !b || !a.length || !b.length) return null;
   return [...fromPC(a), ...fromPC(b)];
 }
-// Split pieces ({pts, holes}) by seam segments. A seam only cuts a piece it crosses completely.
+// Split pieces ({pts, holes}) by seam segments. A seam cuts every stretch of a piece it
+// crosses from edge to edge; a seam that stops inside a piece leaves it alone.
 function splitBySeams(pieces, seams) {
   let cur = pieces;
   for (const [A, B] of seams) {
@@ -275,7 +276,22 @@ function splitBySeams(pieces, seams) {
     for (const pc of cur) {
       const { chords, len } = lineChords(pc.pts, pc.holes || [], A, B);
       const tol = 1e-4 / Math.max(len, 1e-9);
-      const covered = chords.length > 0 && chords.every(([t0, t1]) => t0 >= -tol && t1 <= 1 + tol && (t1 - t0) * len > 1e-4);
+      const inSeg = ([t0, t1]) => t0 >= -tol && t1 <= 1 + tol && (t1 - t0) * len > 1e-4;
+      if (!pc.holes?.length) {
+        // simple piece: cut along each fully-covered chord
+        let parts = [pc.pts];
+        const dx = B[0] - A[0], dy = B[1] - A[1];
+        for (const [t0, t1] of chords.filter(inSeg)) {
+          const P = [A[0] + dx * t0, A[1] + dy * t0], Q = [A[0] + dx * t1, A[1] + dy * t1];
+          const mid = [(P[0] + Q[0]) / 2, (P[1] + Q[1]) / 2];
+          const k = parts.findIndex(pp => pointInPoly(mid, pp));
+          const sp = k >= 0 && splitPolyByPoints(parts[k], P, Q);
+          if (sp) parts.splice(k, 1, ...sp);
+        }
+        for (const pts of parts) next.push(parts.length === 1 ? pc : { ...pc, pts, holes: [] });
+        continue;
+      }
+      const covered = chords.length > 0 && chords.every(inSeg);
       if (!covered) { next.push(pc); continue; }
       const parts = splitRegionByLine(pc.pts, pc.holes || [], A, B);
       if (!parts) { next.push(pc); continue; }
@@ -287,6 +303,82 @@ function splitBySeams(pieces, seams) {
   }
   return cur;
 }
+// Index of P on the ring, inserting it into the edge it lies on if it isn't a vertex (−1 if off-ring).
+function ringInsert(ring, P, tol = 1e-6) {
+  const k = ring.findIndex(q => dist(q, P) < tol);
+  if (k >= 0) return k;
+  for (let j = 0; j < ring.length; j++) {
+    const a = ring[j], b = ring[(j + 1) % ring.length];
+    const L = dist(a, b); if (L < 1e-12) continue;
+    const t = ((P[0] - a[0]) * (b[0] - a[0]) + (P[1] - a[1]) * (b[1] - a[1])) / (L * L);
+    if (t <= 0 || t >= 1) continue;
+    const off = Math.abs((b[0] - a[0]) * (P[1] - a[1]) - (b[1] - a[1]) * (P[0] - a[0])) / L;
+    if (off < tol) { ring.splice(j + 1, 0, P); return j + 1; }
+  }
+  return -1;
+}
+// Cut a simple polygon along the chord P–Q (both on its boundary). Returns the halves or null.
+function splitPolyByPoints(poly, P, Q) {
+  const ring = poly.slice();
+  if (ringInsert(ring, P) < 0 || ringInsert(ring, Q) < 0) return null;
+  const ip = ring.findIndex(q => dist(q, P) < 1e-6), iq = ring.findIndex(q => dist(q, Q) < 1e-6);
+  if (ip === iq || (ip + 1) % ring.length === iq || (iq + 1) % ring.length === ip) return null;
+  const walk = (a, b) => { const out = []; for (let k = a; ; k = (k + 1) % ring.length) { out.push(ring[k]); if (k === b) break; } return out; };
+  const p1 = cleanPoly(walk(ip, iq)), p2 = cleanPoly(walk(iq, ip));
+  if (p1.length < 3 || p2.length < 3 || polyArea(p1) < 1e-6 || polyArea(p2) < 1e-6) return null;
+  return [p1, p2];
+}
+// Chords that start at a corner and run into the piece: continuations of its edges, plus
+// horizontal/vertical lines (quilt grain) — the natural places a quilter would add a seam.
+function chordCandidates(poly) {
+  const n = poly.length, out = [], seen = new Set();
+  for (let i = 0; i < n; i++) {
+    const v = poly[i], pv = poly[(i - 1 + n) % n], nx = poly[(i + 1) % n];
+    const dirs = [[v[0] - pv[0], v[1] - pv[1]], [v[0] - nx[0], v[1] - nx[1]], [1, 0], [-1, 0], [0, 1], [0, -1]];
+    for (const [dx0, dy0] of dirs) {
+      const L = Math.hypot(dx0, dy0); if (L < 1e-9) continue;
+      const dx = dx0 / L, dy = dy0 / L;
+      let best = null;
+      for (let j = 0; j < n; j++) {
+        if (j === i || (j + 1) % n === i) continue;
+        const a = poly[j], b = poly[(j + 1) % n], ex = b[0] - a[0], ey = b[1] - a[1];
+        const den = dx * ey - dy * ex;
+        if (Math.abs(den) < 1e-12) continue;
+        const t = ((a[0] - v[0]) * ey - (a[1] - v[1]) * ex) / den;
+        const u = ((a[0] - v[0]) * dy - (a[1] - v[1]) * dx) / den;
+        if (t > 1e-7 && u >= -1e-9 && u <= 1 + 1e-9 && (!best || t < best.t)) best = { t, j, p: [v[0] + dx * t, v[1] + dy * t] };
+      }
+      if (!best) continue;
+      const mid = [(v[0] + best.p[0]) / 2, (v[1] + best.p[1]) / 2];
+      if (!pointInPoly(mid, poly)) continue;
+      const key = [ptKey(v), ptKey(best.p)].sort().join('|');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ a: v, b: best.p, axis: Math.abs(dx) < 1e-9 || Math.abs(dy) < 1e-9 });
+    }
+  }
+  // corner-to-corner diagonals that stay inside the piece (e.g. cutting a star into point + centre)
+  for (let i = 0; i < n; i++) for (let k = i + 2; k < n; k++) {
+    if (i === 0 && k === n - 1) continue;
+    const a = poly[i], b = poly[k];
+    const crosses = poly.some((p, j) => {
+      const q = poly[(j + 1) % n];
+      if (j === i || j === k || (j + 1) % n === i || (j + 1) % n === k) return false;
+      const d1 = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+      const d2 = (b[0] - a[0]) * (q[1] - a[1]) - (b[1] - a[1]) * (q[0] - a[0]);
+      const d3 = (q[0] - p[0]) * (a[1] - p[1]) - (q[1] - p[1]) * (a[0] - p[0]);
+      const d4 = (q[0] - p[0]) * (b[1] - p[1]) - (q[1] - p[1]) * (b[0] - p[0]);
+      return (d1 > 1e-12) !== (d2 > 1e-12) && (d3 > 1e-12) !== (d4 > 1e-12);
+    });
+    if (crosses || !pointInPoly([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], poly)) continue;
+    const key = [ptKey(a), ptKey(b)].sort().join('|');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ a, b, axis: Math.abs(a[0] - b[0]) < 1e-9 || Math.abs(a[1] - b[1]) < 1e-9 });
+  }
+  return out;
+}
+
 // Proposed seams for a non-convex piece: continue each edge meeting a reflex corner into the piece.
 function autoSeamsFor(poly, arcKeys) {
   const angs = interiorAngles(poly);
@@ -381,6 +473,14 @@ function classifyPiece(rawPts, opts = {}) {
       }
       return { ...base, shape: 'para', base: baseLen, side, angle: acute, height: area / baseLen, rhombus, hand };
     }
+    // trapezoid: exactly one pair of parallel sides — rotary cut from a strip, alternating 180°
+    const pair = par(0, 2) ? 0 : par(1, 3) ? 1 : -1;
+    if (pair >= 0) {
+      const ia = sides[pair] >= sides[pair + 2] ? pair : pair + 2, ib = ia === pair ? pair + 2 : pair;
+      const a = sides[ia], b = sides[ib];
+      return { ...base, shape: 'trap', a, b, ia, ib, height: 2 * area / (a + b),
+        angles: [angs[ia], angs[(ia + 1) % 4]].map(x => Math.round(Math.min(x, 180 - x))) };
+    }
     return { ...base, shape: 'quad' };
   }
   if (n === 6 && sides.every(s => sameLen(s, sides[0])) && angs.every(a => near(a, 120))) {
@@ -390,6 +490,7 @@ function classifyPiece(rawPts, opts = {}) {
 }
 
 const SHAPE_NAMES = {
+  trap: 'Trapezoid',
   rect: 'Rectangle', square: 'Square', hst: 'Half-square triangle', qst: 'Quarter-square triangle',
   rtri: 'Right triangle', tri60: 'Equilateral triangle', tri: 'Triangle', para: 'Parallelogram',
   diamond: 'Diamond', quad: 'Quadrilateral', hex: 'Hexagon', poly: 'Polygon', curved: 'Curved piece',

@@ -54,6 +54,15 @@ function recipeFor(cls, sa, opts = {}) {
       return { key: `para:${w}:${step}:${Math.round(cls.angle)}:${cls.hand || ''}`, method: 'angled', w, step, trim, angle: Math.round(cls.angle), hand: cls.hand,
         yield: 1, makes: cls.rhombus ? `${Math.round(cls.angle)}° diamond` : `${Math.round(cls.angle)}° parallelogram` };
     }
+    case 'trap': {
+      // pieces alternate 180° along the strip so the angled ends share cuts
+      const inf = inflate(cls.pts, sa);
+      const A = ceilEighth(dist(inf[cls.ia], inf[(cls.ia + 1) % 4])), B = ceilEighth(dist(inf[cls.ib], inf[(cls.ib + 1) % 4]));
+      const w = ceilEighth(cls.height + 2 * sa);
+      const step = dir ? A : (A + B) / 2;
+      return { key: `trap:${w}:${A}:${B}:${cls.angles.join('/')}`, method: 'trap', w, a: A, b: B, step, trim: (A - B) / 2, angles: cls.angles,
+        yield: 1, makes: 'trapezoid', alternate: !dir };
+    }
     default: {
       // packing uses the tightest rotation; the printed template keeps the in-quilt
       // orientation so its grain arrow (horizontal) matches the block's straight grain
@@ -79,15 +88,16 @@ function recipeStitchCorner(leg, sa) {
 /* ---------- collect every piece in the quilt ---------- */
 function collectCutItems(Q) {
   const sa = doc.cutting.seam;
-  const items = [];   // { fab, recipe, count, src }
-  const add = (fab, recipe, count, src) => items.push({ fab: resolveFab(fab), recipe, count, src });
+  const items = [];   // { fab, recipe, count, src, use }
+  // `use` says where the cut ends up: { b: blockId, i: piece index } or { kind } for tiles/patches
+  const add = (fab, recipe, count, src, use) => items.push({ fab: resolveFab(fab), recipe, count, src, use });
   const isDir = fab => !!fabricById(fab).directional;
 
   // blocks: group identical placements
   const groups = new Map();
   for (const c of Q.cells) {
     if (c.b) { const k = c.b + (c.flip ? '|f' : ''); groups.set(k, (groups.get(k) || 0) + 1); }
-    else if (c.fab) add(c.fab, recipeFor({ shape: 'rect', w: c.size, h: c.size }, sa, { directional: isDir(c.fab) }), 1, 'Plain squares');
+    else if (c.fab) add(c.fab, recipeFor({ shape: 'rect', w: c.size, h: c.size }, sa, { directional: isDir(c.fab) }), 1, 'Plain squares', { kind: 'plain' });
   }
   for (const [k, n] of groups) {
     const [bid, flip] = k.split('|');
@@ -95,14 +105,15 @@ function collectCutItems(Q) {
     const an = analyzeBlock(block, Q.BS);
     const name = block.name;
     const handled = new Set();
+    const all = blockPieces(block, Q.BS, Q.BS);
+    const use = p => ({ b: bid, i: all.indexOf(p) });
     for (const u of an.units) {
       if (u.unit.type === 'snowball') {
         handled.add(u.unit.main);
-        add(u.unit.main.fab, recipeStitchMain(u.rect, sa), n, name);
-        for (const t of u.unit.corners) { handled.add(t); add(t.fab, recipeStitchCorner(t.cls.leg, sa), n, name); }
+        add(u.unit.main.fab, recipeStitchMain(u.rect, sa), n, name, use(u.unit.main));
+        for (const t of u.unit.corners) { handled.add(t); add(t.fab, recipeStitchCorner(t.cls.leg, sa), n, name, use(t)); }
       }
     }
-    const all = blockPieces(block, Q.BS, Q.BS);
     for (const p of all) {
       if (handled.has(p)) continue;
       // mirrored placements only matter for pieces that have a left and right hand
@@ -111,7 +122,7 @@ function collectCutItems(Q) {
         cls = classifyPiece(mirrorPolyX(p.pts, Q.BS / 2), { curved: p.curved });
         if (p.cls.shape === 'holed') cls.shape = 'holed';
       }
-      add(p.fab, recipeFor(cls, sa, { directional: isDir(p.fab), applique: p.app }), n, name);
+      add(p.fab, recipeFor(cls, sa, { directional: isDir(p.fab), applique: p.app }), n, name, use(p));
     }
   }
   // tiles & setting triangles
@@ -119,7 +130,7 @@ function collectCutItems(Q) {
     // trimmed edge shapes are cut whole and trimmed after the top is sewn
     const cls = classifyPiece(t.role === 'trim' && t.full ? t.full : t.pts);
     const src = t.role === 'side-setting' || t.role === 'corner-setting' ? 'Setting triangles' : t.role === 'tile' ? 'Tiles' : 'Edge pieces';
-    add(t.fab, recipeFor(cls, sa, { directional: isDir(t.fab) }), 1, src);
+    add(t.fab, recipeFor(cls, sa, { directional: isDir(t.fab) }), 1, src, { kind: src });
   }
   // sashing, cornerstones, borders — long pieces become joined strips
   const joined = new Map();
@@ -133,7 +144,7 @@ function collectCutItems(Q) {
       if (!joined.has(key)) joined.set(key, { fab: resolveFab(p.fab), w, lengths: [], src, join: 'straight' });
       joined.get(key).lengths.push(ceilEighth(long + 2 * sa));
     } else {
-      add(p.fab, recipeFor({ shape: 'rect', w: bb.w, h: bb.h }, sa, { directional: isDir(p.fab) }), 1, src);
+      add(p.fab, recipeFor({ shape: 'rect', w: bb.w, h: bb.h }, sa, { directional: isDir(p.fab) }), 1, src, { kind: src });
     }
   }
   // binding: one continuous strip around the quilt (+12" for corners and joining the ends)
@@ -242,9 +253,14 @@ function computePlan(Q) {
   for (const it of items) {
     const f = F(it.fab);
     f.sources.add(it.src);
-    if (!f.recipes.has(it.recipe.key)) f.recipes.set(it.recipe.key, { recipe: it.recipe, pieces: 0, srcs: new Set() });
+    if (!f.recipes.has(it.recipe.key)) f.recipes.set(it.recipe.key, { recipe: it.recipe, pieces: 0, srcs: new Set(), uses: new Map() });
     const r = f.recipes.get(it.recipe.key);
     r.pieces += it.count; r.srcs.add(it.src);
+    if (it.use) {
+      const k = it.use.b || it.use.kind;
+      if (!r.uses.has(k)) r.uses.set(k, { b: it.use.b, kind: it.use.kind, idx: new Set() });
+      if (it.use.b) r.uses.get(k).idx.add(it.use.i);
+    }
   }
   for (const j of joined) { const f = F(j.fab); f.joined.push(j); f.sources.add(j.src); }
 
@@ -263,7 +279,7 @@ function computePlan(Q) {
       const strips = packStrips(units, wof);
       return { w, recipes: rs, strips, count: strips.length, oversize: rs.some(r => r.recipe.oversize) };
     });
-    const angled = recs.filter(r => r.recipe.method === 'angled').map(r => {
+    const angled = recs.filter(r => r.recipe.method === 'angled' || r.recipe.method === 'trap').map(r => {
       const per = Math.max(1, Math.floor((wof - r.recipe.trim) / r.recipe.step));
       return { ...r, perStrip: per, count: Math.ceil(r.units / per) };
     });
@@ -340,6 +356,42 @@ function fitsInPieces(f, pieces) {
   return { ok: remaining.length === 0, total, short: remaining.length, bins };
 }
 
+/* ---------- the cutting map: where every cut sits on the actual piece of fabric ----------
+   Bands run across the full width of fabric, stacked down its length in cutting order.
+   Each cut carries the instruction step number it belongs to. */
+function fabricSheet(f) {
+  const wof = doc.cutting.wof;
+  const rows = fabricInstructions(f);
+  const bands = [];
+  let y = 0;
+  rows.forEach((row, ri) => {
+    const step = ri + 1;
+    if (row.kind === 'strip') {
+      for (const st of row.group.strips) {
+        let x = 0;
+        const cuts = st.cuts.map(c => { const o = { x, w: c.len, recipe: c.r.recipe, step }; x += c.len; return o; });
+        bands.push({ y, h: row.group.w, step, kind: 'strip', cuts });
+        y += row.group.w;
+      }
+    } else if (row.kind === 'angled' || row.kind === 'tri60') {
+      const a = row.a, r = a.recipe;
+      let left = a.units;
+      for (let k = 0; k < a.count; k++) {
+        const n = Math.min(left, a.perStrip);
+        left -= n;
+        bands.push({ y, h: r.w, step, kind: r.method, recipe: r, n });
+        y += r.w;
+      }
+    } else if (row.kind === 'joined') {
+      for (let k = 0; k < row.j.count; k++) { bands.push({ y, h: row.j.w, step, kind: 'joined', label: row.j.src }); y += row.j.w; }
+    }
+  });
+  const tplStep = new Map(rows.map((r, i) => [r.r, i + 1]).filter(([r]) => r));
+  const tpl = f.tplPack.placed.length ? { y, h: f.tplPack.usedH, placed: f.tplPack.placed.map(p => ({ ...p, step: tplStep.get(p.item.r) })) } : null;
+  if (tpl) y += tpl.h;
+  return { W: wof, H: y, bands, tpl, rows, buyIn: f.buyIn };
+}
+
 /* ---------- human-readable cutting instructions ---------- */
 function cutVerb(recipe, units) {
   const yieldText = n => `${n} ${recipe.makes}${n === 1 ? '' : 's'}`;
@@ -361,6 +413,12 @@ function fabricInstructions(f) {
     rows.push({ kind: 'strip', head: `Cut ${plural(g.count, 'strip')} ${fmtLen(g.w, 'up')} × WOF`, parts, group: g });
   }
   for (const a of f.angled) {
+    if (a.recipe.method === 'trap') {
+      const r = a.recipe;
+      rows.push({ kind: 'angled', head: `Cut ${plural(a.count, 'strip')} ${fmtLen(r.w, 'up')} × WOF`,
+        parts: [`Cut ${a.units} trapezoids — long edge ${fmtLen(r.a, 'up')}, short edge ${fmtLen(r.b, 'up')}, ends at ${uniq(r.angles).join('° and ')}°.${r.alternate ? ' Turn the ruler end-for-end after each cut so the angled ends nest' : ''} (${a.perStrip} per strip)`], a });
+      continue;
+    }
     const lean = a.recipe.hand ? (a.recipe.hand === 'R' ? ', leaning right' : ', leaning left') : '';
     rows.push({ kind: 'angled', head: `Cut ${plural(a.count, 'strip')} ${fmtLen(a.recipe.w, 'up')} × WOF`,
       parts: [`Trim one end at ${a.recipe.angle}°${lean}, then cut ${a.units} × ${a.recipe.makes}s every ${fmtLen(a.recipe.step, 'up')} along the strip (${a.perStrip} per strip)`], a });

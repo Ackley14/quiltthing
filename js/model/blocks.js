@@ -208,46 +208,124 @@ function pieceProblems(block, size) {
   return out;
 }
 
-// Seam segments (grid units) that would split every problem piece into sewable parts.
-function suggestSeams(block) {
-  if (block.kind !== 'drawn') return [];
-  const size = block.n;                       // work directly in grid units
-  const arcKeys = new Set();
-  block.regions.forEach(r => regionRing(r, 1, 1, arcKeys));
-  const seams = [];
-  for (const p of blockPieces(block, size, size)) {
-    if (p.app || p.curved) continue;
-    const rings = [p.pts, ...p.holes];
-    if (!p.holes.length && isConvex(p.pts)) continue;
-    for (const s of autoSeamsFor(p.pts, arcKeys)) seams.push(s);
-    for (const hole of p.holes) {
-      // extend each hole edge outward until it meets the outer boundary
-      for (let i = 0; i < hole.length; i++) {
-        const v = hole[i];
-        for (const nb of [hole[(i - 1 + hole.length) % hole.length], hole[(i + 1) % hole.length]]) {
-          const dx = v[0] - nb[0], dy = v[1] - nb[1], L = Math.hypot(dx, dy);
-          if (L < 1e-9) continue;
-          let best = Infinity;
-          for (const ring of rings) for (let j = 0; j < ring.length; j++) {
-            const a = ring[j], b = ring[(j + 1) % ring.length];
-            const ex = b[0] - a[0], ey = b[1] - a[1], rx = dx / L, ry = dy / L;
-            const den = rx * ey - ry * ex;
-            if (Math.abs(den) < 1e-12) continue;
-            const t = ((a[0] - v[0]) * ey - (a[1] - v[1]) * ex) / den;
-            const u = ((a[0] - v[0]) * ry - (a[1] - v[1]) * rx) / den;
-            if (t > 1e-6 && u >= -1e-9 && u <= 1 + 1e-9) best = Math.min(best, t);
-          }
-          if (best < Infinity) seams.push([v, [v[0] + dx / L * best, v[1] + dy / L * best]]);
-        }
-      }
+/* ---------- seam suggestions ----------
+   A small search: for each piece, try seams that start at a corner (edge continuations and
+   grain lines), score the resulting pieces by how easy they are to cut and sew, and keep the
+   cheapest set. Pieces that can't be sewn as drawn get "required" seams; awkward template
+   pieces that become rotary-cut shapes get "optional" ones. */
+const PIECE_COST = { rect: 1, hst: 1.4, qst: 1.4, rtri: 1.8, tri60: 2, trap: 2.2, para: 2.2, hex: 3, curved: 3, tri: 4.5, quad: 4.5, poly: 5 };
+const STANDARD_COST = 3.1;   // anything at or below this is a rotary-cut shape (cost + per-piece overhead)
+function pieceCost(pts, scale) {
+  const cls = classifyPiece(pts);
+  let c = (PIECE_COST[cls.shape] ?? 5) + 0.8;          // + per-piece sewing overhead
+  if (!isConvex(cls.pts)) c += 20;                      // needs a set-in seam: worth several extra seams to avoid
+  const mar = minAreaRect(cls.pts);
+  if (mar && Math.min(mar.w, mar.h) * scale < 0.5) c += 6;   // finished narrower than ½"
+  return c;
+}
+const MIN_PIECE_COST = PIECE_COST.rect + 0.8;
+// memo: canonical outline → { budget, cost, seams }. A result found with a bigger search budget
+// is reused for smaller ones (it's a valid, at-least-as-good decomposition).
+function optimizePiece(poly, scale, depth, memo, maxDepth = 4) {
+  const budget = maxDepth - depth;
+  const key = poly.map(ptKey).sort().join(';');
+  const hit = memo.get(key);
+  if (hit && hit.budget >= budget) return hit;
+  let best = { cost: pieceCost(poly, scale), seams: [], budget };
+  if (budget > 0 && best.cost > STANDARD_COST) {
+    // grain-line and edge-continuation seams first; corner diagonals after
+    const cands = chordCandidates(poly).sort((a, b) => (b.axis - a.axis)).slice(0, depth === 0 ? 40 : 24);
+    for (const c of cands) {
+      if (best.cost <= 2 * MIN_PIECE_COST + 0.3) break;      // can't do better than two plain pieces
+      const parts = splitPolyByPoints(poly, c.a, c.b);
+      if (!parts) continue;
+      const r1 = optimizePiece(parts[0], scale, depth + 1, memo, maxDepth);
+      if (r1.cost + MIN_PIECE_COST >= best.cost - 0.3) continue;
+      const r2 = optimizePiece(parts[1], scale, depth + 1, memo, maxDepth);
+      const cost = r1.cost + r2.cost + (c.axis ? 0 : 0.1);   // small preference for straight-grain seams
+      if (cost < best.cost - 0.3) best = { cost, seams: [[c.a, c.b], ...r1.seams, ...r2.seams], budget };
     }
   }
-  // de-duplicate (same segment either direction)
-  const key = ([a, b]) => [ptKey(a), ptKey(b)].sort().join('|');
-  const seen = new Set((block.seams || []).map(key));
-  return seams.map(([a, b]) => [[round(a[0], 4), round(a[1], 4)], [round(b[0], 4), round(b[1], 4)]])
-    .filter(s => { const k = key(s); if (seen.has(k)) return false; seen.add(k); return true; });
+  memo.set(key, best);
+  return best;
 }
+// A piece that surrounds another: try a seam along each edge of the hole, carried across the
+// whole piece, then optimise the opened-up parts.
+function optimizeHoled(p, scale, memo) {
+  let best = null;
+  for (const hole of p.holes) for (let k = 0; k < hole.length; k++) {
+    const A = hole[k], B = hole[(k + 1) % hole.length];
+    const parts = splitRegionByLine(p.pts, p.holes, A, B);
+    if (!parts || parts.some(x => x.holes.length)) continue;
+    const { chords } = lineChords(p.pts, p.holes, A, B);
+    if (!chords.length) continue;
+    const dx = B[0] - A[0], dy = B[1] - A[1];
+    const t0 = Math.min(...chords.map(c => c[0])), t1 = Math.max(...chords.map(c => c[1]));
+    let cost = 0;
+    const seams = [[[A[0] + dx * t0, A[1] + dy * t0], [A[0] + dx * t1, A[1] + dy * t1]]];
+    for (const part of parts) { const r = optimizePiece(cleanPoly(part.outer), scale, 0, memo, 3); cost += r.cost; seams.push(...r.seams); }
+    if (!best || cost < best.cost) best = { cost, seams };
+  }
+  return best;
+}
+const _seamCache = new Map();
+function seamSuggestions(block) {
+  if (!block || block.kind !== 'drawn') return { required: [], optional: [], reqPieces: 0, optPieces: 0, unresolved: 0 };
+  const key = blockKey(block) + '|' + doc.layout.blockSize;
+  if (_seamCache.has(key)) return _seamCache.get(key);
+  const n = block.n, scale = doc.layout.blockSize / n;
+  const memo = new Map();
+  const res = { required: [], optional: [], reqPieces: 0, optPieces: 0, unresolved: 0 };
+  for (const p of blockPieces(block, n, n)) {
+    if (p.app || p.curved) continue;
+    if (p.holes.length) {
+      const r = optimizeHoled(p, scale, memo);
+      if (r) { res.required.push(...r.seams); res.reqPieces++; } else res.unresolved++;
+      continue;
+    }
+    const concave = !isConvex(p.pts);
+    const base = pieceCost(p.pts, scale);
+    if (!concave && base <= STANDARD_COST) continue;
+    // many-cornered concave shapes (stars) get one more level of search
+    const r = optimizePiece(p.pts, scale, 0, memo, concave && p.pts.length >= 7 ? 4 : 3);
+    if (!r.seams.length) { if (concave) res.unresolved++; continue; }
+    if (concave) { res.required.push(...r.seams); res.reqPieces++; }
+    else if (base - r.cost >= 1) { res.optional.push(...r.seams); res.optPieces++; }
+  }
+  const norm = s => s.map(([a, b]) => [[round(a[0], 6), round(a[1], 6)], [round(b[0], 6), round(b[1], 6)]]);
+  const k2 = ([a, b]) => [ptKey(a), ptKey(b)].sort().join('|');
+  const seen = new Set((block.seams || []).map(k2));
+  const dedupe = list => norm(list).filter(s => { const k = k2(s); if (seen.has(k)) return false; seen.add(k); return true; });
+  res.required = dedupe(res.required);
+  res.optional = dedupe(res.optional);
+  // Per-piece seams can be individually perfect yet not line up across the block (leaving a
+  // Y-seam). If so, try carrying each seam straight across the whole block instead.
+  const trial = extra => analyzeBlock({ ...block, seams: [...(block.seams || []), ...extra] }, n);
+  const all = [...res.required, ...res.optional];
+  if (all.length && trial(all).setIn) {
+    const across = ([a, b]) => {
+      const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
+      const p = [[a[0] - dx / L * 4 * n, a[1] - dy / L * 4 * n], [a[0] + dx / L * 4 * n, a[1] + dy / L * 4 * n]];
+      const iv = segRectInterval(p[0], p[1], { x: 0, y: 0, w: n, h: n });
+      if (!iv) return [a, b];
+      const at = t => [round(p[0][0] + (p[1][0] - p[0][0]) * t, 6), round(p[0][1] + (p[1][1] - p[0][1]) * t, 6)];
+      return [at(iv[0]), at(iv[1])];
+    };
+    const req2 = dedupe2(res.required.map(across)), opt2 = dedupe2(res.optional.map(across), req2);
+    if (!trial([...req2, ...opt2]).setIn) { res.required = req2; res.optional = opt2; res.extended = true; }
+  }
+  res.setInAfter = all.length ? trial([...res.required, ...res.optional]).setIn : false;
+  if (_seamCache.size > 200) _seamCache.clear();
+  _seamCache.set(key, res);
+  return res;
+}
+function dedupe2(list, already = []) {
+  const k = ([a, b]) => [ptKey(a), ptKey(b)].sort().join('|');
+  const seen = new Set(already.map(k));
+  return list.filter(x => { const kk = k(x); if (seen.has(kk)) return false; seen.add(kk); return true; });
+}
+// Back-compat helper: every suggested seam (required first).
+function suggestSeams(block) { const s = seamSuggestions(block); return [...s.required, ...s.optional]; }
 
 /* ---------- rendering ---------- */
 // SVG content for a block in a w×h frame. opts: { seams, pieces (outline cut pieces), ids }
@@ -425,7 +503,9 @@ function classifyUnit(node) {
   if (tris.length && tris.length === ps.length - 1) {
     const main = ps.find(p => !tris.includes(p));
     const rectArea = r.w * r.h;
-    if (main && !main.curved && Math.abs(main.cls.area + sum(tris, t => t.cls.area) - rectArea) < rectArea * 1e-3) {
+    const smallCorners = tris.every(t => t.cls.leg <= Math.min(r.w, r.h) * 0.5 + tol);
+    const mainNeedsTemplate = !['rect', 'hst', 'qst', 'rtri', 'para', 'trap', 'tri60'].includes(main?.cls.shape);
+    if (main && !main.curved && smallCorners && mainNeedsTemplate && Math.abs(main.cls.area + sum(tris, t => t.cls.area) - rectArea) < rectArea * 1e-3) {
       return { type: 'snowball', main, corners: tris, fabs };
     }
   }

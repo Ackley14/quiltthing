@@ -105,8 +105,16 @@ function blockStepsHtml(block, BS, sa, copies = 1) {
     groups.get(k).push(u);
   }
   for (const list of groups.values()) {
-    let text = unitMethodText(list[0].unit.type, list[0], list.length, sa);
-    if (copies > 1 && list[0].unit.type !== 'complex') text = text.replace(`<b>${list.length}</b>`, `<b>${list.length}</b> per block (<b>${list.length * copies}</b> in total)`);
+    const u = list[0].unit;
+    let text = unitMethodText(u.type, list[0], list.length, sa);
+    if (copies > 1 && u.type !== 'complex') text = text.replace(`<b>${list.length}</b>`, `<b>${list.length}</b> per block (<b>${list.length * copies}</b> in total)`);
+    // sketch of the method, in the unit's own fabrics (lighter fabric first)
+    const fabs = (u.fabs || []).slice().sort((p, q) => luminance(fabricHex(q)) - luminance(fabricHex(p)));
+    const howto = u.type === 'goose' ? unitHowToSvg('goose', u.goose, u.sky)
+      : u.type === 'snowball' ? unitHowToSvg('snowball', resolveFab(u.main.fab), resolveFab(u.corners[0].fab))
+      : u.type === 'curved' ? unitHowToSvg('curved', fabs[0], fabs[1] || fabs[0])
+      : ['hst', 'qst'].includes(u.type) ? unitHowToSvg(u.type, fabs[0], fabs[1] || fabs[0]) : '';
+    if (howto) text += `<div class="howto-wrap">${howto}</div>`;
     steps.push({ text, diag: blockDiagramSvg(block, BS, STEP_DIAG_IN, { level: an.height + 1, highlight: new Set(list), dim: true }) });
   }
   for (let k = 1; k <= an.height; k++) {
@@ -118,11 +126,18 @@ function blockStepsHtml(block, BS, sa, copies = 1) {
     const thing = n => n.children.every(c => !c.children.length) ? (n.children.some(c => c.pieces.length > 1) ? 'units' : 'pieces') : 'sections';
     for (const [dir, cnt] of Object.entries(descr)) {
       const sample = nodes.find(n => n.dir === dir), m = sample.children.length, t = thing(sample);
+      // a single short run of loose pieces: name them so the reader knows what goes where
+      if (cnt === 1 && m <= 5 && sample.children.every(c => !c.children.length && c.pieces.length === 1)) {
+        const names = sample.children.map(c => `${shapeName(c.pieces[0].cls).toLowerCase()} (<b>${fabricLetter(c.pieces[0].fab)}</b>)`).join(' + ');
+        parts.push(dir === 'cols' ? `Sew ${names} side by side` : dir === 'rows' ? `Sew ${names} top to bottom` : `Sew ${names} together along the diagonal seams, in that order`);
+        continue;
+      }
       if (dir === 'cols') parts.push(isRoot && cnt === 1 ? `Sew the ${m} ${t} side by side` : `Sew ${cnt === 1 ? `the ${m} ${t}` : `${cnt} rows of ${m} ${t}`} side by side`);
       else if (dir === 'rows') parts.push(isRoot && cnt === 1 ? `Join the ${m} ${t === 'sections' ? 'rows' : t} top to bottom` : `Join ${cnt === 1 ? `the ${m} ${t}` : `${cnt} sets of ${m} ${t}`} top to bottom`);
       else parts.push(`Sew ${cnt === 1 ? `the ${m} ${t}` : `${cnt} groups of ${m} ${t}`} together along the diagonal seams, working outward from the centre`);
     }
     let text = parts.join('. ') + '.';
+    if (descr.diag) text += ' Diagonal edges are cut on the bias and stretch easily: pin well, centre each piece so its points ("dog ears") overhang equally at both ends, and press without steam. Trim the dog ears after sewing.';
     if (isRoot) text += ` Press, then square the block to ${fmtSize(BS + 2 * sa, BS + 2 * sa)}.`;
     else if (descr.cols) text += ' Press seams in alternate directions from row to row so they nest.';
     steps.push({ text, diag: blockDiagramSvg(block, BS, STEP_DIAG_IN, { level: k }) });
@@ -200,17 +215,21 @@ function renderPatternDoc() {
   /* --- cutting --- */
   const tplList = [];
   for (const f of plan.fabrics) for (const r of f.templates) tplList.push({ id: `T${tplList.length + 1}`, fab: f.fab, r, outline: r.recipe.outline, units: r.units });
-  let cutHtml = `<h2>Cutting</h2><p>Cut strips across the width of fabric (selvage to selvage), then sub-cut. Label pieces by fabric letter as you go.</p>`;
-  for (const f of plan.fabrics) {
-    cutHtml += `<div class="cut-fab"><h3>${swatchHtml(f.fab, 20)} Fabric ${fabricLetter(f.fab)} — ${esc(fabricLabel(f.fab))}</h3><ul class="cut-list">`;
-    for (const row of fabricInstructions(f)) {
-      let extra = '';
-      if (row.kind === 'template') { const t = tplList.find(x => x.r === row.r); if (t) extra = ` <i>(template ${t.id})</i>`; }
-      cutHtml += `<li><b>${row.head}</b>${extra}<br>${row.parts.map(esc).join('<br>')}</li>`;
-    }
-    cutHtml += `</ul></div>`;
-  }
-  P('', cutHtml);
+  P('', `<h2>Cutting</h2><p>Cut strips across the width of fabric (selvage to selvage), then sub-cut, following the numbered order for each fabric. The map beside each list shows where every cut sits on the fabric you buy; the small pictures show where those pieces go. Label each stack with its fabric letter and step number.</p>` +
+    plan.fabrics.map(f => {
+      const sheet = fabricSheet(f);
+      let list = '';
+      sheet.rows.forEach((row, i) => {
+        let extra = '';
+        if (row.kind === 'template') { const t = tplList.find(x => x.r === row.r); if (t) extra = ` <i>(template ${t.id})</i>`; }
+        const rec = row.group?.recipes || (row.a ? [row.a] : row.r ? [row.r] : []);
+        const uses = [];
+        for (const r of rec) for (const u of r.uses?.values() || []) if (u.b && !uses.some(x => x.b === u.b)) uses.push(u);
+        list += `<li><span class="stepno">${i + 1}</span><div><b>${row.head}</b>${extra}<br>${row.parts.map(esc).join('<br>')}${uses.length ? `<div class="uses">${uses.map(u => usageThumbSvg(u, 0.42, 'in')).join('')}</div>` : ''}</div></li>`;
+      });
+      return `<div class="cut-fab"><h3>${swatchHtml(f.fab, 20)} Fabric ${fabricLetter(f.fab)} — ${esc(fabricLabel(f.fab))} <span class="muted" style="font-weight:400">· buy ${fmtYards(f.buyIn)}</span></h3>
+        <div class="cut-cols"><ol class="cut-list">${list}</ol><div class="cut-map">${fabricSheetSvg(sheet, f.fab, { width: 2.4, unit: 'in', idp: 'pc' })}</div></div></div>`;
+    }).join(''));
 
   /* --- templates (true scale) --- */
   if (tplList.length) {
@@ -239,7 +258,23 @@ function renderPatternDoc() {
         <div class="fab-key">${fabs.map(f => `<span>${swatchHtml(f, 16)}<b>${fabricLetter(f)}</b> ${esc(fabricLabel(f))}</span>`).join('')}</div>
       </div></div><ol class="steps">`;
     for (const s of steps) h += `<li><div class="step-text">${s.text}</div>${s.diag ? `<div class="step-diag">${s.diag}</div>` : ''}</li>`;
-    P('', h + '</ol>');
+    h += '</ol>';
+    // pieces for one block, each pointing back to the cutting step that makes it
+    const pieceKey = [];
+    for (const f of plan.fabrics) {
+      fabricSheet(f).rows.forEach((row, i) => {
+        const rec = row.group?.recipes || (row.a ? [row.a] : row.r ? [row.r] : []);
+        for (const r of rec) {
+          const u = r.uses?.get(id);
+          if (u) pieceKey.push({ f: f.fab, step: i + 1, r, u });
+        }
+      });
+    }
+    if (pieceKey.length) {
+      h += `<h3>Pieces for one block</h3><div class="piece-key">${pieceKey.map(({ f, step, r, u }) =>
+        `<div>${usageThumbSvg(u, 0.55, 'in')}<span><b>${u.idx.size} × ${esc(r.recipe.makes)}</b><br>fabric <b>${fabricLetter(f)}</b>, cutting step ${step}</span></div>`).join('')}</div>`;
+    }
+    P('', h);
   }
 
   /* --- quilt top assembly --- */
