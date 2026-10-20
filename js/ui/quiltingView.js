@@ -1,0 +1,62 @@
+/* Quilting view: stack of generated quilting-line layers previewed over the quilt. */
+
+Views.quilting = {
+  main() {
+    const Q = Qnow();
+    const layers = doc.quilting.layers;
+    const stats = quiltingStats(Q);
+    return `<div class="stage"><div class="toolbar"><b>Quilting plan</b><div class="spacer"></div>
+        <button class="tool" data-act="toggleUi" data-arg="qFade" aria-pressed="${!!ui.qFade}" title="Fade the quilt so lines stand out">Fade quilt</button>
+        <button class="tool" data-act="toggleUi" data-arg="grayscale" aria-pressed="${!!ui.grayscale}">Value</button></div>
+      <div class="canvas-wrap">${quiltSvg(Q, { faded: !!ui.qFade, quilting: quiltingSvg(Q) })}</div>
+      <div class="status-bar">${layers.length
+        ? `About <b>${Math.round(stats.total / 36)} yd</b> of stitching · allow ~<b>${Math.ceil(stats.threadYds / 50) * 50} yd</b> of thread (top + bobbin)`
+        : 'Add a quilting layer on the right to plan your stitching lines. They appear in the printed pattern before the binding step.'}</div></div>`;
+  },
+  inspector() {
+    const layers = doc.quilting.layers;
+    const Q = Qnow();
+    const stats = quiltingStats(Q);
+    let h = section('Add quilting', `<label class="f">Pattern<select data-change="addQuiltLayer"><option value="">Choose a pattern…</option>${QUILT_TYPES.map(t => `<option value="${t.key}">${t.label}</option>`).join('')}</select></label>
+      <p class="hint">Layers stack — e.g. stitch in the ditch first, then a crosshatch in the centre and waves in the border.</p>`, { key: 'qadd' });
+    layers.forEach((L, i) => {
+      const t = quiltType(L.type);
+      const p = `quilting.layers.${i}`;
+      const len = stats.per[i]?.length || 0;
+      h += section(`${i + 1}. ${t.label}`, `
+        <div class="f-row"><label class="f">Pattern<select data-bind="${p}.type">${QUILT_TYPES.map(x => `<option value="${x.key}" ${x.key === L.type ? 'selected' : ''}>${x.label}</option>`).join('')}</select></label>
+        <label class="f">Where<select data-bind="${p}.area">${[['all', 'Whole quilt'], ['center', 'Centre only'], ['borders', 'Borders only']].map(([k, l]) => `<option value="${k}" ${L.area === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+        ${t.noSpacing ? '' : lenField(L.type === 'spiral' ? 'Distance between turns' : 'Spacing', `${p}.spacing`, { min: 0.25, max: 24 })}
+        ${['lines', 'crosshatch', 'diamonds', 'wavy', 'zigzag', 'spiral'].includes(L.type) ? `<label class="f">Rotation <span class="muted">${Math.round(L.angle)}°</span><input type="range" min="0" max="180" step="5" value="${((L.angle % 180) + 180) % 180}" data-input="qAngleLive" data-change="qAngle" data-arg="${i}"></label>` : ''}
+        ${t.wave ? `<div class="f-row">${lenField('Wave height', `${p}.amp`, { min: 0.1, max: 6 })}${lenField('Wave length', `${p}.wave`, { min: 0.5, max: 24 })}</div>` : ''}
+        ${L.type === 'echo' ? numField('Outlines per block', `${p}.echoes`, { int: true, min: 1, max: 12 }) : ''}
+        <div class="f-row" style="align-items:end"><label class="f">Preview colour<input type="color" value="${L.color}" data-change="qColor" data-arg="${i}"></label>
+          <label class="check"><input type="checkbox" data-bind="${p}.visible" data-type="bool" ${L.visible ? 'checked' : ''}> Show</label></div>
+        <p class="hint">${esc(t.help)} ≈ ${Math.round(len / 36)} yd of stitching.</p>
+        <div class="btn-row"><button class="btn small" data-act="qMove" data-arg="${i}|-1" ${i ? '' : 'disabled'}>↑</button><button class="btn small" data-act="qMove" data-arg="${i}|1" ${i < layers.length - 1 ? '' : 'disabled'}>↓</button><button class="btn small" data-act="qDup" data-arg="${i}">Duplicate</button><button class="btn small danger" data-act="qDel" data-arg="${i}">Remove</button></div>`,
+      { key: 'ql-' + L.id, right: `<span class="layer-sw" style="background:${L.color}"></span>` });
+    });
+    return h;
+  },
+};
+
+Actions.addQuiltLayer = (type, el) => {
+  if (!type) return;
+  const L = newQuiltLayer(type);
+  const palette = ['#c0392b', '#2471a3', '#1e8449', '#8e44ad', '#d35400', '#17202a'];
+  L.color = palette[doc.quilting.layers.length % palette.length];
+  doc.quilting.layers.push(L);
+  el.value = '';
+  ui.showQuilting = true;
+  commit();
+};
+Actions.qAngleLive = (v, el) => { const L = doc.quilting.layers[+el.dataset.arg]; if (L) { L.angle = +v; renderMainOnly(); } };
+Actions.qAngle = (v, el) => { const L = doc.quilting.layers[+el.dataset.arg]; if (L) { L.angle = +v; commit(); } };
+Actions.qColor = (v, el) => { const L = doc.quilting.layers[+el.dataset.arg]; if (L) { L.color = v; commit(); } };
+Actions.qDel = i => { doc.quilting.layers.splice(+i, 1); commit(); };
+Actions.qDup = i => { const L = JSON.parse(JSON.stringify(doc.quilting.layers[+i])); L.id = uid('q'); doc.quilting.layers.splice(+i + 1, 0, L); commit(); };
+Actions.qMove = arg => {
+  const [i, d] = arg.split('|').map(Number), A = doc.quilting.layers;
+  const j = i + d; if (j < 0 || j >= A.length) return;
+  [A[i], A[j]] = [A[j], A[i]]; commit();
+};

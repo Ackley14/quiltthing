@@ -1,0 +1,465 @@
+/* Blocks: creation, cut-piece extraction, rendering, and sewing-order analysis.
+
+   A drawn block is a layered drawing on an n×n grid. Regions paint in order (later on
+   top); whatever isn't covered is quilt background. Cut pieces are the *visible* parts,
+   further split by the block's seam lines. Appliqué regions sit on top of the pieced
+   block instead of cutting into it.
+
+   A compound block arranges other blocks in slots (grid, columns or rows). */
+
+/* ---------- creation ---------- */
+function newDrawnBlock(name = 'New block', n = 4) {
+  return { id: uid('b'), kind: 'drawn', name, n, lattice: 'square', regions: [], seams: [] };
+}
+function newCompoundBlock(name = 'New compound') {
+  return { id: uid('b'), kind: 'compound', name, sub: { type: 'grid', rows: 2, cols: 2 }, slots: [null, null, null, null] };
+}
+function addBlockToDoc(block, select = true) {
+  doc.blocks[block.id] = block;
+  doc.blockOrder.push(block.id);
+  if (select) ui.activeBlock = block.id;
+  return block.id;
+}
+function cloneBlock(block) {
+  const c = JSON.parse(JSON.stringify(block));
+  c.id = uid('b');
+  return c;
+}
+
+/* ---------- compound slots ---------- */
+const SUB_PRESETS = [
+  { key: 'g2', label: '2 × 2 grid', sub: { type: 'grid', rows: 2, cols: 2 } },
+  { key: 'g3', label: '3 × 3 grid', sub: { type: 'grid', rows: 3, cols: 3 } },
+  { key: 'g4', label: '4 × 4 grid', sub: { type: 'grid', rows: 4, cols: 4 } },
+  { key: 'g23', label: '2 rows × 3 cols', sub: { type: 'grid', rows: 2, cols: 3 } },
+  { key: 'c11', label: '2 columns', sub: { type: 'cols', ratios: [1, 1] } },
+  { key: 'c111', label: '3 columns', sub: { type: 'cols', ratios: [1, 1, 1] } },
+  { key: 'c121', label: 'Columns 1 : 2 : 1', sub: { type: 'cols', ratios: [1, 2, 1] } },
+  { key: 'r11', label: '2 rows', sub: { type: 'rows', ratios: [1, 1] } },
+  { key: 'r111', label: '3 rows', sub: { type: 'rows', ratios: [1, 1, 1] } },
+  { key: 'r121', label: 'Rows 1 : 2 : 1', sub: { type: 'rows', ratios: [1, 2, 1] } },
+];
+function subKey(sub) {
+  const hit = SUB_PRESETS.find(p => JSON.stringify(p.sub) === JSON.stringify(sub));
+  return hit ? hit.key : 'g2';
+}
+function subRects(sub, w, h) {
+  const out = [];
+  if (sub.type === 'grid') {
+    const cw = w / sub.cols, ch = h / sub.rows;
+    for (let r = 0; r < sub.rows; r++) for (let c = 0; c < sub.cols; c++) out.push({ x: c * cw, y: r * ch, w: cw, h: ch });
+  } else {
+    const tot = sum(sub.ratios);
+    let acc = 0;
+    for (const q of sub.ratios) {
+      if (sub.type === 'cols') out.push({ x: acc / tot * w, y: 0, w: q / tot * w, h });
+      else out.push({ x: 0, y: acc / tot * h, w, h: q / tot * h });
+      acc += q;
+    }
+  }
+  return out;
+}
+// Child content is drawn in its own cw×ch frame (swapped for quarter turns) then placed in the slot.
+function slotFrame(rect, rot = 0, flip = false) {
+  const odd = rot % 2 === 1;
+  const cw = odd ? rect.h : rect.w, ch = odd ? rect.w : rect.h;
+  const cx = rect.x + rect.w / 2, cy = rect.y + rect.h / 2;
+  const tf = `translate(${round(cx, 4)} ${round(cy, 4)}) rotate(${rot * 90}) scale(${flip ? -1 : 1} 1) translate(${round(-cw / 2, 4)} ${round(-ch / 2, 4)})`;
+  const a = rot * Math.PI / 2, c = Math.round(Math.cos(a)), s = Math.round(Math.sin(a));
+  const map = ([x, y]) => {
+    let px = x - cw / 2, py = y - ch / 2;
+    if (flip) px = -px;
+    return [cx + px * c - py * s, cy + px * s + py * c];
+  };
+  return { cw, ch, tf, map };
+}
+function wouldCycle(parentId, childId) {
+  const stack = [childId], seen = new Set();
+  while (stack.length) {
+    const id = stack.pop();
+    if (id === parentId) return true;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const b = doc.blocks[id];
+    if (b?.kind === 'compound') for (const s of b.slots) if (s?.b) stack.push(s.b);
+  }
+  return false;
+}
+
+/* ---------- geometry ---------- */
+function regionRing(region, sx, sy, arcKeys) {
+  const pts = region.pts;
+  const out = [];
+  for (let i = 0; i < pts.length; i++) {
+    const A = pts[i], B = pts[(i + 1) % pts.length];
+    out.push([A[0] * sx, A[1] * sy]);
+    const bl = region.b?.[i] || 0;
+    if (bl) {
+      for (const q of arcPoints(A, B, bl)) {
+        const p = [q[0] * sx, q[1] * sy];
+        out.push(p);
+        arcKeys?.add(ptKey(p));
+      }
+    }
+  }
+  return out;
+}
+function regionPathD(region, sx, sy = sx) { return polyToPath(regionRing(region, sx, sy), 4); }
+
+function blockKey(block, depth = 0) {
+  if (!block) return 'null';
+  if (block.kind === 'compound' && depth < 6) {
+    return JSON.stringify([block.sub, block.slots.map(s => s ? [blockKey(doc.blocks[s.b], depth + 1), s.r || 0, !!s.f] : null)]);
+  }
+  return JSON.stringify([block.n, block.regions, block.seams]);
+}
+
+const _pieceCache = new Map();
+function clearBlockCaches() { _pieceCache.clear(); _analysisCache.clear(); }
+
+// Visible cut pieces of a block rendered at w×h inches. Fabric ids may be BG.
+function blockPieces(block, w, h, depth = 0) {
+  if (!block || depth > 6) return [];
+  const key = `${blockKey(block)}|${round(w, 4)}|${round(h, 4)}`;
+  if (_pieceCache.has(key)) return _pieceCache.get(key);
+  let pieces;
+  if (block.kind === 'compound') {
+    pieces = [];
+    const rects = subRects(block.sub, w, h);
+    rects.forEach((rect, i) => {
+      const slot = block.slots[i];
+      const child = slot && doc.blocks[slot.b];
+      if (!child) {
+        const pts = [[rect.x, rect.y], [rect.x + rect.w, rect.y], [rect.x + rect.w, rect.y + rect.h], [rect.x, rect.y + rect.h]];
+        pieces.push(makePiece(pts, [], BG, false, false));
+        return;
+      }
+      const fr = slotFrame(rect, slot.r || 0, !!slot.f);
+      for (const p of blockPieces(child, fr.cw, fr.ch, depth + 1)) {
+        let pts = p.pts.map(fr.map), holes = p.holes.map(hh => hh.map(fr.map));
+        pieces.push(makePiece(pts, holes, p.fab, p.app, p.curved));
+      }
+    });
+  } else {
+    pieces = drawnPieces(block, w, h);
+  }
+  if (_pieceCache.size > 800) _pieceCache.clear();
+  _pieceCache.set(key, pieces);
+  return pieces;
+}
+function makePiece(pts, holes, fab, app, curved) {
+  const cls = classifyPiece(pts, { curved });
+  if (holes.length) cls.shape = 'holed';
+  return { pts: cls.pts, holes, fab, app: !!app, curved: !!curved, cls, bb: bounds(cls.pts) };
+}
+
+function drawnPieces(block, w, h) {
+  const sx = w / block.n, sy = h / block.n;
+  const arcKeys = new Set();
+  const full = [[0, 0], [w, 0], [w, h], [0, h]];
+  const rings = block.regions.map(r => regionRing(r, sx, sy, arcKeys));
+  const isCurved = (outer, holes) => [outer, ...holes].some(ring => ring.some(p => arcKeys.has(ptKey(p))));
+  const raw = [];
+  const pieced = block.regions.map((r, i) => ({ r, i })).filter(x => !x.r.app && x.r.pts.length >= 2);
+  const applique = block.regions.map((r, i) => ({ r, i })).filter(x => x.r.app && x.r.pts.length >= 2);
+  // pieced layers: each region minus everything painted above it, clipped to the block
+  for (let k = 0; k < pieced.length; k++) {
+    const { r, i } = pieced[k];
+    const above = pieced.slice(k + 1).map(x => toPC(rings[x.i]));
+    let mp = pcSafe('intersection', toPC(rings[i]), toPC(full));
+    if (mp && above.length) mp = pcSafe('difference', mp, ...above);
+    for (const pg of fromPC(mp)) raw.push({ outer: pg.outer, holes: pg.holes, fab: r.fab, app: false });
+  }
+  // background = whatever no pieced region covers
+  const allPieced = pieced.map(x => toPC(rings[x.i]));
+  const bgMp = allPieced.length ? pcSafe('difference', toPC(full), ...allPieced) : [toPC(full)];
+  for (const pg of fromPC(bgMp)) raw.push({ outer: pg.outer, holes: pg.holes, fab: BG, app: false });
+  // appliqué stacks only among itself
+  for (let k = 0; k < applique.length; k++) {
+    const { r, i } = applique[k];
+    const above = applique.slice(k + 1).map(x => toPC(rings[x.i]));
+    let mp = pcSafe('intersection', toPC(rings[i]), toPC(full));
+    if (mp && above.length) mp = pcSafe('difference', mp, ...above);
+    for (const pg of fromPC(mp)) raw.push({ outer: pg.outer, holes: pg.holes, fab: r.fab, app: true });
+  }
+  // seams split pieced (not appliqué) pieces
+  const seams = (block.seams || []).map(([A, B]) => [[A[0] * sx, A[1] * sy], [B[0] * sx, B[1] * sy]]);
+  let list = raw.map(p => ({ pts: p.outer, holes: p.holes, fab: p.fab, app: p.app }));
+  if (seams.length) {
+    const pc = list.filter(p => !p.app), ap = list.filter(p => p.app);
+    list = [...splitBySeams(pc, seams), ...ap];
+  }
+  return list
+    .filter(p => polyArea(p.pts) - sum(p.holes, polyArea) > w * h * 1e-6)
+    .map(p => makePiece(p.pts, p.holes, p.fab, p.app, isCurved(p.pts, p.holes)));
+}
+
+// Pieces that can't be sewn with straight seams as drawn (need seam lines added).
+function pieceProblems(block, size) {
+  if (!block || block.kind !== 'drawn') return [];
+  const out = [];
+  for (const p of blockPieces(block, size, size)) {
+    if (p.app) continue;
+    if (p.holes.length) out.push({ piece: p, kind: 'hole', msg: 'Piece surrounds another piece (has a hole)' });
+    else if (!p.curved && !isConvex(p.pts)) out.push({ piece: p, kind: 'concave', msg: 'Piece has an inside corner (needs a set-in seam)' });
+    const mar = minAreaRect(p.pts);
+    if (mar && Math.min(mar.w, mar.h) < 0.249) out.push({ piece: p, kind: 'tiny', msg: `Very narrow piece (${fmtLen(Math.min(mar.w, mar.h))} finished)` });
+  }
+  return out;
+}
+
+// Seam segments (grid units) that would split every problem piece into sewable parts.
+function suggestSeams(block) {
+  if (block.kind !== 'drawn') return [];
+  const size = block.n;                       // work directly in grid units
+  const arcKeys = new Set();
+  block.regions.forEach(r => regionRing(r, 1, 1, arcKeys));
+  const seams = [];
+  for (const p of blockPieces(block, size, size)) {
+    if (p.app || p.curved) continue;
+    const rings = [p.pts, ...p.holes];
+    if (!p.holes.length && isConvex(p.pts)) continue;
+    for (const s of autoSeamsFor(p.pts, arcKeys)) seams.push(s);
+    for (const hole of p.holes) {
+      // extend each hole edge outward until it meets the outer boundary
+      for (let i = 0; i < hole.length; i++) {
+        const v = hole[i];
+        for (const nb of [hole[(i - 1 + hole.length) % hole.length], hole[(i + 1) % hole.length]]) {
+          const dx = v[0] - nb[0], dy = v[1] - nb[1], L = Math.hypot(dx, dy);
+          if (L < 1e-9) continue;
+          let best = Infinity;
+          for (const ring of rings) for (let j = 0; j < ring.length; j++) {
+            const a = ring[j], b = ring[(j + 1) % ring.length];
+            const ex = b[0] - a[0], ey = b[1] - a[1], rx = dx / L, ry = dy / L;
+            const den = rx * ey - ry * ex;
+            if (Math.abs(den) < 1e-12) continue;
+            const t = ((a[0] - v[0]) * ey - (a[1] - v[1]) * ex) / den;
+            const u = ((a[0] - v[0]) * ry - (a[1] - v[1]) * rx) / den;
+            if (t > 1e-6 && u >= -1e-9 && u <= 1 + 1e-9) best = Math.min(best, t);
+          }
+          if (best < Infinity) seams.push([v, [v[0] + dx / L * best, v[1] + dy / L * best]]);
+        }
+      }
+    }
+  }
+  // de-duplicate (same segment either direction)
+  const key = ([a, b]) => [ptKey(a), ptKey(b)].sort().join('|');
+  const seen = new Set((block.seams || []).map(key));
+  return seams.map(([a, b]) => [[round(a[0], 4), round(a[1], 4)], [round(b[0], 4), round(b[1], 4)]])
+    .filter(s => { const k = key(s); if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+/* ---------- rendering ---------- */
+// SVG content for a block in a w×h frame. opts: { seams, pieces (outline cut pieces), ids }
+function blockSvg(block, w, h, opts = {}, depth = 0) {
+  if (!block) return '';
+  if (depth > 6) return `<rect width="${w}" height="${h}" fill="#fdd"/>`;
+  const hair = Math.min(w, h) * 0.0025;
+  if (block.kind === 'compound') {
+    let s = '';
+    subRects(block.sub, w, h).forEach((rect, i) => {
+      const slot = block.slots[i];
+      const child = slot && doc.blocks[slot.b];
+      const tag = opts.slots ? ` data-slot="${i}" class="slot${opts.activeSlot === i ? ' slot-active' : ''}"` : '';
+      if (!child) {
+        s += `<rect x="${rect.x}" y="${rect.y}" width="${rect.w}" height="${rect.h}" fill="${fabricFill(BG)}"/>`;
+        if (opts.slots) s += `<rect x="${rect.x}" y="${rect.y}" width="${rect.w}" height="${rect.h}" fill="rgba(255,255,255,.55)" stroke="#8a95a3" stroke-width="${hair * 2}" stroke-dasharray="${hair * 8} ${hair * 6}"${tag}/>`;
+        return;
+      }
+      const fr = slotFrame(rect, slot.r || 0, !!slot.f);
+      s += `<g transform="${fr.tf}">${blockSvg(child, fr.cw, fr.ch, { seams: opts.seams }, depth + 1)}</g>`;
+      if (opts.slots) s += `<rect x="${rect.x}" y="${rect.y}" width="${rect.w}" height="${rect.h}" fill="transparent"${tag}/>`;
+    });
+    return s;
+  }
+  const sx = w / block.n, sy = h / block.n;
+  // nested <svg> = viewport clip, so shapes that run past the block edge are trimmed visually
+  let s = `<svg width="${w}" height="${h}" overflow="hidden"><rect width="${w}" height="${h}" fill="${fabricFill(BG)}"/>`;
+  const order = [...block.regions.map((r, i) => ({ r, i })).filter(x => !x.r.app), ...block.regions.map((r, i) => ({ r, i })).filter(x => x.r.app)];
+  for (const { r, i } of order) {
+    if (r.pts.length < 2) continue;
+    const fill = fabricFill(r.fab);
+    const id = opts.ids ? ` data-region="${i}"` : '';
+    s += `<path d="${regionPathD(r, sx, sy)}" fill="${fill}" stroke="${fill}" stroke-width="${hair}" stroke-linejoin="round"${id}/>`;
+  }
+  s += `</svg>`;
+  if (opts.seams && block.seams?.length) {
+    for (const [A, B] of block.seams) {
+      s += `<line x1="${A[0] * sx}" y1="${A[1] * sy}" x2="${B[0] * sx}" y2="${B[1] * sy}" stroke="rgba(0,0,0,.28)" stroke-width="${hair * 1.4}"/>`;
+    }
+  }
+  if (opts.pieces) {
+    for (const p of blockPieces(block, w, h)) {
+      s += `<path d="${polyToPath(p.pts)}" fill="none" stroke="rgba(20,30,40,.55)" stroke-width="${hair * 2}" stroke-dasharray="${hair * 6} ${hair * 3}" pointer-events="none"/>`;
+    }
+  }
+  return s;
+}
+function blockThumb(block, px = 64, cls = 'thumb') {
+  const S = 12;
+  return `<svg class="${cls}" viewBox="0 0 ${S} ${S}" width="${px}" height="${px}" aria-hidden="true">${blockSvg(block, S, S)}</svg>`;
+}
+function blockFabrics(block, depth = 0) {
+  const set = new Set();
+  if (!block || depth > 6) return set;
+  if (block.kind === 'compound') {
+    for (const s of block.slots) if (s?.b) for (const f of blockFabrics(doc.blocks[s.b], depth + 1)) set.add(f);
+    if (block.slots.some(s => !s)) set.add(BG);
+  } else {
+    for (const r of block.regions) set.add(r.fab);
+    set.add(BG);
+  }
+  return set;
+}
+
+/* ---------- sewing-order analysis ----------
+   Pieced blocks are sewn with straight "guillotine" seams: find full-length lines no piece
+   crosses, split there, recurse. Leaves are units (HST, flying geese…) or single pieces.
+   A leaf that still holds several pieces with no straight split needs set-in (Y) seams. */
+const _analysisCache = new Map();
+function analyzeBlock(block, size) {
+  const key = `${blockKey(block)}|${round(size, 4)}`;
+  if (_analysisCache.has(key)) return _analysisCache.get(key);
+  const all = blockPieces(block, size, size);
+  const pieced = all.filter(p => !p.app);
+  const applique = all.filter(p => p.app);
+  const root = splitNode(pieced, [[0, 0], [size, 0], [size, size], [0, size]], size * 1e-5);
+  const units = [];
+  walkTree(root, n => { if (!n.children.length) { n.unit = n.unit || classifyUnit(n); units.push(n); } });
+  const height = treeHeight(root);
+  const res = { root, units, height, applique, setIn: units.some(u => u.unit.type === 'complex'), size };
+  if (_analysisCache.size > 300) _analysisCache.clear();
+  _analysisCache.set(key, res);
+  return res;
+}
+// Candidate seam lines = lines through straight piece edges. A line is a valid seam for this
+// node when no piece straddles it. Parallel valid lines split the node into rows/strips.
+function splitNode(pieces, region, tol) {
+  const node = { region, rect: bounds(region), pieces, children: [], dir: null, normal: null };
+  if (pieces.length <= 1) return node;
+  const groups = new Map();
+  for (const p of pieces) {
+    const pts = p.pts, n = pts.length;
+    for (let i = 0; i < n; i++) {
+      const a = pts[i], b = pts[(i + 1) % n];
+      const L = dist(a, b);
+      if (L < tol * 10 || (p.curved && !isAxisDir(a, b))) continue;
+      let nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L;
+      if (nx < -1e-9 || (Math.abs(nx) < 1e-9 && ny < 0)) { nx = -nx; ny = -ny; }   // canonical normal
+      const angKey = Math.round(Math.atan2(ny, nx) * 1e4);
+      const off = nx * a[0] + ny * a[1];
+      let g = groups.get(angKey);
+      if (!g) { g = { n: [nx, ny], offs: new Map() }; groups.set(angKey, g); }
+      g.offs.set(Math.round(off / tol), off);
+    }
+  }
+  const valid = [];
+  for (const g of groups.values()) {
+    const offs = [];
+    for (const off of g.offs.values()) {
+      let lo = 0, hi = 0, ok = true;
+      for (const p of pieces) {
+        let mn = Infinity, mx = -Infinity;
+        for (const q of p.pts) { const s = g.n[0] * q[0] + g.n[1] * q[1] - off; if (s < mn) mn = s; if (s > mx) mx = s; }
+        if (mn < -tol && mx > tol) { ok = false; break; }
+        if (mx > tol) hi++; else if (mn < -tol) lo++; else { ok = false; break; }
+      }
+      if (ok && lo && hi) offs.push(off);
+    }
+    if (offs.length) {
+      const axis = Math.abs(g.n[0]) < 1e-6 || Math.abs(g.n[1]) < 1e-6;
+      valid.push({ n: g.n, offs: offs.sort((a, b) => a - b), axis, rows: Math.abs(g.n[0]) < 1e-6 });
+    }
+  }
+  const pickBest = list => list.sort((a, b) => (b.offs.length - a.offs.length) || (b.rows - a.rows))[0];
+  let choice = pickBest(valid.filter(v => v.axis));
+  if (!choice) {
+    const unit = classifyUnit(node);
+    if (unit.type !== 'complex') { node.unit = unit; return node; }
+    choice = pickBest(valid);
+  }
+  if (!choice) return node;
+  const [nx, ny] = choice.n;
+  node.normal = choice.n;
+  node.dir = choice.axis ? (choice.rows ? 'rows' : 'cols') : 'diag';
+  const cuts = [-Infinity, ...choice.offs, Infinity];
+  for (let i = 0; i + 1 < cuts.length; i++) {
+    const lo = cuts[i], hi = cuts[i + 1];
+    const ps = pieces.filter(p => { const c = centroid(p.pts); const s = nx * c[0] + ny * c[1]; return s > lo && s < hi; });
+    if (!ps.length) continue;
+    let sub = region;
+    if (lo > -Infinity) sub = clipHalfplane(sub, [nx, ny], lo, true);
+    if (hi < Infinity) sub = clipHalfplane(sub, [nx, ny], hi, false);
+    node.children.push(splitNode(ps, sub, tol));
+  }
+  return node;
+}
+function walkTree(n, fn) { fn(n); for (const c of n.children) walkTree(c, fn); }
+function treeHeight(n) { return n.children.length ? 1 + Math.max(...n.children.map(treeHeight)) : 0; }
+
+function classifyUnit(node) {
+  const ps = node.pieces, r = node.rect;
+  const shapes = ps.map(p => p.cls.shape);
+  const count = s => shapes.filter(x => x === s).length;
+  const fabs = uniq(ps.map(p => resolveFab(p.fab)));
+  if (ps.length === 1) return { type: 'piece' };
+  if (ps.some(p => p.curved)) return { type: 'curved', fabs };
+  const square = Math.abs(r.w - r.h) < 1e-3 * r.w;
+  if (ps.length === 2 && count('hst') === 2 && square) return { type: 'hst', fabs };
+  if (ps.length === 2 && count('rtri') === 2) return { type: 'hrt', fabs };
+  if (ps.length === 4 && count('qst') === 4 && square) return { type: 'qst', fabs };
+  if (ps.length === 3 && count('qst') === 1 && count('hst') === 2) {
+    const goose = ps.find(p => p.cls.shape === 'qst'), sky = ps.find(p => p.cls.shape === 'hst');
+    return { type: 'goose', goose: resolveFab(goose.fab), sky: resolveFab(sky.fab), fabs };
+  }
+  // stitch-and-flip: one main piece plus right-isosceles corner triangles on the unit's corners
+  const tol = 1e-4 * Math.max(r.w, r.h);
+  const corners = [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]];
+  const isCornerTri = p => p.cls.shape === 'hst' && corners.some(c => {
+    const i = p.pts.findIndex(q => dist(q, c) < tol);
+    if (i < 0) return false;
+    const a = p.pts[(i + 2) % 3], b = p.pts[(i + 1) % 3];
+    return isAxisDir(c, a) && isAxisDir(c, b);
+  });
+  const tris = ps.filter(isCornerTri);
+  if (tris.length && tris.length === ps.length - 1) {
+    const main = ps.find(p => !tris.includes(p));
+    const rectArea = r.w * r.h;
+    if (main && !main.curved && Math.abs(main.cls.area + sum(tris, t => t.cls.area) - rectArea) < rectArea * 1e-3) {
+      return { type: 'snowball', main, corners: tris, fabs };
+    }
+  }
+  return { type: 'complex', fabs };
+}
+
+// Sutherland–Hodgman clip of a convex polygon against n·p ≥ off (keepAbove) or ≤ off.
+function clipHalfplane(poly, n, off, keepAbove) {
+  const s = p => (n[0] * p[0] + n[1] * p[1] - off) * (keepAbove ? 1 : -1);
+  const out = [];
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    const sa = s(a), sb = s(b);
+    if (sa >= 0) out.push(a);
+    if ((sa >= 0) !== (sb >= 0)) {
+      const t = sa / (sa - sb);
+      out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+    }
+  }
+  return out;
+}
+
+// Piece offsets for an "exploded" diagram: nodes of height ≥ level have their children
+// pulled apart along the node's split normal (offsets accumulate down the tree).
+function explodedPieces(analysis, level, gap) {
+  const out = [];
+  const acc = (node, dx, dy) => {
+    if (!node.children.length) { for (const p of node.pieces) out.push({ p, dx, dy, unit: node }); return; }
+    const h = treeHeight(node);
+    node.children.forEach((c, i) => {
+      const k = h >= level ? i * gap : 0;
+      acc(c, dx + node.normal[0] * k, dy + node.normal[1] * k);
+    });
+  };
+  acc(analysis.root, 0, 0);
+  return out;
+}
