@@ -147,7 +147,7 @@ function myBlocksSection() {
     grid += `<button class="blk${target ? ' target' : ''}" aria-pressed="${ui.activeBlock === id}" data-act="pickBlock" data-arg="${id}" title="${esc(b.name)}${n ? ` — used ${n}×` : ''}">
       ${blockThumb(b, 72)}<div class="nm">${esc(b.name)}</div>${n ? `<span class="use">${n}</span>` : ''}</button>`;
   }
-  const right = `<button class="btn small ghost" data-act="newBlock" title="Draw a new block">+ New</button><button class="btn small ghost" data-act="newCompound" title="A block made of other blocks">+ Combo</button>`;
+  const right = `<button class="btn small ghost" data-act="newBlock" title="Draw a new block">+ New</button><button class="btn small ghost" data-act="newCompound" title="A block made of other blocks">+ Combo</button><button class="btn small ghost" data-act="blockFileMenu" title="Import or export blocks" aria-label="Import or export blocks">⇅</button>`;
   const hint = fillingSlot ? `<div class="callout">Pick a block to put in slot ${ui.activeSlot + 1}.</div>` : '';
   return section('My blocks', `${hint}${grid ? `<div class="blocks">${grid}</div>` : '<p class="empty">No blocks yet. Draw one, or pick from the library below.</p>'}`, { key: 'myblocks', right });
 }
@@ -168,6 +168,71 @@ function nextEmptySlot(host, from) {
   for (let k = 1; k <= host.slots.length; k++) { const i = (from + k) % host.slots.length; if (!host.slots[i]) return i; }
   return null;
 }
+/* ---------- block files (share blocks between projects or people) ---------- */
+// A block file carries the blocks, any blocks they contain (combination blocks), and the
+// fabrics they use, so it looks the same when imported elsewhere.
+function blockBundle(ids) {
+  const all = new Set();
+  const visit = id => {
+    const b = doc.blocks[id];
+    if (!b || all.has(id)) return;
+    all.add(id);
+    if (b.kind === 'compound') for (const s of b.slots) if (s?.b) visit(s.b);
+  };
+  ids.forEach(visit);
+  const blocks = doc.blockOrder.filter(id => all.has(id)).map(id => doc.blocks[id]);
+  const fabIds = new Set();
+  for (const b of blocks) if (b.kind === 'drawn') for (const r of b.regions) if (r.fab !== BG) fabIds.add(r.fab);
+  return { app: 'quiltthing', kind: 'blocks', version: 3, blocks, fabrics: doc.fabrics.filter(f => fabIds.has(f.id)) };
+}
+Actions.blockFileMenu = (a, el) => openMenu(el, [
+  ...(activeBlock() ? [{ label: `Export “${esc(activeBlock().name)}”…`, act: 'exportBlocks', arg: 'one' }] : []),
+  { label: `Export all my blocks (${doc.blockOrder.length})`, act: 'exportBlocks', arg: 'all' },
+  { label: 'Import blocks from file…', act: 'importBlocks' },
+]);
+Actions.exportBlocks = which => {
+  const ids = which === 'one' && activeBlock() ? [activeBlock().id] : doc.blockOrder.slice();
+  if (!ids.length) { toast('No blocks to export'); return; }
+  const bundle = blockBundle(ids);
+  const name = which === 'one' ? slugify(activeBlock().name) : slugify(doc.meta.title) + '-blocks';
+  downloadBlob(`${name}.qblocks.json`, new Blob([JSON.stringify(bundle, null, 1)], { type: 'application/json' }));
+  toast(`Exported ${plural(bundle.blocks.length, 'block')}`);
+};
+Actions.importBlocks = () => {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.json,application/json';
+  inp.onchange = () => inp.files[0]?.text().then(text => {
+    let data;
+    try { data = JSON.parse(text); } catch { toast("That file isn't valid JSON"); return; }
+    // accept block files, and also whole project files (import their blocks)
+    const ok = data?.app === 'quiltthing' && data.version === 3 && (data.kind === 'blocks' ? Array.isArray(data.blocks) : data.blocks && data.blockOrder);
+    if (!ok) { openModal(`<h2>Couldn't import blocks</h2><p>That doesn't look like a Quilt Designer block file or project.</p><div class="actions"><button class="btn primary" data-act="closeModal">OK</button></div>`); return; }
+    const blocks = data.kind === 'blocks' ? data.blocks : data.blockOrder.map(id => data.blocks[id]).filter(Boolean);
+    // fabrics: reuse an existing fabric with the same colour and name, otherwise add it
+    const fabMap = new Map();
+    let addedFabs = 0;
+    for (const f of data.fabrics || []) {
+      const hit = doc.fabrics.find(x => x.color === f.color && x.name === f.name) || doc.fabrics.find(x => x.color === f.color);
+      if (hit) fabMap.set(f.id, hit.id);
+      else { const nf = { ...JSON.parse(JSON.stringify(f)), id: uid('f') }; doc.fabrics.push(nf); fabMap.set(f.id, nf.id); addedFabs++; }
+    }
+    const fab = id => id === BG ? BG : fabMap.get(id) || (doc.fabrics.some(x => x.id === id) ? id : BG);
+    // fresh block ids, with combination-block references remapped
+    const idMap = new Map(blocks.map(b => [b.id, uid('b')]));
+    for (const b of blocks) {
+      const c = JSON.parse(JSON.stringify(b));
+      c.id = idMap.get(b.id);
+      if (c.kind === 'drawn') for (const r of c.regions) r.fab = fab(r.fab);
+      else if (c.kind === 'compound') c.slots = c.slots.map(s => s && idMap.has(s.b) ? { ...s, b: idMap.get(s.b) } : null);
+      doc.blocks[c.id] = c;
+      doc.blockOrder.push(c.id);
+    }
+    if (blocks.length) ui.activeBlock = idMap.get(blocks[blocks.length - 1].id);
+    commit();
+    toast(`Imported ${plural(blocks.length, 'block')}${addedFabs ? ` and ${plural(addedFabs, 'new fabric')}` : ''}`);
+  });
+  inp.click();
+};
 Actions.newBlock = () => { addBlockToDoc(newDrawnBlock(`Block ${doc.blockOrder.length + 1}`)); ui.view = 'block'; ui.tool = 'rect'; commit(); };
 Actions.newCompound = () => { addBlockToDoc(newCompoundBlock(`Combo ${doc.blockOrder.length + 1}`)); ui.view = 'block'; ui.activeSlot = 0; commit(); };
 

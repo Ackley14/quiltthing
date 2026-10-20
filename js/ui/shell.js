@@ -201,10 +201,15 @@ function openMenu(anchor, items) {
   m.setAttribute('role', 'menu');
   m.innerHTML = items.map(it => it === '-' ? '<hr>' : `<button role="menuitem" class="${it.danger ? 'danger' : ''}" data-act="${it.act}" ${it.arg !== undefined ? `data-arg="${esc(it.arg)}"` : ''}>${it.label}${it.kb ? `<span class="kb">${it.kb}</span>` : ''}</button>`).join('');
   document.body.appendChild(m);
-  const r = anchor.getBoundingClientRect();
-  const mw = m.offsetWidth;
-  m.style.top = `${r.bottom + 6}px`;
-  m.style.left = `${clamp(r.right - mw, 8, window.innerWidth - mw - 8)}px`;
+  const mw = m.offsetWidth, mh = m.offsetHeight;
+  if (anchor.getBoundingClientRect) {
+    const r = anchor.getBoundingClientRect();
+    m.style.top = `${r.bottom + 6}px`;
+    m.style.left = `${clamp(r.right - mw, 8, window.innerWidth - mw - 8)}px`;
+  } else {
+    m.style.top = `${clamp(anchor.y, 8, window.innerHeight - mh - 8)}px`;
+    m.style.left = `${clamp(anchor.x, 8, window.innerWidth - mw - 8)}px`;
+  }
   _menuEl = m;
   setTimeout(() => m.querySelector('button')?.focus(), 10);
 }
@@ -249,6 +254,9 @@ Actions.fileMenu = (a, el) => openMenu(el, [
   '-',
   { label: 'Open project file…', act: 'openProject', kb: 'Ctrl+O' },
   { label: 'Save project file', act: 'saveProject', kb: 'Ctrl+S' },
+  '-',
+  { label: 'Import blocks from file…', act: 'importBlocks' },
+  { label: 'Export all blocks…', act: 'exportBlocks', arg: 'all' },
   '-',
   { label: 'Export picture (PNG)…', act: 'exportPngDialog' },
   { label: 'Export vector (SVG)', act: 'exportSvg' },
@@ -363,7 +371,13 @@ Actions.help = () => openModal(`<h2>How Quilt Designer works</h2>
     <div><kbd>P</kbd> polygon · <kbd>R</kbd> rectangle</div>
     <div><kbd>T</kbd> half-square triangle · <kbd>K</kbd> seam</div>
     <div><kbd>Enter</kbd> close shape · <kbd>Backspace</kbd> undo point</div>
-    <div><kbd>Esc</kbd> cancel · <kbd>Delete</kbd> delete piece</div>
+    <div><kbd>Esc</kbd> cancel · <kbd>Delete</kbd> delete selected</div>
+    <div>Drag a shape to move it · arrows nudge</div>
+    <div><kbd>Shift</kbd>-click / <kbd>Ctrl</kbd>-drag select several</div>
+    <div><kbd>Ctrl D</kbd> duplicate · <kbd>Ctrl C</kbd>/<kbd>V</kbd> copy, paste</div>
+    <div><kbd>Q</kbd>/<kbd>E</kbd> rotate · <kbd>X</kbd>/<kbd>Y</kbd> mirror</div>
+    <div>Right-click a shape for options</div>
+    <div>Double-click a corner to remove it · <kbd>Alt</kbd>-click an edge handle to add one</div>
     <div><kbd>Shift</kbd> snap to half grid · <kbd>Alt</kbd>-click pick fabric</div>
     <h4>Layout</h4>
     <div>Click / drag to place · right-click to clear</div>
@@ -398,7 +412,7 @@ document.addEventListener('keydown', e => {
   if (!ctrl && !e.altKey && /^[1-6]$/.test(e.key)) { e.preventDefault(); Actions.view(VIEW_LIST[+e.key - 1].key); return; }
   if (!ctrl && (e.key === 'g' || e.key === 'G')) { Actions.toggleUi('grayscale'); return; }
   if (e.key === '?') { Actions.help(); return; }
-  if (!ctrl) Views[ui.view]?.key?.(e);
+  Views[ui.view]?.key?.(e);
 });
 
 /* ---------- pointer → svg coordinates ---------- */

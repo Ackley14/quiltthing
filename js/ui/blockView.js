@@ -16,7 +16,7 @@ Views.block = {
   main() {
     const b = activeBlock();
     if (!b) return `<div class="stage"><div class="canvas-wrap"><div class="docview" style="text-align:center"><h2>No block selected</h2><p class="sub">Draw a new block or pick one from the library on the left.</p><div class="btn-row" style="justify-content:center"><button class="btn primary" data-act="newBlock">Draw a block</button><button class="btn" data-act="newCompound">Combine blocks</button></div></div></div></div>`;
-    const S = doc.layout.blockSize, m = S * 0.035;
+    const S = doc.layout.blockSize, m = S * 0.07;   // margin doubles as room to start a box-select
     if (b.kind === 'compound') {
       return `<div class="stage"><div class="toolbar"><b>${esc(b.name)}</b><span class="muted">· combination block</span><div class="spacer"></div>
           <button class="tool" data-act="toggleUi" data-arg="showPieces" aria-pressed="${!!ui.showPieces}">Cut pieces</button></div>
@@ -26,11 +26,11 @@ Views.block = {
     const tools = BLOCK_TOOLS.map(t => `<button class="tool" data-act="blockTool" data-arg="${t.key}" aria-pressed="${ui.tool === t.key}" title="${t.label} (${t.kb})">${t.icon} ${t.label} <kbd>${t.kb}</kbd></button>`).join('');
     return `<div class="stage"><div class="toolbar">${tools}<span class="sep"></span>
         <button class="tool" data-act="toggleSeamLines" aria-pressed="${ui.showSeamLines !== false}" title="Show or hide the red seam lines you've added">Seam lines</button>
-        <button class="tool" data-act="toggleUi" data-arg="showPieces" aria-pressed="${!!ui.showPieces}" title="Outline the actual pieces you'll cut">Cut pieces</button>
+        <button class="tool" data-act="toggleUi" data-arg="showPieces" aria-pressed="${!!ui.showPieces}" title="Outline each piece you'll actually cut — overlapping shapes are cut apart where they meet">Show pieces</button>
         <div class="spacer"></div><span id="seam-tool-slot"></span>
       </div>
       <div class="canvas-wrap"><svg id="editor" class="editor tool-${ui.tool}" viewBox="${-m} ${-m} ${S + 2 * m} ${S + 2 * m}" aria-label="Block editor"><g id="ed-c">${editorContent(b)}</g><g id="ed-ov" pointer-events="none"></g></svg>
-        <div id="seam-card" class="seam-card" hidden></div></div>
+        <div id="sel-bar" class="sel-bar" hidden></div><div id="seam-card" class="seam-card" hidden></div></div>
       <div class="status-bar" id="ed-status">${blockStatus(b)}</div></div>`;
   },
   afterMain(el) {
@@ -43,11 +43,14 @@ Views.block = {
     svg.addEventListener('pointercancel', () => { ed.drag = null; });
     svg.addEventListener('pointerleave', () => { ed.hover = null; drawOverlay(); });
     svg.addEventListener('dblclick', edDbl);
-    svg.addEventListener('contextmenu', e => e.preventDefault());
+    svg.addEventListener('contextmenu', edContext);
     scheduleSeamCheck();
+    positionSelBar();
   },
   inspector() { return blockInspector(); },
   key(e) { return blockViewKey(e); },
+  // picking a fabric while shapes are selected recolours them
+  onFabricPick(id) { if (ui.tool === 'select' && selList().length) Actions.regionFab(id); },
 };
 
 /* ---------- geometry helpers (grid units) ---------- */
@@ -68,10 +71,13 @@ function latticeDots(b, fine) {
   for (let y = 0; y <= n + 1e-9; y += st) for (let x = 0; x <= n + 1e-9; x += st) out.push([x, y]);
   return out;
 }
-function snapDot(b, p, fine) {
+// Nearest grid dot — or a corner of another shape, so pieces can be lined up exactly.
+function snapDot(b, p, fine, skip) {
   let best = null, bd = Infinity;
-  for (const d of latticeDots(b, fine)) { const dd = (d[0] - p[0]) ** 2 + (d[1] - p[1]) ** 2; if (dd < bd) { bd = dd; best = d; } }
-  return best;
+  const consider = d => { const dd = (d[0] - p[0]) ** 2 + (d[1] - p[1]) ** 2; if (dd < bd) { bd = dd; best = d; } };
+  for (const d of latticeDots(b, fine)) consider(d);
+  b.regions.forEach((r, i) => { if (i !== skip) for (const q of r.pts) consider(q); });
+  return best ? [best[0], best[1]] : best;
 }
 const samePt = (a, b) => a && b && Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6;
 function evtGrid(e, b) { const [x, y] = svgPoint($('#editor'), e); const k = gridScale(b); return [x / k, y / k]; }
@@ -99,17 +105,18 @@ function editorContent(b) {
     for (const p of blockPieces(b, S, S)) s += `<path d="${polyToPath(p.pts)}" fill="none" stroke="rgba(20,30,40,.75)" stroke-width="${hair * 1.4}" stroke-dasharray="${hair * 5} ${hair * 3}" pointer-events="none"/>`;
   }
   for (const pr of pieceProblems(b, S)) if (pr.kind !== 'tiny') s += `<path class="problem" d="${polyToPath(pr.piece.pts)}${pr.piece.holes.map(h => polyToPath(h)).join('')}" fill-rule="evenodd" stroke-width="${hair * 1.5}"/>`;
-  // selection handles
-  const r = b.regions[ui.selRegion];
+  // selection: outline every selected shape; corner/edge handles when exactly one is selected
+  const sel = selList();
+  if (ui.tool === 'select') for (const i of sel) s += `<path class="sel-outline" d="${regionPathD(b.regions[i], k)}" stroke-width="${hair * 3}"/>`;
+  const r = sel.length === 1 ? b.regions[sel[0]] : null;
   if (r && ui.tool === 'select') {
-    s += `<path class="sel-outline" d="${regionPathD(r, k)}" stroke-width="${hair * 3}"/>`;
     r.pts.forEach((q, i) => {
       const nb = r.pts[(i + 1) % r.pts.length];
       const bl = r.b?.[i] || 0;
       const mid = bl ? arcInfo([q[0] * k, q[1] * k], [nb[0] * k, nb[1] * k], bl).apex : [(q[0] + nb[0]) / 2 * k, (q[1] + nb[1]) / 2 * k];
-      s += `<rect class="eh${bl ? ' curved' : ''}" data-eh="${i}" x="${mid[0] - S * .011}" y="${mid[1] - S * .011}" width="${S * .022}" height="${S * .022}" rx="${S * .004}" stroke-width="${hair}"><title>Drag to curve this edge · double-click to straighten</title></rect>`;
+      s += `<rect class="eh${bl ? ' curved' : ''}" data-eh="${i}" x="${mid[0] - S * .011}" y="${mid[1] - S * .011}" width="${S * .022}" height="${S * .022}" rx="${S * .004}" stroke-width="${hair}"><title>Drag to curve this edge · double-click to straighten · Alt-click to add a corner here</title></rect>`;
     });
-    r.pts.forEach((q, i) => { s += `<circle class="vh" data-vh="${i}" cx="${q[0] * k}" cy="${q[1] * k}" r="${S * .014}" stroke-width="${hair * 1.2}"><title>Drag to move this point</title></circle>`; });
+    r.pts.forEach((q, i) => { s += `<circle class="vh" data-vh="${i}" cx="${q[0] * k}" cy="${q[1] * k}" r="${S * .014}" stroke-width="${hair * 1.2}"><title>Drag to move this corner · double-click to remove it</title></circle>`; });
   }
   return s;
 }
@@ -132,6 +139,10 @@ function drawOverlay() {
   if (ui.tool === 'seam' && dr.length === 1 && h) s += `<line x1="${dr[0][0] * k}" y1="${dr[0][1] * k}" x2="${h[0] * k}" y2="${h[1] * k}" stroke="#b5482f" stroke-width="${hair * 2}" stroke-dasharray="${hair * 4} ${hair * 2}"/>`;
   if (ui.tool === 'tri' && ed.triPreview) s += `<path d="${polyToPath(ed.triPreview.map(([x, y]) => [x * k, y * k]))}" fill="${fabricFill(ui.fabric)}" fill-opacity=".75" stroke="#c98a1f" stroke-width="${hair * 2}"/>`;
   if (h && ['polygon', 'rect', 'seam'].includes(ui.tool)) s += `<circle cx="${h[0] * k}" cy="${h[1] * k}" r="${S * .016}" fill="#f2b134" stroke="#1f3a5f" stroke-width="${hair}"/>`;
+  if (ed.drag?.kind === 'marquee' && ed.drag.cur) {
+    const a = ed.drag.start, c = ed.drag.cur;
+    s += `<rect x="${Math.min(a[0], c[0]) * k}" y="${Math.min(a[1], c[1]) * k}" width="${Math.abs(c[0] - a[0]) * k}" height="${Math.abs(c[1] - a[1]) * k}" fill="rgba(44,79,124,.08)" stroke="#2c4f7c" stroke-width="${hair}" stroke-dasharray="${hair * 4} ${hair * 3}"/>`;
+  }
   if (ui.seamPreview && _seamState.block === b.id && _seamState.s) {
     const sg = _seamState.s;
     for (const [list, col] of [[sg.required, '#b5482f'], [sg.optional, '#2e7d4f']]) {
@@ -143,8 +154,12 @@ function drawOverlay() {
 function blockStatus(b) {
   const fab = ui.fabric === BG ? 'quilt background' : esc(fabricLabel(ui.fabric));
   switch (ui.tool) {
-    case 'paint': return `Click a piece to paint it with <b>${fab}</b> — drag across pieces to paint several. Alt-click (or right-click) picks up a piece's fabric.`;
-    case 'select': return ui.selRegion != null ? 'Drag white points to move them, drag yellow edge handles to curve an edge (double-click to straighten). <b>Delete</b> removes the shape.' : 'Click a shape to select it.';
+    case 'paint': return `Click a piece to paint it with <b>${fab}</b> — drag across pieces to paint several. Alt-click picks up a piece's fabric. Right-click a shape for more options.`;
+    case 'select': {
+      const n = selList().length;
+      if (!n) return 'Click a shape to select it · Shift-click to add more · Ctrl-drag (or drag from outside the block) to box-select · right-click for options.';
+      return `<b>${plural(n, 'shape')} selected</b> — drag to move (Shift = half steps) · arrow keys nudge · <b>Delete</b> removes · Ctrl+D duplicates · Q/E rotate · X/Y mirror${n === 1 ? ' · drag white corners to reshape' : ''}`;
+    }
     case 'polygon': return ui.drawing.length ? `<b>${ui.drawing.length} points</b> — click the first point or press <b>Enter</b> to finish · <b>Backspace</b> undo point · <b>Esc</b> cancel` : 'Click grid points to draw a shape. Hold <b>Shift</b> for the half grid.';
     case 'rect': return 'Drag from one grid point to another to add a rectangle (or click both corners).';
     case 'tri': return b.lattice === 'tri' ? 'Click inside a lattice triangle to fill it.' : 'Click near a corner of a grid square to add a half-square triangle covering that corner. Hold <b>Shift</b> for half-size squares.';
@@ -157,7 +172,47 @@ function refreshEditor(statusToo = true) {
   const c = $('#ed-c');
   if (c && b) c.innerHTML = editorContent(b);
   drawOverlay();
+  positionSelBar();
   if (statusToo && $('#ed-status') && b) $('#ed-status').innerHTML = blockStatus(b);
+}
+
+/* ---------- selection ---------- */
+function selList() {
+  const b = activeBlock();
+  if (!b || b.kind !== 'drawn') return [];
+  const list = (ui.selRegions || (ui.selRegion != null ? [ui.selRegion] : [])).filter(i => b.regions[i]);
+  return uniq(list).sort((x, y) => x - y);
+}
+function setSel(list) {
+  ui.selRegions = uniq(list.filter(i => i != null));
+  ui.selRegion = ui.selRegions.length ? ui.selRegions[ui.selRegions.length - 1] : null;
+}
+function selBounds(b, list = selList()) {
+  return bounds(list.flatMap(i => b.regions[i].pts));
+}
+// Small toolbar floating just above the selection.
+function positionSelBar() {
+  const bar = $('#sel-bar'), b = activeBlock(), svg = $('#editor'), wrap = bar?.parentElement;
+  if (!bar || !b || b.kind !== 'drawn' || !svg) return;
+  const sel = selList();
+  if (ui.tool !== 'select' || !sel.length || ed.drag) { bar.hidden = true; return; }
+  const k = gridScale(b), bb = selBounds(b, sel);
+  const ctm = svg.getScreenCTM(), wr = wrap.getBoundingClientRect();
+  const tl = new DOMPoint(bb.minX * k, bb.minY * k).matrixTransform(ctm), br = new DOMPoint(bb.maxX * k, bb.maxY * k).matrixTransform(ctm);
+  bar.innerHTML = `<span class="sb-count">${sel.length > 1 ? sel.length : ''}</span>
+    <button data-act="selPaint" title="Paint with ${esc(fabricLabel(ui.fabric))}">${swatchHtml(ui.fabric === BG ? doc.layout.background : ui.fabric, 16)}</button>
+    <button data-act="selDup" title="Duplicate (Ctrl+D)">⧉</button>
+    <button data-act="selRotate" data-arg="cw" title="Rotate 90° (E)">↻</button>
+    <button data-act="selMirror" data-arg="h" title="Mirror left–right (X)">⇋</button>
+    <button data-act="selOrder" data-arg="front" title="Bring to front">⤒</button>
+    <button data-act="selOrder" data-arg="back" title="Send to back">⤓</button>
+    <button data-act="selDelete" class="danger" title="Delete (Del)" aria-label="Delete"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2.5 4h11M6 4V2.5h4V4M4 4l.8 9.5h6.4L12 4M6.8 6.5v5M9.2 6.5v5"/></svg></button>`;
+  bar.hidden = false;
+  const bw = bar.offsetWidth, bh = bar.offsetHeight;
+  let x = (tl.x + br.x) / 2 - wr.left - bw / 2, y = tl.y - wr.top - bh - 8;
+  if (y < 4) y = br.y - wr.top + 8;
+  bar.style.left = `${clamp(x, 4, wr.width - bw - 4)}px`;
+  bar.style.top = `${clamp(y, 4, wr.height - bh - 4)}px`;
 }
 
 /* ---------- pointer interaction ---------- */
@@ -179,15 +234,29 @@ function edDown(e) {
     return;
   }
   if (tool === 'select') {
+    if (e.button === 2) return;
     const vh = e.target.closest('[data-vh]'), eh = e.target.closest('[data-eh]');
+    if (eh && e.altKey) { insertCorner(b, +eh.dataset.eh); return; }
     if (vh || eh) {
       svg.setPointerCapture(e.pointerId);
       ed.drag = vh ? { kind: 'vertex', i: +vh.dataset.vh } : { kind: 'edge', i: +eh.dataset.eh };
       return;
     }
     const ri = regionAtEvent(e);
-    ui.selRegion = ri; ui.selEdge = null;
-    refreshEditor(); renderInspector();
+    const outside = p[0] < 0 || p[1] < 0 || p[0] > b.n || p[1] > b.n;
+    if (ri == null || outside || e.ctrlKey || e.metaKey) {
+      // box select (adds to the selection with Shift)
+      svg.setPointerCapture(e.pointerId);
+      ed.drag = { kind: 'marquee', start: p, cur: null, base: e.shiftKey ? selList() : [] };
+      if (!e.shiftKey) setSel([]);
+      refreshEditor(); renderInspector();
+      return;
+    }
+    if (e.shiftKey) { const cur = selList(); setSel(cur.includes(ri) ? cur.filter(i => i !== ri) : [...cur, ri]); refreshEditor(); renderInspector(); return; }
+    if (!selList().includes(ri)) { setSel([ri]); renderInspector(); }
+    svg.setPointerCapture(e.pointerId);
+    ed.drag = { kind: 'move', start: p, ri, orig: new Map(selList().map(i => [i, b.regions[i].pts.map(q => q.slice())])), moved: false };
+    refreshEditor();
     return;
   }
   if (tool === 'polygon') {
@@ -230,9 +299,20 @@ function edMove(e) {
   const p = evtGrid(e, b), fine = e.shiftKey;
   const dr = ed.drag;
   if (dr?.kind === 'paint') { paintAt(e, b); return; }
+  if (dr?.kind === 'move') {
+    const tri = b.lattice === 'tri';
+    const sx = fine || tri ? 0.5 : 1, sy = tri ? TRI_H : (fine ? 0.5 : 1);
+    const dx = Math.round((p[0] - dr.start[0]) / sx) * sx, dy = Math.round((p[1] - dr.start[1]) / sy) * sy;
+    if (dx === dr.dx && dy === dr.dy) return;
+    dr.dx = dx; dr.dy = dy; dr.moved = dx !== 0 || dy !== 0;
+    for (const [i, pts] of dr.orig) b.regions[i].pts = pts.map(([x, y]) => [round(x + dx, 6), round(y + dy, 6)]);
+    refreshEditor(false);
+    return;
+  }
+  if (dr?.kind === 'marquee') { dr.cur = p; drawOverlay(); return; }
   if (dr?.kind === 'vertex') {
     const r = b.regions[ui.selRegion]; if (!r) return;
-    const d = snapDot(b, p, fine);
+    const d = snapDot(b, p, fine, ui.selRegion);
     if (!samePt(r.pts[dr.i], d)) { r.pts[dr.i] = d; dr.moved = true; refreshEditor(false); }
     return;
   }
@@ -264,7 +344,22 @@ function edUp(e) {
   const b = activeBlock(); const dr = ed.drag; ed.drag = null;
   if (!b || !dr) return;
   if (dr.kind === 'paint') { if (dr.changed) commit(); return; }
-  if (dr.kind === 'vertex' || dr.kind === 'edge') { if (dr.moved) { cleanupRegion(b.regions[ui.selRegion]); commit(); } return; }
+  if (dr.kind === 'vertex' || dr.kind === 'edge') { if (dr.moved) { cleanupRegion(b.regions[ui.selRegion]); commit(); } else positionSelBar(); return; }
+  if (dr.kind === 'move') {
+    if (dr.moved) { commit(); return; }
+    // a plain click on one shape of a multi-selection narrows the selection to it
+    if (selList().length > 1) { setSel([dr.ri]); refreshEditor(); renderInspector(); return; }
+    positionSelBar();
+    return;
+  }
+  if (dr.kind === 'marquee') {
+    const a = dr.start, c = dr.cur || a;
+    const box = { minX: Math.min(a[0], c[0]), maxX: Math.max(a[0], c[0]), minY: Math.min(a[1], c[1]), maxY: Math.max(a[1], c[1]) };
+    const inside = b.regions.map((r, i) => ({ i, bb: bounds(r.pts) })).filter(({ bb }) => bb.minX >= box.minX - 1e-6 && bb.maxX <= box.maxX + 1e-6 && bb.minY >= box.minY - 1e-6 && bb.maxY <= box.maxY + 1e-6).map(x => x.i);
+    setSel([...dr.base, ...inside]);
+    refreshEditor(); renderInspector();
+    return;
+  }
   if (dr.kind === 'rect') {
     const d = snapDot(b, evtGrid(e, b), e.shiftKey);
     if (!samePt(d, dr.start)) addRect(dr.start, d);
@@ -274,7 +369,17 @@ function edUp(e) {
 function edDbl(e) {
   const b = activeBlock(); if (!b) return;
   if (ui.tool === 'polygon' && ui.drawing.length >= 3) { finishPolygon(); return; }
-  const eh = e.target.closest('[data-eh]');
+  // the pointer is captured during clicks, so find what's actually under it
+  const under = document.elementFromPoint(e.clientX, e.clientY);
+  const eh = under?.closest('[data-eh]'), vh = under?.closest('[data-vh]');
+  if (ui.tool === 'select' && vh) {
+    const r = b.regions[ui.selRegion], i = +vh.dataset.vh;
+    if (!r || r.pts.length <= 3) { toast('A shape needs at least 3 corners'); return; }
+    r.pts.splice(i, 1);
+    if (r.b) { r.b.splice(i, 1); r.b[(i - 1 + r.pts.length) % r.pts.length] = 0; }
+    commit();
+    return;
+  }
   if (ui.tool === 'select' && eh) {
     const r = b.regions[ui.selRegion];
     if (r?.b) { r.b[+eh.dataset.eh] = 0; commit(); }
@@ -361,10 +466,31 @@ function blockViewKey(e) {
   const b = activeBlock();
   if (!b || b.kind !== 'drawn') return;
   const k = e.key.toLowerCase();
-  if (e.key === 'Escape') { ui.drawing = []; ui.selRegion = null; ed.triPreview = null; refreshEditor(); renderInspector(); return; }
+  const ctrl = e.ctrlKey || e.metaKey;
+  const sel = selList();
+  if (e.key === 'Escape') { ui.drawing = []; setSel([]); ed.triPreview = null; refreshEditor(); renderInspector(); return; }
   if (e.key === 'Enter' && ui.tool === 'polygon') { e.preventDefault(); finishPolygon(); return; }
   if (e.key === 'Backspace' && ui.drawing.length) { e.preventDefault(); ui.drawing.pop(); refreshEditor(); return; }
-  if ((e.key === 'Delete' || e.key === 'Backspace') && ui.selRegion != null && b.regions[ui.selRegion]) { e.preventDefault(); Actions.regionDelete(); return; }
+  if (ctrl && k === 'a') { e.preventDefault(); if (ui.tool !== 'select') ui.tool = 'select'; setSel(b.regions.map((_, i) => i)); renderView(); return; }
+  if (ctrl && k === 'c' && sel.length) { e.preventDefault(); Actions.selCopy(); return; }
+  if (ctrl && k === 'v') { e.preventDefault(); Actions.selPaste(); return; }
+  if (ctrl && k === 'd' && sel.length) { e.preventDefault(); Actions.selDup(); return; }
+  if (ctrl) return;
+  if ((e.key === 'Delete' || e.key === 'Backspace') && sel.length) { e.preventDefault(); Actions.selDelete(); return; }
+  if (sel.length && e.key.startsWith('Arrow')) {
+    e.preventDefault();
+    const st = e.shiftKey ? 0.5 : 1;
+    const d = { ArrowLeft: [-st, 0], ArrowRight: [st, 0], ArrowUp: [0, -st], ArrowDown: [0, st] }[e.key];
+    for (const i of sel) b.regions[i].pts = b.regions[i].pts.map(([x, y]) => [round(x + d[0], 6), round(y + d[1], 6)]);
+    commit();
+    return;
+  }
+  if (sel.length && ui.tool === 'select') {
+    if (k === 'q') { Actions.selRotate('ccw'); return; }
+    if (k === 'e') { Actions.selRotate('cw'); return; }
+    if (k === 'x') { Actions.selMirror('h'); return; }
+    if (k === 'y') { Actions.selMirror('v'); return; }
+  }
   const tool = BLOCK_TOOLS.find(t => t.kb.toLowerCase() === k);
   if (tool && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); Actions.blockTool(tool.key); }
 }
@@ -460,15 +586,105 @@ Actions.blockMirror = () => { const b = activeBlock(), n = b.n; if (b.kind === '
 Actions.blockClear = () => confirmModal('Clear this block?', 'Removes every shape and seam (the whole block becomes background).', 'Clear', () => { const b = activeBlock(); b.regions = []; b.seams = []; ui.selRegion = null; commit(); }, true);
 
 const selRegion = () => activeBlock()?.regions?.[ui.selRegion];
-Actions.selectRegion = i => { ui.selRegion = +i; if (ui.tool !== 'select') ui.tool = 'select'; saveUi(); renderView(); };
-Actions.regionFab = id => { const r = selRegion(); if (r) { r.fab = id; commit(); } };
-Actions.regionApp = v => { const r = selRegion(); if (r) { r.app = !!v || undefined; if (!r.app) delete r.app; commit(); } };
-Actions.regionDelete = () => { const b = activeBlock(); if (ui.selRegion == null) return; b.regions.splice(ui.selRegion, 1); ui.selRegion = null; commit(); };
-Actions.regionOrder = dir => {
-  const b = activeBlock(), i = ui.selRegion; if (i == null) return;
-  const j = dir === 'front' ? b.regions.length - 1 : dir === 'back' ? 0 : dir === 'up' ? Math.min(i + 1, b.regions.length - 1) : Math.max(i - 1, 0);
-  const [r] = b.regions.splice(i, 1); b.regions.splice(j, 0, r); ui.selRegion = j; commit();
+Actions.selectRegion = (i, el, e) => {
+  i = +i;
+  if (e?.shiftKey) { const cur = selList(); setSel(cur.includes(i) ? cur.filter(x => x !== i) : [...cur, i]); }
+  else setSel([i]);
+  if (ui.tool !== 'select') ui.tool = 'select';
+  saveUi(); renderView();
 };
+Actions.regionFab = id => { const b = activeBlock(), sel = selList(); if (!sel.length) return; for (const i of sel) b.regions[i].fab = id; commit(); };
+Actions.regionApp = v => { const b = activeBlock(); for (const i of selList()) { const r = b.regions[i]; if (v) r.app = true; else delete r.app; } commit(); };
+Actions.regionDelete = () => Actions.selDelete();
+Actions.regionOrder = dir => {
+  const b = activeBlock(), sel = selList(); if (!sel.length) return;
+  if (dir === 'front' || dir === 'back') { Actions.selOrder(dir); return; }
+  if (sel.length !== 1) return;
+  const i = sel[0], j = dir === 'up' ? Math.min(i + 1, b.regions.length - 1) : Math.max(i - 1, 0);
+  const [r] = b.regions.splice(i, 1); b.regions.splice(j, 0, r); setSel([j]); commit();
+};
+/* selection actions (toolbar, context menu, keyboard) */
+let _edClip = null;
+function selCentre(b, sel) { const bb = selBounds(b, sel); return [(bb.minX + bb.maxX) / 2, (bb.minY + bb.maxY) / 2]; }
+Actions.selDelete = () => {
+  const b = activeBlock(), sel = selList(); if (!sel.length) return;
+  for (const i of sel.slice().sort((x, y) => y - x)) b.regions.splice(i, 1);
+  setSel([]); commit(); toast(`Deleted ${plural(sel.length, 'shape')}`, 1400);
+};
+Actions.selPaint = () => Actions.regionFab(ui.fabric);
+Actions.selPick = () => { const b = activeBlock(), sel = selList(); if (!sel.length) return; ui.fabric = b.regions[sel[sel.length - 1]].fab; saveUi(); render(); toast(`Picked ${ui.fabric === BG ? 'quilt background' : fabricLabel(ui.fabric)}`, 1200); };
+Actions.selDup = () => {
+  const b = activeBlock(), sel = selList(); if (!sel.length) return;
+  const copies = sel.map(i => { const c = JSON.parse(JSON.stringify(b.regions[i])); c.pts = c.pts.map(([x, y]) => [x + 1, y + 1]); return c; });
+  const start = b.regions.length;
+  b.regions.push(...copies);
+  setSel(copies.map((_, k) => start + k)); ui.tool = 'select'; commit();
+};
+Actions.selCopy = () => { const b = activeBlock(), sel = selList(); if (!sel.length) return; _edClip = { n: b.n, regions: sel.map(i => JSON.parse(JSON.stringify(b.regions[i]))), pastes: 0 }; toast(`Copied ${plural(sel.length, 'shape')}`, 1200); };
+Actions.selPaste = () => {
+  const b = activeBlock(); if (!_edClip || !b || b.kind !== 'drawn') return;
+  _edClip.pastes++;
+  const k = b.n / _edClip.n, off = _edClip.pastes;
+  const start = b.regions.length;
+  for (const r of _edClip.regions) { const c = JSON.parse(JSON.stringify(r)); c.pts = c.pts.map(([x, y]) => [round(x * k + off, 6), round(y * k + off, 6)]); b.regions.push(c); }
+  setSel(_edClip.regions.map((_, i) => start + i)); ui.tool = 'select'; commit();
+};
+Actions.selRotate = dir => {
+  const b = activeBlock(), sel = selList(); if (!sel.length) return;
+  const [cx, cy] = selCentre(b, sel), s = dir === 'ccw' ? -1 : 1;
+  for (const i of sel) b.regions[i].pts = b.regions[i].pts.map(([x, y]) => [round(cx - s * (y - cy), 6), round(cy + s * (x - cx), 6)]);
+  commit();
+};
+Actions.selMirror = axis => {
+  const b = activeBlock(), sel = selList(); if (!sel.length) return;
+  const [cx, cy] = selCentre(b, sel);
+  for (const i of sel) {
+    const r = b.regions[i];
+    r.pts = r.pts.map(([x, y]) => axis === 'v' ? [x, round(2 * cy - y, 6)] : [round(2 * cx - x, 6), y]);
+    if (r.b) r.b = r.b.map(v => -v);
+  }
+  commit();
+};
+Actions.selOrder = dir => {
+  const b = activeBlock(), sel = selList(); if (!sel.length) return;
+  const picked = sel.map(i => b.regions[i]), rest = b.regions.filter((_, i) => !sel.includes(i));
+  b.regions = dir === 'front' ? [...rest, ...picked] : [...picked, ...rest];
+  setSel(picked.map(r => b.regions.indexOf(r))); commit();
+};
+function insertCorner(b, i) {
+  const r = b.regions[ui.selRegion]; if (!r) return;
+  const A = r.pts[i], B = r.pts[(i + 1) % r.pts.length];
+  const m = snapDot(b, [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2], true, ui.selRegion);
+  if (samePt(m, A) || samePt(m, B)) { toast('Edge too short to add a corner here'); return; }
+  r.pts.splice(i + 1, 0, m);
+  if (r.b) { r.b[i] = 0; r.b.splice(i + 1, 0, 0); }
+  commit();
+  toast('Corner added — drag it to reshape', 1400);
+}
+// Right-click a shape (any tool) for quick actions.
+function edContext(e) {
+  e.preventDefault();
+  const b = activeBlock(); if (!b) return;
+  const ri = regionAtEvent(e);
+  const items = [];
+  if (ri != null) {
+    if (!selList().includes(ri)) setSel([ri]);
+    if (ui.tool !== 'select' && ui.tool !== 'paint') ui.tool = 'select';
+    refreshEditor(); renderInspector();
+    const n = selList().length, what = n > 1 ? `${n} shapes` : 'shape';
+    items.push({ label: `Paint with ${esc(ui.fabric === BG ? 'quilt background' : fabricLabel(ui.fabric))}`, act: 'selPaint' },
+      { label: 'Pick up this fabric', act: 'selPick' }, '-',
+      { label: 'Duplicate', act: 'selDup', kb: 'Ctrl+D' }, { label: 'Copy', act: 'selCopy', kb: 'Ctrl+C' },
+      { label: 'Rotate 90°', act: 'selRotate', arg: 'cw', kb: 'E' }, { label: 'Mirror left–right', act: 'selMirror', arg: 'h', kb: 'X' }, { label: 'Mirror top–bottom', act: 'selMirror', arg: 'v', kb: 'Y' }, '-',
+      { label: 'Bring to front', act: 'selOrder', arg: 'front' }, { label: 'Send to back', act: 'selOrder', arg: 'back' }, '-',
+      { label: `Delete ${what}`, act: 'selDelete', kb: 'Del', danger: true });
+  } else {
+    items.push({ label: 'Select all shapes', act: 'selAll', kb: 'Ctrl+A' });
+    if (_edClip) items.push({ label: 'Paste', act: 'selPaste', kb: 'Ctrl+V' });
+  }
+  openMenu({ x: e.clientX, y: e.clientY }, items);
+}
+Actions.selAll = () => { const b = activeBlock(); ui.tool = 'select'; setSel(b.regions.map((_, i) => i)); renderView(); };
 Actions.regionCopies = mode => {
   const b = activeBlock(), r = selRegion(); if (!r) return;
   const n = b.n, c = n / 2;
@@ -528,6 +744,7 @@ function blockInspector() {
     <div class="btn-row">
       ${b.kind === 'drawn' ? `<button class="btn small" data-act="blockRotate" title="Rotate the design 90°">↻ Rotate</button><button class="btn small" data-act="blockMirror" title="Mirror left–right">⇋ Mirror</button>` : ''}
       <button class="btn small" data-act="blockDuplicate">Duplicate</button>
+      <button class="btn small" data-act="exportBlocks" data-arg="one" title="Save this block to a file you can import into another project">Export</button>
       ${b.kind === 'drawn' ? '<button class="btn small" data-act="blockClear">Clear</button>' : ''}
       <button class="btn small danger" data-act="blockDelete">Delete</button>
     </div>`, { key: 'block' });
@@ -546,9 +763,16 @@ function blockInspector() {
     return h;
   }
 
-  const r = selRegion();
+  const sel = selList();
+  if (sel.length > 1) {
+    const fabs = uniq(sel.map(i => b.regions[i].fab));
+    h += section(`${sel.length} shapes selected`, `<div class="hint" style="margin-top:0">Fabric (applies to all)</div>${fabricPicker(fabs.length === 1 ? fabs[0] : null, 'regionFab', { allowBg: true })}
+      <div class="btn-row"><button class="btn small" data-act="selRotate" data-arg="cw">↻ Rotate</button><button class="btn small" data-act="selMirror" data-arg="h">⇋ Mirror</button><button class="btn small" data-act="selDup">Duplicate</button></div>
+      <div class="btn-row"><button class="btn small" data-act="selOrder" data-arg="front">⤒ Front</button><button class="btn small" data-act="selOrder" data-arg="back">⤓ Back</button><button class="btn small danger" data-act="selDelete">Delete ${sel.length}</button></div>`, { key: 'shape' });
+  }
+  const r = sel.length === 1 ? b.regions[sel[0]] : null;
   if (r) {
-    const i = ui.selRegion;
+    const i = sel[0];
     let body = `<div class="hint" style="margin-top:0">Fabric</div>${fabricPicker(r.fab, 'regionFab', { allowBg: true })}
       <label class="check"><input type="checkbox" data-change="regionApp" ${r.app ? 'checked' : ''}> Appliqué (sewn on top, doesn't cut the pieces below)</label>
       <div class="btn-row"><button class="btn small" data-act="regionOrder" data-arg="back" title="Send to back">⤓ Back</button><button class="btn small" data-act="regionOrder" data-arg="down">↓</button><button class="btn small" data-act="regionOrder" data-arg="up">↑</button><button class="btn small" data-act="regionOrder" data-arg="front" title="Bring to front">⤒ Front</button></div>
@@ -563,9 +787,9 @@ function blockInspector() {
   let list = '';
   for (let i = b.regions.length - 1; i >= 0; i--) {
     const reg = b.regions[i];
-    list += `<div class="region-row" aria-pressed="${ui.selRegion === i}" data-act="selectRegion" data-arg="${i}">${reg.fab === BG ? '<span class="sw" style="background:repeating-linear-gradient(45deg,#faf7f1,#faf7f1 3px,#e9e1d2 3px,#e9e1d2 6px)"></span>' : swatchHtml(reg.fab, 16)}<span class="nm">${reg.pts.length === 2 ? 'Ellipse' : reg.pts.length === 3 ? 'Triangle' : reg.pts.length === 4 ? 'Quad' : reg.pts.length + '-sided'} · ${esc(reg.fab === BG ? 'Quilt background' : fabricLabel(reg.fab))}${reg.app ? ' · appliqué' : ''}${reg.b?.some(x => x) ? ' · curved' : ''}</span></div>`;
+    list += `<div class="region-row" aria-pressed="${sel.includes(i)}" data-act="selectRegion" data-arg="${i}">${reg.fab === BG ? '<span class="sw" style="background:repeating-linear-gradient(45deg,#faf7f1,#faf7f1 3px,#e9e1d2 3px,#e9e1d2 6px)"></span>' : swatchHtml(reg.fab, 16)}<span class="nm">${reg.pts.length === 2 ? 'Ellipse' : reg.pts.length === 3 ? 'Triangle' : reg.pts.length === 4 ? 'Quad' : reg.pts.length + '-sided'} · ${esc(reg.fab === BG ? 'Quilt background' : fabricLabel(reg.fab))}${reg.app ? ' · appliqué' : ''}${reg.b?.some(x => x) ? ' · curved' : ''}</span></div>`;
   }
-  h += section(`Shapes (${b.regions.length})`, list ? `<p class="hint" style="margin-top:0">Top of the list is in front.</p>${list}` : '<p class="hint">No shapes yet — the whole block is quilt background. Use the tools above the canvas to draw.</p>', { key: 'shapes' });
+  h += section(`Shapes (${b.regions.length})`, list ? `<p class="hint" style="margin-top:0">Top of the list is in front. Shift-click to select several.</p>${list}` : '<p class="hint">No shapes yet — the whole block is quilt background. Use the tools above the canvas to draw.</p>', { key: 'shapes' });
   h += section('Seams', `<p class="hint" style="margin-top:0">${b.seams?.length ? `${plural(b.seams.length, 'seam line')} split this block's pieces.` : 'No extra seam lines.'} Use the ✂ Seam tool to add more.</p>
     <div class="btn-row"><button class="btn small" data-act="autoSeams">Add suggested seams</button>${b.seams?.length ? '<button class="btn small" data-act="clearSeams">Remove all</button>' : ''}</div>`, { key: 'seams' });
   h += constructionSection(b, S);

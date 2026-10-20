@@ -40,6 +40,7 @@ Views.layout = {
   },
   inspector() { return layoutInspector(); },
   key(e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key.toLowerCase();
     const t = LAYOUT_TOOLS.find(x => x.kb.toLowerCase() === k);
     if (t && !(k === 'b' && doc.layout.mode === 'tess')) { Actions.layoutTool(t.key); return; }

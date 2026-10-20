@@ -153,6 +153,15 @@ input[type=color] { width: 36px; height: 30px; padding: 0 2px; border: 1px solid
 .canvas-wrap { flex: 1; display: flex; align-items: center; justify-content: center; padding: 22px; min-height: 0; position: relative; }
 .seam-card { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); width: min(560px, calc(100% - 28px)); display: flex; gap: 10px; background: var(--panel); border: 1px solid #e3c98f; border-left: 4px solid var(--accent); border-radius: 10px; box-shadow: var(--shadow); padding: 10px 12px; font-size: 12.5px; z-index: 2; animation: tin .2s ease-out; }
 .seam-card[hidden] { display: none; }
+.sel-bar { position: absolute; z-index: 3; display: flex; align-items: center; gap: 2px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 9px; box-shadow: var(--shadow); padding: 3px; }
+.sel-bar[hidden] { display: none; }
+.sel-bar button { width: 30px; height: 28px; border: 0; background: none; border-radius: 6px; cursor: pointer; font-size: 15px; display: flex; align-items: center; justify-content: center; color: var(--ink); }
+.sel-bar button:hover { background: var(--panel-2); }
+.sel-bar button.danger { color: var(--danger); }
+.sel-bar button.danger:hover { background: var(--bad-soft); }
+.sel-bar .sb-count { font-size: 11px; font-weight: 800; color: var(--ink-2); padding: 0 2px; }
+.sel-bar .sb-count:empty { display: none; }
+.editor.tool-select [data-region] { cursor: move; }
 .seam-card .sc-icon { font-size: 18px; line-height: 1.2; }
 .seam-card .btn-row { margin-top: 8px; }
 .seam-card .btn-row > .btn { flex: 0 0 auto; }

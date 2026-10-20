@@ -139,6 +139,7 @@ function sanitizeUi() {
   if (!doc.fabrics.some(f => f.id === ui.fabric)) ui.fabric = doc.fabrics[1]?.id || doc.fabrics[0]?.id;
   const b = activeBlock();
   if (!b || b.kind !== 'drawn' || !b.regions[ui.selRegion]) { ui.selRegion = null; ui.selEdge = null; }
+  ui.selRegions = (ui.selRegions || []).filter(i => b?.kind === 'drawn' && b.regions[i]);
   ui.drawing = [];
 }
 
