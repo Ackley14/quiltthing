@@ -22,7 +22,7 @@ Views.layout = {
       ? (b ? `<span class="muted">Placing</span> ${blockThumb(b, 22, 'mini')} <b>${esc(b.name)}</b> <span class="muted">${ui.placeRot ? `↻${ui.placeRot * 90}°` : ''}${ui.placeFlip ? ' ⇋' : ''}</span>` : '<span class="muted">Pick a block in the sidebar to place it</span>')
       : tool === 'paintcell' ? `<span class="muted">Painting</span> ${swatchHtml(ui.fabric === BG ? doc.layout.background : ui.fabric, 18)} <b>${esc(fabricLabel(ui.fabric))}</b>` : '';
     return `<div class="stage"><div class="toolbar">${tools}<span class="sep"></span>${placing}<div class="spacer"></div>
-        <button class="tool" data-act="toggleUi" data-arg="showSeams" aria-pressed="${!!ui.showSeams}" title="Show seam lines">Seams</button>
+        <button class="tool" data-act="toggleUi" data-arg="seamLines" aria-pressed="${!!ui.seamLines}" title="Show or hide the seam lines between pieces and blocks">Seam lines</button>
         <button class="tool" data-act="toggleUi" data-arg="grayscale" aria-pressed="${!!ui.grayscale}" title="Check value contrast in grayscale (G)">Value</button>
         ${doc.quilting.layers.length ? `<button class="tool" data-act="toggleUi" data-arg="showQuilting" aria-pressed="${!!ui.showQuilting}">Quilting</button>` : ''}
       </div>
@@ -54,7 +54,7 @@ Views.layout = {
 
 function layoutCanvasSvg(Q) {
   const q = ui.showQuilting && doc.quilting.layers.length ? quiltingSvg(Q) : '';
-  return quiltSvg(Q, { interactive: true, seams: ui.showSeams, sel: ui.selCell, quilting: q });
+  return quiltSvg(Q, { interactive: true, seams: ui.seamLines, sel: ui.selCell, quilting: q });
 }
 // Redraw inside the existing <svg> so pointer capture survives during a drag.
 function refreshLayoutCanvas() {
@@ -73,7 +73,7 @@ function layoutCountText(Q) {
   return `${plural(blocks, 'block')}${plain ? ` + ${plural(plain, 'plain square')}` : ''}`;
 }
 function layoutHint(tool) {
-  if (tool === 'place') return 'Click or drag to place · click a placed block again to rotate it · Shift-click rotates · right-click clears · R / F rotate or mirror the block under the pointer';
+  if (tool === 'place') return 'Click or drag to place · click the same block again to rotate it · hold Shift to place mirrored (Shift-click a placed block to flip it) · right-click clears · R / F rotate or mirror the block under the pointer';
   if (tool === 'paintcell') return doc.layout.mode === 'tess' ? 'Click or drag across shapes to paint them · right-click resets a shape · use Fill patterns on the right for whole-quilt colourways' : 'Paint plain squares (alternate blocks) or setting triangles with the selected fabric · right-click clears';
   return 'Click a block position to see its options on the right';
 }
@@ -109,10 +109,18 @@ function applyTool(key, first, e) {
   const b = activeBlock();
   if (!b) { if (first) toast('Pick a block in the sidebar first'); return false; }
   const cur = cellContent(key);
-  if (first && e.shiftKey && cur?.b) { rotateCell(key); return true; }
-  if (first && cur?.b === b.id && !lay.dragMoved) { rotateCell(key); return true; }
-  if (cur?.b === b.id && (cur.r || 0) === ui.placeRot && !!cur.f === ui.placeFlip) return false;
-  setCellContent(key, { b: b.id, r: ui.placeRot, f: ui.placeFlip });
+  // Shift = mirrored. A click only rotates when it wouldn't otherwise change the cell.
+  const flip = e.shiftKey ? !ui.placeFlip : ui.placeFlip;
+  if (e.shiftKey && cur?.b === b.id) {
+    if (!first) return false;
+    setCellContent(key, { ...cur, f: !cur.f });                 // flip in place, keep rotation
+    return true;
+  }
+  if (cur?.b === b.id && !!cur.f === flip) {
+    if (first && !lay.dragMoved) { rotateCell(key); return true; }
+    return false;
+  }
+  setCellContent(key, { b: b.id, r: ui.placeRot, f: flip });
   return true;
 }
 function layDown(e) {
@@ -128,6 +136,7 @@ function layDown(e) {
 }
 function layMove(e) {
   const key = layTarget(e);
+  lay.shift = e.shiftKey;
   if (lay.drag) {
     if (key && !lay.drag.keys.has(key)) {
       lay.drag.keys.add(key);
@@ -153,13 +162,18 @@ function hoverCell(key) {
   const w = Math.max(Q.W, Q.H) * 0.004;
   let ghost = '';
   if (layoutTool() === 'place' && c.size && activeBlock() && isBlockKey(key)) {
-    const g = { ...c, rot: ui.placeRot, flip: ui.placeFlip };
+    const cur = cellContent(key);
+    // preview what a click would do: mirrored with Shift, keeping rotation when flipping in place
+    const g = lay.shift && cur?.b === activeBlock().id ? { ...c, rot: cur.r || 0, flip: !cur.f } : { ...c, rot: ui.placeRot, flip: lay.shift ? !ui.placeFlip : ui.placeFlip };
     ghost = `<g opacity=".55" transform="${cellTransform(g)}">${blockSvg(activeBlock(), c.size, c.size)}</g>`;
   }
   layer.innerHTML = `${ghost}<path d="${polyToPath(c.pts)}" fill="none" stroke="#f2b134" stroke-width="${w}"/>`;
 }
 
 /* ---------- actions ---------- */
+for (const type of ['keydown', 'keyup']) document.addEventListener(type, e => {
+  if (e.key === 'Shift' && ui.view === 'layout' && !lay.drag && lay.hoverKey) { lay.shift = type === 'keydown'; hoverCell(lay.hoverKey); }
+});
 Actions.layoutTool = t => { ui.layoutTool = t; saveUi(); renderView(); };
 Actions.layoutMode = m => {
   doc.layout.mode = m; ui.selCell = null;

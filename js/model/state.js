@@ -72,7 +72,7 @@ function defaultUi() {
     placeRot: 0,
     placeFlip: false,
     selCell: null,          // layout cell key
-    showSeams: true,
+    seamLines: false,
     showPieces: false,
     grayscale: false,
     showQuilting: false,

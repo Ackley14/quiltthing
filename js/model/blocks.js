@@ -351,8 +351,17 @@ function blockSvg(block, w, h, opts = {}, depth = 0) {
     return s;
   }
   const sx = w / block.n, sy = h / block.n;
-  // nested <svg> = viewport clip, so shapes that run past the block edge are trimmed visually
-  let s = `<svg width="${w}" height="${h}" overflow="hidden"><rect width="${w}" height="${h}" fill="${fabricFill(BG)}"/>`;
+  // nested <svg> = viewport clip, so shapes that run past the block edge are trimmed visually.
+  // The clip sits a hair outside the block so each piece's edge stroke fully covers the
+  // block's outermost pixels — otherwise the background square shows through as a faint line.
+  const e = hair;
+  let s = `<svg x="${-e}" y="${-e}" width="${w + 2 * e}" height="${h + 2 * e}" viewBox="${-e} ${-e} ${w + 2 * e} ${h + 2 * e}" overflow="hidden">`;
+  // Paint only the background that is actually uncovered (not a full square underneath):
+  // a square under everything bleeds through the anti-aliased block edges as a faint line.
+  const bgFill = fabricFill(BG);
+  for (const p of blockPieces(block, w, h)) {
+    if (p.fab === BG && !p.app) s += `<path d="${polyToPath(p.pts)}${p.holes.map(hh => polyToPath(hh)).join('')}" fill="${bgFill}" fill-rule="evenodd" stroke="${bgFill}" stroke-width="${hair}" stroke-linejoin="round"/>`;
+  }
   const order = [...block.regions.map((r, i) => ({ r, i })).filter(x => !x.r.app), ...block.regions.map((r, i) => ({ r, i })).filter(x => x.r.app)];
   for (const { r, i } of order) {
     if (r.pts.length < 2) continue;

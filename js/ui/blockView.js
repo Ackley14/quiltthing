@@ -25,6 +25,7 @@ Views.block = {
     }
     const tools = BLOCK_TOOLS.map(t => `<button class="tool" data-act="blockTool" data-arg="${t.key}" aria-pressed="${ui.tool === t.key}" title="${t.label} (${t.kb})">${t.icon} ${t.label} <kbd>${t.kb}</kbd></button>`).join('');
     return `<div class="stage"><div class="toolbar">${tools}<span class="sep"></span>
+        <button class="tool" data-act="toggleSeamLines" aria-pressed="${ui.showSeamLines !== false}" title="Show or hide the red seam lines you've added">Seam lines</button>
         <button class="tool" data-act="toggleUi" data-arg="showPieces" aria-pressed="${!!ui.showPieces}" title="Outline the actual pieces you'll cut">Cut pieces</button>
         <div class="spacer"></div><span id="seam-tool-slot"></span>
       </div>
@@ -89,8 +90,8 @@ function editorContent(b) {
       s += `<line class="gridline" x1="0" y1="${i * k}" x2="${S}" y2="${i * k}" stroke-width="${hair * (i === 0 || i === b.n ? 1.4 : .8)}"/>`;
     }
   }
-  // seams
-  (b.seams || []).forEach(([A, B], i) => {
+  // seams (always shown while the seam tool is active, so they can be clicked to remove)
+  if (ui.showSeamLines !== false || ui.tool === 'seam') (b.seams || []).forEach(([A, B], i) => {
     s += `<line class="seam-line" x1="${A[0] * k}" y1="${A[1] * k}" x2="${B[0] * k}" y2="${B[1] * k}" stroke-width="${hair * 1.6}"/>`;
     if (ui.tool === 'seam') s += `<line data-seam="${i}" x1="${A[0] * k}" y1="${A[1] * k}" x2="${B[0] * k}" y2="${B[1] * k}" stroke="transparent" stroke-width="${S * 0.025}" style="cursor:pointer"/>`;
   });
@@ -404,6 +405,7 @@ function showSeamCard() {
   card.hidden = false;
   drawOverlay();
 }
+Actions.toggleSeamLines = () => { ui.showSeamLines = ui.showSeamLines === false; saveUi(); renderView(); };
 Actions.seamPreview = () => { ui.seamPreview = !ui.seamPreview; saveUi(); showSeamCard(); };
 Actions.dismissSeams = () => { const b = activeBlock(); ui.seamDismiss = { ...(ui.seamDismiss || {}), [b.id]: blockKey(b) }; ui.seamPreview = false; saveUi(); showSeamCard(); };
 Actions.undismissSeams = () => { const b = activeBlock(); if (ui.seamDismiss) delete ui.seamDismiss[b.id]; saveUi(); showSeamCard(); };

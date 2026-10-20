@@ -236,9 +236,12 @@ function makeCell(key, content, cx, cy, angle, size, row, col) {
   c.pts = rotatePoly([[cx - h, cy - h], [cx + h, cy - h], [cx + h, cy + h], [cx - h, cy + h]], angle * Math.PI / 180, cx, cy);
   return c;
 }
-function cellTransform(c) {
-  const h = c.size / 2;
-  return `translate(${round(c.cx, 4)} ${round(c.cy, 4)}) rotate(${c.angle + (c.rot || 0) * 90}) scale(${c.flip ? -1 : 1} 1) translate(${-h} ${-h})`;
+// Neighbouring shapes are drawn overlapping by this much (inches) so anti-aliasing doesn't
+// show thin background-coloured lines between blocks. Display only — cutting is unaffected.
+const DRAW_BLEED = 0.04;
+function cellTransform(c, bleed = 0) {
+  const h = c.size / 2, k = (c.size + bleed) / c.size;
+  return `translate(${round(c.cx, 4)} ${round(c.cy, 4)}) rotate(${c.angle + (c.rot || 0) * 90}) scale(${round((c.flip ? -1 : 1) * k, 5)} ${round(k, 5)}) translate(${-h} ${-h})`;
 }
 
 /* ---------- reading / writing cell content ---------- */
@@ -275,15 +278,15 @@ function quiltSvg(Q, opts = {}) {
   let s = `<svg class="${opts.cls || 'quilt-svg'}" viewBox="${vb}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"${opts.size ? ` width="${opts.size[0]}" height="${opts.size[1]}"` : ''}>`;
   s += `<defs>${defs}</defs>`;
   s += `<g${opts.faded ? ' opacity=".35"' : ''}>`;
-  for (const p of Q.patches) s += `<path d="${polyToPath(p.pts)}" fill="${fabricFill(p.fab)}" stroke="${fabricFill(p.fab)}" stroke-width="${hair * .5}"/>`;
+  for (const p of Q.patches) s += `<path d="${polyToPath(p.pts)}" fill="${fabricFill(p.fab)}" stroke="${fabricFill(p.fab)}" stroke-width="${DRAW_BLEED}"/>`;
   for (const t of Q.tiles) {
     const attr = opts.interactive && t.key ? ` data-cell="${t.key}"` : '';
-    s += `<path d="${polyToPath(t.pts)}" fill="${fabricFill(t.fab)}" stroke="${opts.seams ? 'rgba(0,0,0,.28)' : fabricFill(t.fab)}" stroke-width="${opts.seams ? hair : hair * .5}"${attr}/>`;
+    s += `<path d="${polyToPath(t.pts)}" fill="${fabricFill(t.fab)}" stroke="${opts.seams ? 'rgba(0,0,0,.28)' : fabricFill(t.fab)}" stroke-width="${opts.seams ? hair : DRAW_BLEED}"${attr}/>`;
   }
   for (const c of Q.cells) {
     const attr = opts.interactive ? ` data-cell="${c.key}"` : '';
-    if (c.b) s += `<use href="#${idp}-${c.b}" xlink:href="#${idp}-${c.b}" transform="${cellTransform(c)}"${attr}/>`;
-    else if (c.fab) s += `<path d="${polyToPath(c.pts)}" fill="${fabricFill(c.fab)}"${attr}/>`;
+    if (c.b) s += `<use href="#${idp}-${c.b}" xlink:href="#${idp}-${c.b}" transform="${cellTransform(c, DRAW_BLEED)}"${attr}/>`;
+    else if (c.fab) s += `<path d="${polyToPath(c.pts)}" fill="${fabricFill(c.fab)}" stroke="${fabricFill(c.fab)}" stroke-width="${DRAW_BLEED}"${attr}/>`;
     else s += `<path d="${polyToPath(c.pts)}" fill="#f4f1ea" stroke="#c9c2b3" stroke-width="${hair}" stroke-dasharray="${hair * 4} ${hair * 3}"${attr}/>`;
   }
   if (opts.seams) {

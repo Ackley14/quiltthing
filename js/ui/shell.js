@@ -368,7 +368,8 @@ Actions.help = () => openModal(`<h2>How Quilt Designer works</h2>
     <h4>Layout</h4>
     <div>Click / drag to place · right-click to clear</div>
     <div><kbd>R</kbd> rotate · <kbd>F</kbd> mirror selected</div>
-    <div><kbd>Shift</kbd>-click rotate a placed block</div>
+    <div>Click a placed block again to rotate it</div>
+    <div><kbd>Shift</kbd> place mirrored · <kbd>Shift</kbd>-click flips a placed block</div>
   </div>
   <div class="actions"><button class="btn primary" data-act="closeModal">Got it</button></div>`);
 Actions.about = () => openModal(`<h2>Quilt Designer ${APP_VERSION}</h2>
