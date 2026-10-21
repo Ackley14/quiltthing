@@ -14,12 +14,15 @@ const QUILT_TYPES = [
   { key: 'squares', label: 'Concentric squares', angle: 0, help: 'Nested rectangles echoing the quilt outline.' },
   { key: 'ditch', label: 'In the ditch', angle: 0, help: 'Stitches right along the seams between blocks, sashing and borders.', noSpacing: true },
   { key: 'echo', label: 'Echo each block', angle: 0, help: 'Outlines inside every block or tile, repeated inward at the spacing.' },
+  { key: 'faces', label: '3D face lines (dimensional)', angle: 0, help: 'Straight lines inside each shape, running along one of its own edges — a different direction per face, so tumbling-block cubes look more three-dimensional. For tessellations.' },
 ];
 const quiltType = k => QUILT_TYPES.find(t => t.key === k) || QUILT_TYPES[0];
 
 function newQuiltLayer(type = 'crosshatch') {
   const t = quiltType(type);
-  return { id: uid('q'), type, spacing: 2, angle: t.angle, area: 'all', amp: 0.75, wave: 4, color: '#c0392b', visible: true, echoes: 2 };
+  // faces: which edge each face's lines follow (index into the shape's corners; -1 = no lines)
+  return { id: uid('q'), type, spacing: type === 'faces' ? 0.75 : 2, angle: t.angle, area: 'all', amp: 0.75, wave: 4, color: '#c0392b', visible: true, echoes: 2,
+    dirs: { 0: 0, 1: 0, 2: 0 }, grade: true };
 }
 
 function quiltAreaRects(Q, area) {
@@ -113,6 +116,34 @@ function quiltLayerPaths(Q, layer) {
       raw = segs;
       break;
     }
+    case 'faces': {
+      // Dimensional quilting: per tile, parallel lines along one of the tile's own edges,
+      // chosen per orientation (cube face). Darker fabric can get denser lines (deeper shadow).
+      const dirs = layer.dirs || {};
+      for (const t of Q.tiles) {
+        if (t.orient == null) continue;
+        const pick = dirs[t.orient] ?? 0;
+        if (pick < 0) continue;
+        const shape = t.full || t.pts;
+        const a = shape[pick % shape.length], b = shape[(pick + 1) % shape.length];
+        const L = dist(a, b); if (L < 1e-9) continue;
+        const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L, nx = -uy, ny = ux;
+        const s2 = layer.grade !== false ? sp * (0.5 + 0.6 * hexToLab(fabricHex(t.fab))[0] / 100) : sp;
+        const proj = shape.map(q => q[0] * nx + q[1] * ny), along = t.pts.map(q => q[0] * ux + q[1] * uy);
+        const lo = Math.min(...proj), hi = Math.max(...proj), alo = Math.min(...along) - 1, ahi = Math.max(...along) + 1;
+        const n = Math.floor((hi - lo) / s2);
+        if (n < 1) continue;
+        const start = lo + (hi - lo - (n - 1) * s2) / 2;          // centre the set of lines in the shape
+        for (let k = 0; k < n; k++) {
+          const o = start + k * s2;
+          const A = [nx * o + ux * alo, ny * o + uy * alo], B = [nx * o + ux * ahi, ny * o + uy * ahi];
+          for (const [t0, t1] of lineChords(t.pts, [], A, B).chords) {
+            raw.push([[A[0] + (B[0] - A[0]) * t0, A[1] + (B[1] - A[1]) * t0], [A[0] + (B[0] - A[0]) * t1, A[1] + (B[1] - A[1]) * t1]]);
+          }
+        }
+      }
+      break;
+    }
     case 'echo': {
       const shapes = [...Q.cells.map(c => c.pts), ...Q.tiles.filter(t => t.whole).map(t => t.pts)];
       for (const s of shapes) {
@@ -169,6 +200,12 @@ function quiltingInstructions(L) {
     case 'squares': return `Stitch nested rectangles ${sp} apart ${where}, starting ${fmtLen(L.spacing / 2)} in from the edge and working inward.`;
     case 'ditch': return `Stitch in the ditch ${where}: sew right in the seam lines between blocks, sashing and borders so the stitches disappear. Do this first to stabilise the quilt.`;
     case 'echo': return `Echo quilt ${where}: stitch ${plural(L.echoes || 1, 'outline')} inside each block or tile, ${sp} apart.`;
+    case 'faces': {
+      const tum = doc.layout.mode === 'tess' && doc.layout.tess.shape === 'tumbling';
+      const names = tum ? ['top', 'right', 'left'] : ['first group of', 'second group of', 'third group of'];
+      const used = Object.entries(L.dirs || {}).filter(([, v]) => v >= 0).map(([k]) => names[k]).filter(Boolean);
+      return `Dimensional quilting: fill each ${tum ? 'cube face' : 'shape'} with straight lines about ${sp} apart running parallel to one of its own edges — a different direction on the ${used.join(', ')} faces${L.grade !== false ? ', with lines closer together on darker fabrics to deepen the shadows' : ''}. Mark the first line in each face with a hera marker, stitch to the seam and pivot or travel along the ditch to the next line, and bury thread tails where faces meet.`;
+    }
   }
   return '';
 }

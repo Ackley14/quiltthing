@@ -30,6 +30,7 @@ Views.quilting = {
         ${['lines', 'crosshatch', 'diamonds', 'wavy', 'zigzag', 'spiral'].includes(L.type) ? `<label class="f">Rotation <span class="muted">${Math.round(L.angle)}°</span><input type="range" min="0" max="180" step="5" value="${((L.angle % 180) + 180) % 180}" data-input="qAngleLive" data-change="qAngle" data-arg="${i}"></label>` : ''}
         ${t.wave ? `<div class="f-row">${lenField('Wave height', `${p}.amp`, { min: 0.1, max: 6 })}${lenField('Wave length', `${p}.wave`, { min: 0.5, max: 24 })}</div>` : ''}
         ${L.type === 'echo' ? numField('Outlines per block', `${p}.echoes`, { int: true, min: 1, max: 12 }) : ''}
+        ${L.type === 'faces' ? faceDirControls(L, p) : ''}
         <div class="f-row" style="align-items:end"><label class="f">Preview colour<input type="color" value="${L.color}" data-change="qColor" data-arg="${i}"></label>
           <label class="check"><input type="checkbox" data-bind="${p}.visible" data-type="bool" ${L.visible ? 'checked' : ''}> Show</label></div>
         <p class="hint">${esc(t.help)} ≈ ${Math.round(len / 36)} yd of stitching.</p>
@@ -40,6 +41,17 @@ Views.quilting = {
   },
 };
 
+// Per-face line direction for dimensional quilting (orientation groups present in the tessellation).
+function faceDirControls(L, p) {
+  const tiles = Qnow().tiles.filter(t => t.orient != null);
+  if (!tiles.length) return `<p class="hint">Use this with a tessellation (Layout → Tessellation) — it fills each shape with its own lines.</p>`;
+  const groups = uniq(tiles.map(t => t.orient)).sort();
+  const tum = doc.layout.mode === 'tess' && doc.layout.tess.shape === 'tumbling';
+  const label = o => tum ? ['Top faces', 'Right faces', 'Left faces'][o] : `Shapes facing ${['one way', 'the other way', 'a third way'][o]}`;
+  const opts = cur => [[0, 'Edge 1'], [1, 'Edge 2'], [-1, 'None']].map(([v, l]) => `<option value="${v}" ${(cur ?? 0) === v ? 'selected' : ''}>${l}</option>`).join('');
+  return `<div class="f-row${groups.length > 2 ? ' three' : ''}">${groups.map(o => `<label class="f">${label(o)}<select data-bind="${p}.dirs.${o}" data-type="int">${opts(L.dirs?.[o])}</select></label>`).join('')}</div>
+    <label class="check"><input type="checkbox" data-bind="${p}.grade" data-type="bool" ${L.grade !== false ? 'checked' : ''}> Denser lines on darker fabric</label>`;
+}
 Actions.addQuiltLayer = (type, el) => {
   if (!type) return;
   const L = newQuiltLayer(type);

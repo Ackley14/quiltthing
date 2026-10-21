@@ -44,7 +44,7 @@ function loadCubesSample() {
   doc.layout.mode = 'tess';
   doc.layout.borders = [{ width: 1, fabric: F.red }, { width: 2, fabric: F.dark }];
   doc.layout.binding.fabric = F.dark;
-  doc.quilting.layers = [{ ...newQuiltLayer('diamonds'), spacing: 1.5, color: '#2471a3' }];
+  doc.quilting.layers = [{ ...newQuiltLayer('faces'), color: '#2471a3' }, { ...newQuiltLayer('lines'), area: 'borders', spacing: 0.5, angle: 0, color: '#c0392b' }];
   doc.meta = { title: 'Cube Medallion', designer: '', description: 'Tumbling-block cubes in cream, tan and charcoal around a framed centre panel.', skill: 'auto' };
   ui.activeBlock = logo.id; ui.fabric = F.red; ui.view = 'layout'; ui.layoutTool = 'select'; ui.selCell = null;
   resetHistory(); saveNow(); render();
