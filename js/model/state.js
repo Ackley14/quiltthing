@@ -49,12 +49,13 @@ function newDoc() {
         sashing: { width: 0, fabric: cream, cornerstones: false, cornerFabric: mustard, outer: false } },
       onpoint: { rows: 3, cols: 3, cells: {}, fill: cream },
       tess: { shape: 'hex', size: 3, ratio: 0.5, lean: 0.5, orient: 0, width: 48, height: 60,
-        edge: 'trim', fill: cream, base: sage, colors: {}, seed: 1, snap: true, panels: [], faces: null },
+        edge: 'trim', fill: cream, base: sage, colors: {}, blocks: {}, seed: 1, snap: true, panels: [], faces: null },
       borders: [],
       binding: { width: 2.25, fabric: navy },
+      backing: { fabric: null },
     },
     quilting: { layers: [] },
-    cutting: { seam: 0.25, wof: 42, extra: 10, roundTo: 'eighth', backingWidth: 42, overhang: 4 },
+    cutting: { seam: 0.25, wof: 42, extra: 10, roundTo: 'eighth', backingWidth: 42, overhang: 4, appMethod: 'turned' },
     stash: [],
   };
 }
@@ -99,7 +100,8 @@ const undoStack = { past: [], future: [], current: null, max: 200 };
 let onDocChanged = () => {};          // set by the app shell (re-render + caches)
 
 function snapshot() { return JSON.stringify(doc); }
-function resetHistory() { undoStack.past = []; undoStack.future = []; undoStack.current = snapshot(); }
+// Called whenever the project is replaced, so it also forgets pictures of blocks that are gone.
+function resetHistory() { undoStack.past = []; undoStack.future = []; undoStack.current = snapshot(); pruneRefs(); }
 
 // Record the current doc as a new history step (no-op if nothing changed).
 function commit() {
@@ -159,7 +161,28 @@ const saveUi = debounce(() => {
   try { localStorage.setItem(STORE_UI, JSON.stringify({ ...ui, drawing: [] })); } catch {}
 }, 300);
 
+/* ---------- reference pictures ----------
+   Tracing pictures behind blocks in the editor, keyed by block id. Kept out of `doc` so big
+   images don't bloat the undo history; saved in their own storage slot and carried inside
+   project and block files. { src (JPEG data URL), ar (width ÷ height), op, sc, dx, dy, on } */
+const STORE_REFS = 'quiltthing.v3.refs';
+let refImgs = {};
+function loadRefs() {
+  try { refImgs = JSON.parse(localStorage.getItem(STORE_REFS) || '{}') || {}; } catch { refImgs = {}; }
+}
+function saveRefs() {
+  try { localStorage.setItem(STORE_REFS, JSON.stringify(refImgs)); return true; } catch (e) { console.warn('picture save failed', e); return false; }
+}
+const saveRefsSoon = debounce(saveRefs, 400);
+function pruneRefs() {
+  const before = Object.keys(refImgs).length;
+  for (const id of Object.keys(refImgs)) if (!doc.blocks[id]) delete refImgs[id];
+  if (Object.keys(refImgs).length !== before) saveRefs();
+}
+const refsFor = ids => Object.fromEntries(ids.filter(id => refImgs[id]).map(id => [id, refImgs[id]]));
+
 function loadStored() {
+  loadRefs();
   let d = null, u = null;
   try { d = JSON.parse(localStorage.getItem(STORE_DOC) || 'null'); } catch {}
   try { u = JSON.parse(localStorage.getItem(STORE_UI) || 'null'); } catch {}
@@ -183,7 +206,9 @@ function upgradeDoc(d) {
 
 function exportProject() {
   const name = slugify(doc.meta.title) + '.quilt.json';
-  downloadBlob(name, new Blob([JSON.stringify(doc, null, 1)], { type: 'application/json' }));
+  const refs = refsFor(Object.keys(doc.blocks));
+  const out = Object.keys(refs).length ? { ...doc, refImages: refs } : doc;
+  downloadBlob(name, new Blob([JSON.stringify(out, null, 1)], { type: 'application/json' }));
 }
 function parseProjectFile(text) {
   let d;
@@ -192,5 +217,6 @@ function parseProjectFile(text) {
     if (d && (d.version === 1 || d.version === 2)) throw new Error('This design was saved by an older version of Quilt Designer (v1/v2), which version 3 no longer opens.');
     throw new Error("That doesn't look like a Quilt Designer v3 project file.");
   }
+  if (d.refImages) { Object.assign(refImgs, d.refImages); delete d.refImages; saveRefs(); }
   return upgradeDoc(d);
 }

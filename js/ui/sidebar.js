@@ -90,7 +90,8 @@ function fabricUsage(id) {
   let n = 0;
   for (const b of Object.values(doc.blocks)) if (b.kind === 'drawn') for (const r of b.regions) if (r.fab === id) n++;
   const L = doc.layout;
-  const refs = [L.background, L.grid.sashing.fabric, L.grid.sashing.cornerFabric, L.onpoint.fill, L.tess.fill, L.tess.base, L.binding.fabric, ...L.borders.map(b => b.fabric)];
+  const refs = [L.background, L.grid.sashing.fabric, L.grid.sashing.cornerFabric, L.onpoint.fill, L.tess.fill, L.tess.base, L.binding.fabric, L.backing?.fabric, ...L.borders.map(b => b.fabric),
+    ...Object.values(L.tess.faces || {}), ...(L.tess.panels || []).flatMap(p => [p.fab, ...(p.frames || []).map(f => f.fabric)])];
   n += refs.filter(r => r === id).length;
   n += Object.values(L.tess.colors).filter(r => r === id).length;
   return n;
@@ -110,6 +111,9 @@ function replaceFabric(oldId, newId) {
   L.grid.cells = L.grid.cells.map(c => c?.fab === oldId ? { fab: newId } : c);
   for (const k of Object.keys(L.onpoint.cells)) if (L.onpoint.cells[k]?.fab === oldId) L.onpoint.cells[k] = { fab: newId };
   for (const s of doc.stash) s.fabric = swap(s.fabric);
+  if (L.backing) L.backing.fabric = swap(L.backing.fabric);
+  if (L.tess.faces) for (const k of Object.keys(L.tess.faces)) L.tess.faces[k] = swap(L.tess.faces[k]);
+  for (const p of L.tess.panels || []) { p.fab = swap(p.fab); for (const fr of p.frames || []) fr.fabric = swap(fr.fabric); }
 }
 Actions.deleteFabric = id => {
   if (doc.fabrics.length <= 2) { toast('Keep at least two fabrics'); return; }
@@ -133,6 +137,7 @@ Actions.confirmDeleteFabric = id => {
 function blockUseCount(id) {
   const L = doc.layout;
   let n = L.grid.cells.filter(c => c?.b === id).length + Object.values(L.onpoint.cells).filter(c => c?.b === id).length;
+  n += Object.values(L.tess.blocks || {}).filter(c => c?.b === id).length + (L.tess.panels || []).filter(p => p.b === id).length;
   for (const b of Object.values(doc.blocks)) if (b.kind === 'compound') n += b.slots.filter(s => s?.b === id).length;
   return n;
 }
@@ -143,11 +148,11 @@ function myBlocksSection() {
     const b = doc.blocks[id];
     if (!b) continue;
     const n = blockUseCount(id);
-    const target = fillingSlot && id !== ui.activeBlock && !wouldCycle(ui.activeBlock, id);
+    const target = fillingSlot && id !== ui.activeBlock && !wouldCycle(ui.activeBlock, id) && !isHexBlock(b);
     grid += `<button class="blk${target ? ' target' : ''}" aria-pressed="${ui.activeBlock === id}" data-act="pickBlock" data-arg="${id}" title="${esc(b.name)}${n ? ` — used ${n}×` : ''}">
       ${blockThumb(b, 72)}<div class="nm">${esc(b.name)}</div>${n ? `<span class="use">${n}</span>` : ''}</button>`;
   }
-  const right = `<button class="btn small ghost" data-act="newBlock" title="Draw a new block">+ New</button><button class="btn small ghost" data-act="newCompound" title="A block made of other blocks">+ Combo</button><button class="btn small ghost" data-act="blockFileMenu" title="Import or export blocks" aria-label="Import or export blocks">⇅</button>`;
+  const right = `<button class="btn small ghost" data-act="newBlock" title="Draw a new block">+ New</button><button class="btn small ghost" data-act="newHexBlock" title="A hexagon block for hexagon tessellations">+ Hex</button><button class="btn small ghost" data-act="newCompound" title="A block made of other blocks">+ Combo</button><button class="btn small ghost" data-act="blockFileMenu" title="Import or export blocks" aria-label="Import or export blocks">⇅</button>`;
   const hint = fillingSlot ? `<div class="callout">Pick a block to put in slot ${ui.activeSlot + 1}.</div>` : '';
   return section('My blocks', `${hint}${grid ? `<div class="blocks">${grid}</div>` : '<p class="empty">No blocks yet. Draw one, or pick from the library below.</p>'}`, { key: 'myblocks', right });
 }
@@ -155,6 +160,7 @@ Actions.pickBlock = id => {
   const host = activeBlock();
   if (ui.view === 'block' && host?.kind === 'compound' && ui.activeSlot != null && id !== host.id) {
     if (wouldCycle(host.id, id)) { toast("A block can't contain itself"); return; }
+    if (isHexBlock(doc.blocks[id])) { toast('Hexagon blocks go in hexagon tessellations, not combination blocks'); return; }
     host.slots[ui.activeSlot] = { b: id, r: host.slots[ui.activeSlot]?.r || 0, f: false };
     ui.activeSlot = nextEmptySlot(host, ui.activeSlot);
     commit();
@@ -183,7 +189,8 @@ function blockBundle(ids) {
   const blocks = doc.blockOrder.filter(id => all.has(id)).map(id => doc.blocks[id]);
   const fabIds = new Set();
   for (const b of blocks) if (b.kind === 'drawn') for (const r of b.regions) if (r.fab !== BG) fabIds.add(r.fab);
-  return { app: 'quiltthing', kind: 'blocks', version: 3, blocks, fabrics: doc.fabrics.filter(f => fabIds.has(f.id)) };
+  const refs = refsFor(blocks.map(b => b.id));
+  return { app: 'quiltthing', kind: 'blocks', version: 3, blocks, fabrics: doc.fabrics.filter(f => fabIds.has(f.id)), ...(Object.keys(refs).length ? { refImages: refs } : {}) };
 }
 Actions.blockFileMenu = (a, el) => openMenu(el, [
   ...(activeBlock() ? [{ label: `Export “${esc(activeBlock().name)}”…`, act: 'exportBlocks', arg: 'one' }] : []),
@@ -227,6 +234,10 @@ Actions.importBlocks = () => {
       doc.blocks[c.id] = c;
       doc.blockOrder.push(c.id);
     }
+    // tracing pictures travel with their blocks
+    let pics = 0;
+    for (const [old, r] of Object.entries(data.refImages || {})) if (idMap.has(old)) { refImgs[idMap.get(old)] = r; pics++; }
+    if (pics) saveRefs();
     if (blocks.length) ui.activeBlock = idMap.get(blocks[blocks.length - 1].id);
     commit();
     toast(`Imported ${plural(blocks.length, 'block')}${addedFabs ? ` and ${plural(addedFabs, 'new fabric')}` : ''}`);
@@ -234,6 +245,12 @@ Actions.importBlocks = () => {
   inp.click();
 };
 Actions.newBlock = () => { addBlockToDoc(newDrawnBlock(`Block ${doc.blockOrder.length + 1}`)); ui.view = 'block'; ui.tool = 'rect'; commit(); };
+Actions.newHexBlock = () => {
+  addBlockToDoc(newDrawnBlock(`Hexagon ${doc.blockOrder.length + 1}`, 6, 'hex'));
+  ui.view = 'block'; ui.tool = 'tri';
+  commit();
+  if (!(doc.layout.mode === 'tess' && doc.layout.tess.shape === 'hex')) toast('Hexagon blocks fill the shapes of a Hexagons tessellation (Layout → Tessellation)', 4500);
+};
 Actions.newCompound = () => { addBlockToDoc(newCompoundBlock(`Combo ${doc.blockOrder.length + 1}`)); ui.view = 'block'; ui.activeSlot = 0; commit(); };
 
 /* ---------- library ---------- */

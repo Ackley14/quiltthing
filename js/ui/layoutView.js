@@ -8,19 +8,22 @@ const LAYOUT_TOOLS = [
 ];
 const lay = { drag: null };
 const tessHasPanels = () => doc.layout.mode === 'tess' && (doc.layout.tess.panels || []).length > 0;
+const tessHexBlocks = () => doc.layout.mode === 'tess' && doc.layout.tess.shape === 'hex';
+// Tessellations can take blocks in inset panels, and hexagon blocks in hexagon tiles.
+const tessCanPlace = () => tessHasPanels() || tessHexBlocks();
 function layoutTool() {
-  if (doc.layout.mode === 'tess' && ui.layoutTool === 'place' && !tessHasPanels()) return 'paintcell';
+  if (doc.layout.mode === 'tess' && ui.layoutTool === 'place' && !tessCanPlace()) return 'paintcell';
   return ui.layoutTool || (doc.layout.mode === 'tess' ? 'paintcell' : 'place');
 }
 
 Views.layout = {
   main() {
     const Q = Qnow(), tool = layoutTool();
-    const tools = LAYOUT_TOOLS.filter(t => !(doc.layout.mode === 'tess' && t.key === 'place' && !tessHasPanels()))
+    const tools = LAYOUT_TOOLS.filter(t => !(doc.layout.mode === 'tess' && t.key === 'place' && !tessCanPlace()))
       .map(t => `<button class="tool" data-act="layoutTool" data-arg="${t.key}" aria-pressed="${tool === t.key}" title="${t.label} (${t.kb})">${t.icon} ${t.label} <kbd>${t.kb}</kbd></button>`).join('');
     const b = activeBlock();
     const placing = tool === 'place'
-      ? (b ? `<span class="muted">Placing</span> ${blockThumb(b, 22, 'mini')} <b>${esc(b.name)}</b> <span class="muted">${ui.placeRot ? `↻${ui.placeRot * 90}°` : ''}${ui.placeFlip ? ' ⇋' : ''}</span>` : '<span class="muted">Pick a block in the sidebar to place it</span>')
+      ? (b ? `<span class="muted">Placing</span> ${blockThumb(b, 22, 'mini')} <b>${esc(b.name)}</b> <span class="muted">${ui.placeRot ? `↻${ui.placeRot * (isHexBlock(b) ? 60 : 90)}°` : ''}${ui.placeFlip ? ' ⇋' : ''}</span>` : '<span class="muted">Pick a block in the sidebar to place it</span>')
       : tool === 'paintcell' ? `<span class="muted">Painting</span> ${swatchHtml(ui.fabric === BG ? doc.layout.background : ui.fabric, 18)} <b>${esc(fabricLabel(ui.fabric))}</b>` : '';
     return `<div class="stage"><div class="toolbar">${tools}<span class="sep"></span>${placing}<div class="spacer"></div>
         <button class="tool" data-act="toggleUi" data-arg="seamLines" aria-pressed="${!!ui.seamLines}" title="Show or hide the seam lines between pieces and blocks">Seam lines</button>
@@ -44,7 +47,7 @@ Views.layout = {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key.toLowerCase();
     const t = LAYOUT_TOOLS.find(x => x.kb.toLowerCase() === k);
-    if (t && !(k === 'b' && doc.layout.mode === 'tess' && !tessHasPanels())) { Actions.layoutTool(t.key); return; }
+    if (t && !(k === 'b' && doc.layout.mode === 'tess' && !tessCanPlace())) { Actions.layoutTool(t.key); return; }
     if (e.key === 'Escape') { ui.selCell = null; renderView(); return; }
     const key = ui.selCell || lay.hoverKey;
     if (!key) return;
@@ -71,10 +74,14 @@ function refreshLayoutCanvas() {
 }
 function layoutCountText(Q) {
   const blocks = Q.cells.filter(c => c.b).length, plain = Q.cells.filter(c => c.fab).length;
-  if (Q.mode === 'tess') return `${Q.tiles.filter(t => t.whole).length} whole ${tessShape(doc.layout.tess.shape).label.toLowerCase()}, ${Q.tiles.filter(t => !t.whole).length} edge pieces`;
+  if (Q.mode === 'tess') {
+    const hb = Q.cells.filter(c => c.hex);
+    return `${Q.tiles.filter(t => t.whole).length} whole ${tessShape(doc.layout.tess.shape).label.toLowerCase()}${hb.length ? ` + ${plural(hb.length, 'hexagon block')}` : ''}, ${Q.tiles.filter(t => !t.whole).length + hb.filter(c => c.clip).length} edge pieces`;
+  }
   return `${plural(blocks, 'block')}${plain ? ` + ${plural(plain, 'plain square')}` : ''}`;
 }
 function layoutHint(tool) {
+  if (tool === 'place' && tessHexBlocks()) return 'Click or drag across hexagons to place a hexagon block · click it again to turn it 60° · Shift places it mirrored · right-click clears · draw hexagon blocks with + Hex in My blocks';
   if (tool === 'place') return 'Click or drag to place · click the same block again to rotate it · hold Shift to place mirrored (Shift-click a placed block to flip it) · right-click clears · R / F rotate or mirror the block under the pointer';
   if (tool === 'paintcell') return doc.layout.mode === 'tess' ? 'Click or drag across shapes to paint them · right-click resets a shape · use Fill patterns on the right for whole-quilt colourways' : 'Paint plain squares (alternate blocks) or setting triangles with the selected fabric · right-click clears';
   return 'Click a block position to see its options on the right';
@@ -84,11 +91,15 @@ function layoutHint(tool) {
 function isBlockKey(key) {
   if (key[0] === 'g' || key[0] === 'p') return true;
   if (key[0] === 'o') return Qnow().cells.some(c => c.key === key);
+  if (key[0] === 't' && tessHexBlocks()) { const Q = Qnow(); return Q.cells.some(c => c.key === key) || Q.tiles.some(t => t.key === key && t.role !== 'fill'); }
   return false;
 }
+// Hexagon tiles take hexagon blocks; every other position takes square blocks.
+const keyAcceptsBlock = (key, b) => !!b && (key[0] === 't') === isHexBlock(b);
+const rotSteps = key => key[0] === 't' ? 6 : 4;
 function rotateCell(key, by = 1) {
-  const c = cellContent(key);
-  if (c?.b) setCellContent(key, { ...c, r: ((c.r || 0) + by) % 4 });
+  const c = cellContent(key), n = rotSteps(key);
+  if (c?.b) setCellContent(key, { ...c, r: ((c.r || 0) + by + n) % n });
 }
 function flipCell(key) { const c = cellContent(key); if (c?.b) setCellContent(key, { ...c, f: !c.f }); }
 function clearCell(key) { setCellContent(key, null); }
@@ -110,6 +121,10 @@ function applyTool(key, first, e) {
   if (!isBlockKey(key)) return false;
   const b = activeBlock();
   if (!b) { if (first) toast('Pick a block in the sidebar first'); return false; }
+  if (!keyAcceptsBlock(key, b)) {
+    if (first) toast(isHexBlock(b) ? 'Hexagon blocks go in the hexagons of a hexagon tessellation' : 'Hexagons take hexagon blocks — draw one with + Hex in My blocks');
+    return false;
+  }
   const cur = cellContent(key);
   // Shift = mirrored. A click only rotates when it wouldn't otherwise change the cell.
   const flip = e.shiftKey ? !ui.placeFlip : ui.placeFlip;
@@ -122,7 +137,7 @@ function applyTool(key, first, e) {
     if (first && !lay.dragMoved) { rotateCell(key); return true; }
     return false;
   }
-  setCellContent(key, { b: b.id, r: ui.placeRot, f: flip });
+  setCellContent(key, { b: b.id, r: ui.placeRot % rotSteps(key), f: flip });
   return true;
 }
 function layDown(e) {
@@ -174,14 +189,19 @@ function hoverCell(key) {
   if (!layer) return;
   if (!key) { layer.innerHTML = ''; return; }
   const Q = Qnow();
-  const c = Q.cells.find(x => x.key === key) || Q.tiles.find(x => x.key === key);
+  let c = Q.cells.find(x => x.key === key) || Q.tiles.find(x => x.key === key);
   if (!c) return;
   const w = Math.max(Q.W, Q.H) * 0.004;
   let ghost = '';
-  if (layoutTool() === 'place' && c.size && activeBlock() && isBlockKey(key)) {
+  if (!c.size && key[0] === 't' && tessHexBlocks()) {
+    // a plain hexagon: preview the block where it would sit
+    const t = doc.layout.tess, [cx, cy] = centroid(c.full || c.pts);
+    c = { ...c, cx, cy, angle: t.orient === 1 ? 0 : 30, size: 2 * t.size, rstep: 60 };
+  }
+  if (layoutTool() === 'place' && c.size && keyAcceptsBlock(key, activeBlock()) && isBlockKey(key)) {
     const cur = cellContent(key);
     // preview what a click would do: mirrored with Shift, keeping rotation when flipping in place
-    const g = lay.shift && cur?.b === activeBlock().id ? { ...c, rot: cur.r || 0, flip: !cur.f } : { ...c, rot: ui.placeRot, flip: lay.shift ? !ui.placeFlip : ui.placeFlip };
+    const g = lay.shift && cur?.b === activeBlock().id ? { ...c, rot: cur.r || 0, flip: !cur.f } : { ...c, rot: ui.placeRot % rotSteps(key), flip: lay.shift ? !ui.placeFlip : ui.placeFlip };
     ghost = `<g opacity=".55" transform="${cellTransform(g)}">${blockSvg(activeBlock(), c.size, c.size)}</g>`;
   }
   layer.innerHTML = `${ghost}<path d="${polyToPath(c.pts)}" fill="none" stroke="#f2b134" stroke-width="${w}"/>`;
@@ -206,15 +226,36 @@ Actions.cellRotate = () => { if (ui.selCell) { rotateCell(ui.selCell); commit();
 Actions.cellFlip = () => { if (ui.selCell) { flipCell(ui.selCell); commit(); } };
 Actions.cellClear = () => { if (ui.selCell) { clearCell(ui.selCell); commit(); } };
 Actions.cellEdit = () => { const c = cellContent(ui.selCell); if (c?.b) { ui.activeBlock = c.b; Actions.view('block'); } };
-Actions.cellReplace = () => { if (ui.selCell && activeBlock() && isBlockKey(ui.selCell)) { setCellContent(ui.selCell, { b: activeBlock().id, r: ui.placeRot, f: ui.placeFlip }); commit(); } };
+Actions.cellReplace = () => {
+  const b = activeBlock();
+  if (!ui.selCell || !b || !isBlockKey(ui.selCell)) return;
+  if (!keyAcceptsBlock(ui.selCell, b)) { toast(isHexBlock(b) ? 'Hexagon blocks go in the hexagons of a hexagon tessellation' : 'Hexagons take hexagon blocks'); return; }
+  setCellContent(ui.selCell, { b: b.id, r: ui.placeRot % rotSteps(ui.selCell), f: ui.placeFlip }); commit();
+};
 
-function blockCellKeys() { return Qnow().cells.map(c => c.key); }
+function blockCellKeys() {
+  const Q = Qnow(), keys = Q.cells.map(c => c.key);
+  if (tessHexBlocks()) keys.push(...Q.tiles.filter(t => t.key?.[0] === 't' && t.role !== 'fill').map(t => t.key));
+  return uniq(keys);
+}
 Actions.fillLayout = mode => {
   const b = activeBlock();
   if (!b) { toast('Pick a block in the sidebar first'); return; }
-  for (const k of blockCellKeys()) {
-    if (mode === 'empty' && cellContent(k)) continue;
-    setCellContent(k, { b: b.id, r: ui.placeRot, f: ui.placeFlip });
+  const keys = blockCellKeys().filter(k => keyAcceptsBlock(k, b));
+  if (!keys.length) { toast(isHexBlock(b) ? 'Hexagon blocks go in the hexagons of a hexagon tessellation' : 'No square block positions here'); return; }
+  for (const k of keys) {
+    if (mode === 'empty' && (k[0] === 't' ? cellContent(k)?.b : cellContent(k))) continue;
+    setCellContent(k, { b: b.id, r: ui.placeRot % rotSteps(k), f: ui.placeFlip });
+  }
+  commit();
+};
+// Hexagon blocks: random turns (in 60° steps) for a scrappy look.
+Actions.hexTurns = kind => {
+  const R = rng(Date.now() & 0xffff);
+  for (const c of Qnow().cells) {
+    if (!c.hex) continue;
+    const cur = cellContent(c.key);
+    if (cur?.b) setCellContent(c.key, { ...cur, r: kind === 'random' ? Math.floor(R() * 6) : 0 });
   }
   commit();
 };
@@ -250,12 +291,13 @@ Actions.clearLayout = () => confirmModal('Clear the layout?', 'Removes every blo
   L.grid.cells = L.grid.cells.map(() => null);
   L.onpoint.cells = {};
   L.tess.colors = {};
+  L.tess.blocks = {};
   commit();
 }, true);
 
 Actions.tessShape = v => {
   const t = doc.layout.tess, s = tessShape(v);
-  t.shape = v; t.ratio = s.ratio; t.lean = s.lean; t.orient = 0; t.colors = {};
+  t.shape = v; t.ratio = s.ratio; t.lean = s.lean; t.orient = 0; t.colors = {}; t.blocks = {};
   commit();
 };
 Actions.tessEdge = v => { doc.layout.tess.edge = v; commit(); };
@@ -392,7 +434,7 @@ function layoutInspector() {
         : `<p class="hint" style="margin-top:0">Shade every cube automatically with a light top, medium left and dark right face — the classic 3D illusion.</p><div class="btn-row"><button class="btn small primary" data-act="cubeShade">Shade as 3D cubes</button></div>`, { key: 'cubes' });
     }
     const panels = t.panels || [];
-    const contentOpts = cur => ['<option value="">— empty —</option>', ...doc.blockOrder.map(id => `<option value="${id}" ${cur.b === id ? 'selected' : ''}>${esc(doc.blocks[id].name)}</option>`), ...doc.fabrics.map(f => `<option value="fab:${f.id}" ${cur.fab === f.id ? 'selected' : ''}>Plain ${esc(f.name)}</option>`)].join('');
+    const contentOpts = cur => ['<option value="">— empty —</option>', ...doc.blockOrder.filter(id => !isHexBlock(doc.blocks[id])).map(id => `<option value="${id}" ${cur.b === id ? 'selected' : ''}>${esc(doc.blocks[id].name)}</option>`), ...doc.fabrics.map(f => `<option value="fab:${f.id}" ${cur.fab === f.id ? 'selected' : ''}>Plain ${esc(f.name)}</option>`)].join('');
     h += section('Inset panels', `<p class="hint" style="margin-top:0">A framed square set into the ${esc(tessShape(t.shape).label.replace(/ \(.*\)$/, '').toLowerCase())} — for a centre medallion, label or logo. The shapes are trimmed around it. Drag it with <b>Select</b> to move it.</p>
       ${panels.map((p, i) => {
         const pi = doc.layout.tess.panels.indexOf(p);
@@ -409,11 +451,20 @@ function layoutInspector() {
       <div class="fabpick">${doc.fabrics.map(f => `<button aria-pressed="${set.includes(f.id)}" data-act="tessToggleSet" data-arg="${f.id}" title="${esc(f.name)}">${swatchHtml(f.id, 20)}</button>`).join('')}</div>
       <div class="btn-row">${[['random', 'Random'], ['rows', 'Rows'], ['cols', 'Columns'], ['diag', 'Diagonals'], ['rings', 'Rings'], ['gradient', 'Gradient'], ['orient', 'By direction']].map(([k, l]) => `<button class="btn small" data-act="tessPattern" data-arg="${k}">${l}</button>`).join('')}</div>
       <div class="btn-row"><button class="btn small" data-act="tessPattern" data-arg="shuffle">🎲 Shuffle random</button><button class="btn small" data-act="tessPattern" data-arg="solid" title="Paint every shape with the selected fabric">Fill all</button><button class="btn small danger" data-act="clearLayout">Clear</button></div>`, { key: 'tessfill' });
+    if (t.shape === 'hex') {
+      const hb = activeBlock() && isHexBlock(activeBlock());
+      const rotBtns = [0, 1, 2, 3, 4, 5].map(r => `<button aria-pressed="${ui.placeRot % 6 === r}" data-act="placeRot" data-arg="${r}" title="${r * 60}°">${r * 60}°</button>`).join('');
+      h += section('Hexagon blocks', `<p class="hint" style="margin-top:0">Fill hexagons with your own hexagon blocks — draw one with <b>+ Hex</b> in My blocks, pick it, then use <b>Place block</b>. ${hb ? '' : '<b>Pick a hexagon block in the sidebar first.</b>'} Blocks in hexagons cut off by the edge${(t.panels || []).length ? ' or a panel' : ''} are made whole and trimmed after the top is put together.</p>
+        <div class="hint">Turn for new blocks</div><div class="seg">${rotBtns}</div>
+        <label class="check"><input type="checkbox" ${ui.placeFlip ? 'checked' : ''} data-change="placeFlip"> Mirror new blocks</label>
+        <div class="btn-row"><button class="btn small" data-act="fillLayout" data-arg="empty" ${hb ? '' : 'disabled'}>Fill plain hexagons</button><button class="btn small" data-act="fillLayout" data-arg="all" ${hb ? '' : 'disabled'}>Fill all</button></div>
+        <div class="btn-row"><button class="btn small" data-act="hexTurns" data-arg="random">🎲 Random turns</button><button class="btn small" data-act="hexTurns" data-arg="same">All upright</button></div>`, { key: 'hexblocks' });
+    }
   }
 
   if (L.mode !== 'tess') {
     const rotBtns = [0, 1, 2, 3].map(r => `<button aria-pressed="${ui.placeRot === r}" data-act="placeRot" data-arg="${r}" title="${r * 90}°">${rotIcon(r, ui.placeFlip)}</button>`).join('');
-    const altOpts = [...doc.blockOrder.filter(id => id !== ui.activeBlock).map(id => `<option value="${id}">${esc(doc.blocks[id].name)}</option>`), ...doc.fabrics.map(f => `<option value="fab:${f.id}">Plain ${esc(f.name)}</option>`)].join('');
+    const altOpts = [...doc.blockOrder.filter(id => id !== ui.activeBlock && !isHexBlock(doc.blocks[id])).map(id => `<option value="${id}">${esc(doc.blocks[id].name)}</option>`), ...doc.fabrics.map(f => `<option value="fab:${f.id}">Plain ${esc(f.name)}</option>`)].join('');
     h += section('Place blocks', `<div class="hint" style="margin-top:0">Rotation for new blocks</div><div class="rot-grid">${rotBtns}</div>
       <label class="check"><input type="checkbox" ${ui.placeFlip ? 'checked' : ''} data-change="placeFlip"> Mirror new blocks</label>
       <div class="btn-row"><button class="btn small" data-act="fillLayout" data-arg="empty">Fill empty</button><button class="btn small" data-act="fillLayout" data-arg="all">Fill all</button><button class="btn small danger" data-act="clearLayout">Clear</button></div>
@@ -425,7 +476,7 @@ function layoutInspector() {
     const c = cellContent(ui.selCell);
     const cell = Q.cells.find(x => x.key === ui.selCell);
     let body;
-    if (c?.b) body = `<p class="hint" style="margin-top:0"><b>${esc(doc.blocks[c.b].name)}</b> · ${(c.r || 0) * 90}°${c.f ? ' · mirrored' : ''}</p>
+    if (c?.b) body = `<p class="hint" style="margin-top:0"><b>${esc(doc.blocks[c.b].name)}</b> · ${(c.r || 0) * (ui.selCell[0] === 't' ? 60 : 90)}°${c.f ? ' · mirrored' : ''}</p>
       <div class="btn-row"><button class="btn small" data-act="cellRotate">↻ Rotate</button><button class="btn small" data-act="cellFlip">⇋ Mirror</button><button class="btn small" data-act="cellEdit">Edit block</button></div>
       <div class="btn-row"><button class="btn small" data-act="cellReplace" ${activeBlock() ? '' : 'disabled'}>Replace with ${esc(activeBlock()?.name || 'selected')}</button><button class="btn small danger" data-act="cellClear">Clear</button></div>`;
     else if (c?.fab) body = `<p class="hint" style="margin-top:0">Plain ${esc(fabricLabel(c.fab))}</p><div class="btn-row"><button class="btn small" data-act="cellReplace" ${cell && activeBlock() ? '' : 'disabled'}>Put ${esc(activeBlock()?.name || 'block')} here</button><button class="btn small danger" data-act="cellClear">Clear</button></div>`;

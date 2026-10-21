@@ -1,6 +1,8 @@
 /* Quilt layout engine. Every setting (straight grid, on-point, tessellation) is turned into
    one flat description of the top in quilt inches:
-     cells   — square block positions (may be rotated 45° on point), holding a block or a plain fabric
+     cells   — block positions holding a block or a plain fabric: squares (maybe on point), inset
+               panels, and hexagon tiles holding a hexagon block (cells with `clip` are cut off by
+               an edge or panel: made whole, trimmed after assembly)
      tiles   — tessellation shapes (and on-point setting triangles), each a polygon + fabric
      patches — sashing, cornerstones and borders
    Rendering, cutting, quilting lines and the printed pattern all consume this. */
@@ -208,6 +210,8 @@ function buildQuilt() {
     const holes = panels.map(pg => rectPts(pg.x0, pg.y0, pg.outer, pg.outer));
     // 3D cubes: unpainted tumbling-block diamonds take the face fabric for their direction
     const faceFab = o => t.shape === 'tumbling' && t.faces ? [t.faces.top, t.faces.right, t.faces.left][o] : null;
+    // hexagon blocks painted onto hexagon tiles
+    const hexBlockAt = key => { const c = t.shape === 'hex' && t.blocks?.[key]; return c && isHexBlock(doc.blocks[c.b]) ? c : null; };
     for (const tile of latticeTiles(t.shape, t.size, t.ratio, t.lean, t.orient, cw, ch)) {
       const bb = bounds(tile.pts);
       if (bb.maxX <= 1e-9 || bb.maxY <= 1e-9 || bb.minX >= cw - 1e-9 || bb.minY >= ch - 1e-9) continue;
@@ -221,16 +225,27 @@ function buildQuilt() {
         if (!parts.length) continue;
       }
       const fullArea = polyArea(tile.pts);
+      const blk = hexBlockAt(tile.key), blkParts = [];
       for (let pts of parts) {
         const whole = Math.abs(polyArea(pts) - fullArea) < 1e-4;
         // a panel edge that only touches a tile leaves it whole: keep its exact outline
         if (whole) pts = clipped;
         const byPanel = hits.length > 0;
         const role = whole ? 'tile' : (t.edge === 'fill' && !byPanel ? 'fill' : 'trim');
+        if (blk && role !== 'fill') { blkParts.push(pts); continue; }
         const tileRec = { key: `t${tile.key}`, tkey: tile.key, role,
           fab: role === 'fill' ? t.fill : (t.colors[tile.key] || faceFab(tile.orient) || t.base), whole,
           pts: translatePoly(pts, off, off), full: translatePoly(tile.pts, off, off), row: tile.row, col: tile.col, orient: tile.orient };
         if (role === 'fill') fills.push(tileRec); else Q.tiles.push(tileRec);
+      }
+      if (blkParts.length) {
+        // the block's flat-topped frame turns 30° to sit in pointy-topped hexagons; turns go in 60° steps
+        const [cx, cy] = centroid(tile.pts);
+        const c = makeCell(`t${tile.key}`, blk, off + cx, off + cy, t.orient === 1 ? 0 : 30, 2 * t.size, tile.row, tile.col);
+        Object.assign(c, { rstep: 60, hex: true, pts: translatePoly(tile.pts, off, off) });
+        const whole = blkParts.length === 1 && Math.abs(polyArea(blkParts[0]) - fullArea) < 1e-4;
+        if (!whole) c.clip = blkParts.map(pp => translatePoly(pp, off, off));
+        Q.cells.push(c);
       }
     }
     for (const pg of panels) {
@@ -282,9 +297,12 @@ function makeCell(key, content, cx, cy, angle, size, row, col) {
 // Neighbouring shapes are drawn overlapping by this much (inches) so anti-aliasing doesn't
 // show thin background-coloured lines between blocks. Display only — cutting is unaffected.
 const DRAW_BLEED = 0.04;
+// "Seam lines" view: seams inside blocks/tiles, and the heavier lines between blocks
+const SEAM_INK = 'rgba(20,24,30,.55)';
+const SEAM_INK_STRONG = 'rgba(20,24,30,.7)';
 function cellTransform(c, bleed = 0) {
   const h = c.size / 2, k = (c.size + bleed) / c.size;
-  return `translate(${round(c.cx, 4)} ${round(c.cy, 4)}) rotate(${c.angle + (c.rot || 0) * 90}) scale(${round((c.flip ? -1 : 1) * k, 5)} ${round(k, 5)}) translate(${-h} ${-h})`;
+  return `translate(${round(c.cx, 4)} ${round(c.cy, 4)}) rotate(${c.angle + (c.rot || 0) * (c.rstep || 90)}) scale(${round((c.flip ? -1 : 1) * k, 5)} ${round(k, 5)}) translate(${-h} ${-h})`;
 }
 
 /* ---------- reading / writing cell content ---------- */
@@ -292,7 +310,12 @@ function cellContent(key) {
   const L = doc.layout;
   if (key[0] === 'g') return L.grid.cells[+key.slice(1)] || null;
   if (key[0] === 'o') return L.onpoint.cells[key.slice(1)] || null;
-  if (key[0] === 't') { const f = L.tess.colors[key.slice(1)]; return f ? { fab: f } : null; }
+  if (key[0] === 't') {
+    const k = key.slice(1), bl = L.tess.blocks?.[k];
+    if (bl?.b && doc.blocks[bl.b]) return bl;
+    const f = L.tess.colors[k];
+    return f ? { fab: f } : null;
+  }
   if (key[0] === 'p') {
     const p = (L.tess.panels || []).find(x => x.id === key.slice(1));
     return p?.b ? { b: p.b, r: p.r || 0, f: !!p.f } : p?.fab ? { fab: p.fab } : null;
@@ -303,7 +326,13 @@ function setCellContent(key, content) {
   const L = doc.layout;
   if (key[0] === 'g') L.grid.cells[+key.slice(1)] = content;
   else if (key[0] === 'o') { if (content) L.onpoint.cells[key.slice(1)] = content; else delete L.onpoint.cells[key.slice(1)]; }
-  else if (key[0] === 't') { if (content?.fab) L.tess.colors[key.slice(1)] = content.fab; else delete L.tess.colors[key.slice(1)]; }
+  else if (key[0] === 't') {
+    const k = key.slice(1), T = L.tess;
+    T.blocks = T.blocks || {};
+    delete T.blocks[k]; delete T.colors[k];
+    if (content?.b) T.blocks[k] = { b: content.b, r: content.r || 0, f: !!content.f };
+    else if (content?.fab) T.colors[k] = content.fab;
+  }
   else if (key[0] === 'p') {
     const p = (L.tess.panels || []).find(x => x.id === key.slice(1));
     if (!p) return;
@@ -337,17 +366,22 @@ function quiltSvg(Q, opts = {}) {
   for (const p of Q.patches) s += `<path d="${polyToPath(p.pts)}" fill="${fabricFill(p.fab)}" stroke="${fabricFill(p.fab)}" stroke-width="${DRAW_BLEED}"/>`;
   for (const t of Q.tiles) {
     const attr = opts.interactive && t.key ? ` data-cell="${t.key}"` : '';
-    s += `<path d="${polyToPath(t.pts)}" fill="${fabricFill(t.fab)}" stroke="${opts.seams ? 'rgba(0,0,0,.28)' : fabricFill(t.fab)}" stroke-width="${opts.seams ? hair : DRAW_BLEED}"${attr}/>`;
+    s += `<path d="${polyToPath(t.pts)}" fill="${fabricFill(t.fab)}" stroke="${opts.seams ? SEAM_INK : fabricFill(t.fab)}" stroke-width="${opts.seams ? hair : DRAW_BLEED}"${attr}/>`;
   }
-  for (const c of Q.cells) {
+  Q.cells.forEach((c, i) => {
     const attr = opts.interactive ? ` data-cell="${c.key}"` : '';
-    if (c.b) s += `<use href="#${symId(c)}" xlink:href="#${symId(c)}" transform="${cellTransform(c, DRAW_BLEED)}"${attr}/>`;
+    if (c.b && c.clip) {
+      // cut off by an edge or panel: show only the part that's in the quilt
+      const cid = `${idp}-clip-${i}`;
+      s += `<clipPath id="${cid}"><path d="${c.clip.map(pp => polyToPath(pp)).join('')}"/></clipPath><g clip-path="url(#${cid})"><use href="#${symId(c)}" xlink:href="#${symId(c)}" transform="${cellTransform(c, DRAW_BLEED)}"${attr}/></g>`;
+    } else if (c.b) s += `<use href="#${symId(c)}" xlink:href="#${symId(c)}" transform="${cellTransform(c, DRAW_BLEED)}"${attr}/>`;
     else if (c.fab) s += `<path d="${polyToPath(c.pts)}" fill="${fabricFill(c.fab)}" stroke="${fabricFill(c.fab)}" stroke-width="${DRAW_BLEED}"${attr}/>`;
     else s += `<path d="${polyToPath(c.pts)}" fill="#f4f1ea" stroke="#c9c2b3" stroke-width="${hair}" stroke-dasharray="${hair * 4} ${hair * 3}"${attr}/>`;
-  }
+  });
   if (opts.seams) {
-    for (const c of Q.cells) if (c.b || c.fab) s += `<path d="${polyToPath(c.pts)}" fill="none" stroke="rgba(0,0,0,.3)" stroke-width="${hair}" pointer-events="none"/>`;
-    for (const p of Q.patches) s += `<path d="${polyToPath(p.pts)}" fill="none" stroke="rgba(0,0,0,.25)" stroke-width="${hair}" pointer-events="none"/>`;
+    // block outlines a touch heavier than the seams inside blocks, so the structure reads
+    for (const c of Q.cells) if (c.b || c.fab) s += `<path d="${(c.clip || [c.pts]).map(pp => polyToPath(pp)).join('')}" fill="none" stroke="${SEAM_INK_STRONG}" stroke-width="${hair * 1.5}" pointer-events="none"/>`;
+    for (const p of Q.patches) s += `<path d="${polyToPath(p.pts)}" fill="none" stroke="${SEAM_INK}" stroke-width="${hair * 1.2}" pointer-events="none"/>`;
   }
   if (opts.binding !== false && doc.layout.binding?.fabric) {
     const bw = 0.375;
@@ -365,7 +399,7 @@ function quiltSvg(Q, opts = {}) {
 }
 function blockSeamLines(block, size, hair) {
   return blockPieces(block, size, size).filter(p => !p.app)
-    .map(p => `<path d="${polyToPath(p.pts)}" fill="none" stroke="rgba(0,0,0,.22)" stroke-width="${hair}" pointer-events="none"/>`).join('');
+    .map(p => `<path d="${polyToPath(p.pts)}" fill="none" stroke="${SEAM_INK}" stroke-width="${hair}" pointer-events="none"/>`).join('');
 }
 function assemblyLabels(Q, pad) {
   const fs = pad * 0.55;

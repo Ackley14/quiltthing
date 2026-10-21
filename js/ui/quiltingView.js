@@ -5,11 +5,14 @@ Views.quilting = {
     const Q = Qnow();
     const layers = doc.quilting.layers;
     const stats = quiltingStats(Q);
-    return `<div class="stage"><div class="toolbar"><b>Quilting plan</b><div class="spacer"></div>
-        <button class="tool" data-act="toggleUi" data-arg="qFade" aria-pressed="${!!ui.qFade}" title="Fade the quilt so lines stand out">Fade quilt</button>
+    const back = ui.qSide === 'back';
+    const bk = back ? cuttingPlan(Q).backing : null, bf = doc.layout.backing?.fabric;
+    return `<div class="stage"><div class="toolbar"><b>Quilting plan</b>
+        <div class="seg" role="group" aria-label="Side"><button aria-pressed="${!back}" data-act="qSide" data-arg="front">Front</button><button aria-pressed="${back}" data-act="qSide" data-arg="back" title="The back of the quilt: backing fabric with the stitching mirrored">Back</button></div><div class="spacer"></div>
+        ${back ? '' : `<button class="tool" data-act="toggleUi" data-arg="qFade" aria-pressed="${!!ui.qFade}" title="Fade the quilt so lines stand out">Fade quilt</button>`}
         <button class="tool" data-act="toggleUi" data-arg="grayscale" aria-pressed="${!!ui.grayscale}">Value</button></div>
-      <div class="canvas-wrap">${quiltSvg(Q, { faded: !!ui.qFade, quilting: quiltingSvg(Q) })}</div>
-      <div class="status-bar">${layers.length
+      <div class="canvas-wrap">${back ? quiltBackSvg(Q) : quiltSvg(Q, { faded: !!ui.qFade, quilting: quiltingSvg(Q) })}</div>
+      <div class="status-bar">${back ? `<b>Back of the quilt</b> — turned over, so the stitching is mirrored left to right. ${bf ? `Backing: ${esc(fabricLabel(bf))}, ` : 'No backing fabric chosen yet (pick one on the right) · '}${fmtYards(bk.buyIn)} of ${fmtLen(bk.fabricWidth)}-wide fabric${bk.panels > 1 ? `, ${bk.panels} panels joined with ${bk.seams} seams (dashed)` : ', one piece'}.` : ''}${back ? '' : layers.length
         ? `About <b>${Math.round(stats.total / 36)} yd</b> of stitching · allow ~<b>${Math.ceil(stats.threadYds / 50) * 50} yd</b> of thread (top + bobbin)`
         : 'Add a quilting layer on the right to plan your stitching lines. They appear in the printed pattern before the binding step.'}</div></div>`;
   },
@@ -37,9 +40,15 @@ Views.quilting = {
         <div class="btn-row"><button class="btn small" data-act="qMove" data-arg="${i}|-1" ${i ? '' : 'disabled'}>↑</button><button class="btn small" data-act="qMove" data-arg="${i}|1" ${i < layers.length - 1 ? '' : 'disabled'}>↓</button><button class="btn small" data-act="qDup" data-arg="${i}">Duplicate</button><button class="btn small danger" data-act="qDel" data-arg="${i}">Remove</button></div>`,
       { key: 'ql-' + L.id, right: `<span class="layer-sw" style="background:${L.color}"></span>` });
     });
+    const bk = cuttingPlan(Q).backing, bf = doc.layout.backing?.fabric;
+    h += section('Backing', `<div class="hint" style="margin-top:0">Backing fabric</div>${fabricPicker(bf, 'backingFab')}
+      <div class="btn-row"><button class="btn small" data-act="backingFab" data-arg="" ${bf ? '' : 'disabled'}>None chosen</button>${ui.qSide === 'back' ? '' : '<button class="btn small" data-act="qSide" data-arg="back">See the back</button>'}</div>
+      <p class="hint">Needs ${fmtYards(bk.buyIn)} of ${fmtLen(bk.fabricWidth)}-wide fabric (${fmtSize(bk.w, bk.h)} with ${fmtLen(doc.cutting.overhang ?? 4)} extra all round)${bk.panels > 1 ? ` — ${bk.panels} panels joined with ${bk.seams} seams` : ''}. Change the fabric width in <b>Fabric</b>. A busy print on the back hides wobbly stitching; a plain one shows the quilting off.</p>`, { key: 'backing' });
     return h;
   },
 };
+Actions.qSide = v => { ui.qSide = v === 'back' ? 'back' : 'front'; saveUi(); render(); };
+Actions.backingFab = id => { doc.layout.backing = { ...(doc.layout.backing || {}), fabric: id || null }; commit(); };
 
 // Per-face line direction for dimensional quilting (orientation groups present in the tessellation).
 function faceDirControls(L, p) {

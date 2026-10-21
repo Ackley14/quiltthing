@@ -54,24 +54,25 @@ Actions.cutDiagrams = v => { ui.cutDiagrams = !!v; saveUi(); render(); };
 Actions.jumpFab = id => $(`#cut-${CSS.escape(id)}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
 function templateThumb(recipe, fab, px) {
-  const sa = doc.cutting.seam;
-  const out = inflate(recipe.outline, sa), bb = bounds(out);
+  const g = templateGeom(recipe), out = g.cut, bb = bounds(out);
   const k = px / Math.max(bb.w, bb.h);
-  return `<svg width="${round(bb.w * k, 1)}" height="${round(bb.h * k, 1)}" viewBox="${bb.x} ${bb.y} ${bb.w} ${bb.h}"><path d="${polyToPath(out)}" fill="${mix(fabricHex(fab), '#fff', .7)}" stroke="#555" stroke-width="${1 / k}" stroke-dasharray="${3 / k} ${2 / k}"/><path d="${polyToPath(recipe.outline)}" fill="${fabricFill(fab)}" stroke="#333" stroke-width="${1 / k}"/></svg>`;
+  const hd = list => list.map(h => polyToPath(h)).join('');
+  return `<svg width="${round(bb.w * k, 1)}" height="${round(bb.h * k, 1)}" viewBox="${bb.x} ${bb.y} ${bb.w} ${bb.h}"><path d="${polyToPath(out)}${hd(g.cutHoles)}" fill="${mix(fabricHex(fab), '#fff', .7)}" fill-rule="evenodd" stroke="#555" stroke-width="${1 / k}" stroke-dasharray="${3 / k} ${2 / k}"/><path d="${polyToPath(g.pts)}${hd(g.holes)}" fill="${fabricFill(fab)}" fill-rule="evenodd" stroke="#333" stroke-width="${1 / k}"/></svg>`;
 }
 Actions.tplDetail = arg => {
   const [fab, key] = arg.split('|');
   const f = cuttingPlan(Qnow()).fabrics.find(x => x.fab === fab);
   const r = f?.templates.find(t => t.recipe.key === key);
   if (!r) return;
-  const sa = r.recipe.applique ? 0.1875 : doc.cutting.seam;
-  const pts = r.recipe.outline, cut = inflate(pts, sa), bb = bounds(cut);
+  const g = templateGeom(r.recipe), sa = g.sa;
+  const pts = g.pts, cut = g.cut, bb = bounds(cut);
+  const hd = list => list.map(h => polyToPath(h)).join('');
   const k = Math.min(520 / bb.w, 420 / bb.h), pad = 30 / k;
   const angs = interiorAngles(pts);
   let s = `<svg width="${round((bb.w + 2 * pad) * k)}" height="${round((bb.h + 2 * pad) * k)}" viewBox="${bb.x - pad} ${bb.y - pad} ${bb.w + 2 * pad} ${bb.h + 2 * pad}" font-family="system-ui">
-    <path d="${polyToPath(cut)}" fill="${mix(fabricHex(fab), '#fff', .8)}" stroke="#444" stroke-width="${1.2 / k}" stroke-dasharray="${5 / k} ${3 / k}"/>
-    <path d="${polyToPath(pts)}" fill="${fabricFill(fab)}" fill-opacity=".85" stroke="#222" stroke-width="${1.6 / k}"/>`;
-  if (!r.recipe.curved) {
+    <path d="${polyToPath(cut)}${hd(g.cutHoles)}" fill="${mix(fabricHex(fab), '#fff', .8)}" fill-rule="evenodd" stroke="#444" stroke-width="${1.2 / k}" stroke-dasharray="${5 / k} ${3 / k}"/>
+    <path d="${polyToPath(pts)}${hd(g.holes)}" fill="${fabricFill(fab)}" fill-rule="evenodd" fill-opacity=".85" stroke="#222" stroke-width="${1.6 / k}"/>`;
+  if (!r.recipe.curved && pts.length <= 24) {
     pts.forEach((p, i) => {
       const q = pts[(i + 1) % pts.length], L = dist(p, q);
       const mx = (p[0] + q[0]) / 2, my = (p[1] + q[1]) / 2, c = centroid(pts);
@@ -86,6 +87,6 @@ Actions.tplDetail = arg => {
   openModal(`<h2>${esc(r.recipe.makes)} template</h2>
     <p class="muted">Fabric ${fabricLetter(fab)} · cut ${r.units} · finished ${fmtSize(bounds(pts).w, bounds(pts).h)} · cut box ${fmtSize(r.recipe.w, r.recipe.h, 'up')}</p>
     <div style="text-align:center">${s}</div>
-    <p class="hint">Solid line = sewing line (blue numbers: finished side lengths, red: angles). Dashed line = cutting line with ${fmtLen(sa)} ${r.recipe.applique ? 'turn-under' : 'seam'} allowance. The Pattern view prints this at true size.</p>
+    <p class="hint">${g.fusible ? 'Fusible appliqué: shown reversed, the way you trace it onto the paper side of fusible web — cut on the line, no allowance.' : `Solid line = sewing line (blue numbers: finished side lengths, red: angles). Dashed line = cutting line with ${fmtLen(sa)} ${r.recipe.applique ? 'turn-under' : 'seam'} allowance.`} The Pattern view prints this at true size.</p>
     <div class="actions"><button class="btn" data-act="closeModal">Close</button><button class="btn primary" data-act="view" data-arg="pattern">Go to pattern</button></div>`);
 };

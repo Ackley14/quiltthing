@@ -8,8 +8,33 @@
    A compound block arranges other blocks in slots (grid, columns or rows). */
 
 /* ---------- creation ---------- */
-function newDrawnBlock(name = 'New block', n = 4) {
+function newDrawnBlock(name = 'New block', n = 4, shape) {
+  if (shape === 'hex') return { id: uid('b'), kind: 'drawn', name, n, lattice: 'tri', shape: 'hex', regions: [], seams: [] };
   return { id: uid('b'), kind: 'drawn', name, n, lattice: 'square', regions: [], seams: [] };
+}
+
+/* ---------- block outline ----------
+   A hexagon block is drawn in the same n×n frame as a square one, as a flat-topped regular
+   hexagon touching the left and right edges, lined up with the 60° lattice. In the quilt it
+   fills one tile of a hexagon tessellation, so its frame is the tile's point-to-point width. */
+const TRI_H = Math.sqrt(3) / 2;
+const isHexBlock = b => b?.shape === 'hex';
+function hexFrame(n) {
+  const c = n / 2, h = n * TRI_H / 2;
+  return [[0, c], [n / 4, c - h], [3 * n / 4, c - h], [n, c], [3 * n / 4, c + h], [n / 4, c + h]].map(([x, y]) => [round(x, 6), round(y, 6)]);
+}
+// The block's outline in a w×h frame.
+function blockOutline(b, w, h = w) {
+  if (!isHexBlock(b)) return [[0, 0], [w, 0], [w, h], [0, h]];
+  return hexFrame(b.n).map(([x, y]) => [x * w / b.n, y * h / b.n]);
+}
+// Finished size of the block's drawing frame in the quilt.
+function blockFrameSize(b) { return isHexBlock(b) ? 2 * doc.layout.tess.size : doc.layout.blockSize; }
+// "12 × 12" for square blocks; "3 side" for hexagons (frame = point-to-point width).
+function blockSizeText(b, frame, plus = 0) {
+  if (!isHexBlock(b)) return fmtSize(frame + plus, frame + plus);
+  const side = frame / 2 + plus / Math.sqrt(3);
+  return `${fmtLen(side)} hexagon (${fmtLen(2 * side)} point to point, ${fmtLen(side * Math.sqrt(3))} flat to flat)`;
 }
 function newCompoundBlock(name = 'New compound') {
   return { id: uid('b'), kind: 'compound', name, sub: { type: 'grid', rows: 2, cols: 2 }, slots: [null, null, null, null] };
@@ -111,7 +136,7 @@ function blockKey(block, depth = 0) {
   if (block.kind === 'compound' && depth < 6) {
     return JSON.stringify([block.sub, block.slots.map(s => s ? [blockKey(doc.blocks[s.b], depth + 1), s.r || 0, !!s.f] : null)]);
   }
-  return JSON.stringify([block.n, block.regions, block.seams]);
+  return JSON.stringify([block.n, block.regions, block.seams, block.shape || '']);
 }
 
 const _pieceCache = new Map();
@@ -156,7 +181,7 @@ function makePiece(pts, holes, fab, app, curved) {
 function drawnPieces(block, w, h) {
   const sx = w / block.n, sy = h / block.n;
   const arcKeys = new Set();
-  const full = [[0, 0], [w, 0], [w, h], [0, h]];
+  const full = blockOutline(block, w, h);
   const rings = block.regions.map(r => regionRing(r, sx, sy, arcKeys));
   const isCurved = (outer, holes) => [outer, ...holes].some(ring => ring.some(p => arcKeys.has(ptKey(p))));
   const raw = [];
@@ -271,9 +296,9 @@ function optimizeHoled(p, scale, memo) {
 const _seamCache = new Map();
 function seamSuggestions(block) {
   if (!block || block.kind !== 'drawn') return { required: [], optional: [], reqPieces: 0, optPieces: 0, unresolved: 0 };
-  const key = blockKey(block) + '|' + doc.layout.blockSize;
+  const key = blockKey(block) + '|' + blockFrameSize(block);
   if (_seamCache.has(key)) return _seamCache.get(key);
-  const n = block.n, scale = doc.layout.blockSize / n;
+  const n = block.n, scale = blockFrameSize(block) / n;
   const memo = new Map();
   const res = { required: [], optional: [], reqPieces: 0, optPieces: 0, unresolved: 0 };
   for (const p of blockPieces(block, n, n)) {
@@ -356,6 +381,12 @@ function blockSvg(block, w, h, opts = {}, depth = 0) {
   // block's outermost pixels — otherwise the background square shows through as a faint line.
   const e = hair;
   let s = `<svg x="${-e}" y="${-e}" width="${w + 2 * e}" height="${h + 2 * e}" viewBox="${-e} ${-e} ${w + 2 * e} ${h + 2 * e}" overflow="hidden">`;
+  // hexagon blocks clip to their outline (again a hair outside it)
+  const hex = isHexBlock(block);
+  if (hex) {
+    const cid = uid('hx'), k = 1 + 2 * e / w;
+    s += `<clipPath id="${cid}"><path d="${polyToPath(blockOutline(block, w, h).map(([x, y]) => [w / 2 + (x - w / 2) * k, h / 2 + (y - h / 2) * k]), 4)}"/></clipPath><g clip-path="url(#${cid})">`;
+  }
   // Paint only the background that is actually uncovered (not a full square underneath):
   // a square under everything bleeds through the anti-aliased block edges as a faint line.
   const bgFill = fabricFill(BG);
@@ -369,10 +400,10 @@ function blockSvg(block, w, h, opts = {}, depth = 0) {
     const id = opts.ids ? ` data-region="${i}"` : '';
     s += `<path d="${regionPathD(r, sx, sy)}" fill="${fill}" stroke="${fill}" stroke-width="${hair}" stroke-linejoin="round"${id}/>`;
   }
-  s += `</svg>`;
+  s += hex ? `</g></svg>` : `</svg>`;
   if (opts.seams && block.seams?.length) {
     for (const [A, B] of block.seams) {
-      s += `<line x1="${A[0] * sx}" y1="${A[1] * sy}" x2="${B[0] * sx}" y2="${B[1] * sy}" stroke="rgba(0,0,0,.28)" stroke-width="${hair * 1.4}"/>`;
+      s += `<line x1="${A[0] * sx}" y1="${A[1] * sy}" x2="${B[0] * sx}" y2="${B[1] * sy}" stroke="rgba(20,24,30,.6)" stroke-width="${hair * 1.4}"/>`;
     }
   }
   if (opts.pieces) {
@@ -410,7 +441,7 @@ function analyzeBlock(block, size) {
   const all = blockPieces(block, size, size);
   const pieced = all.filter(p => !p.app);
   const applique = all.filter(p => p.app);
-  const root = splitNode(pieced, [[0, 0], [size, 0], [size, size], [0, size]], size * 1e-5);
+  const root = splitNode(pieced, blockOutline(block, size), size * 1e-5);
   const units = [];
   walkTree(root, n => { if (!n.children.length) { n.unit = n.unit || classifyUnit(n); units.push(n); } });
   const height = treeHeight(root);

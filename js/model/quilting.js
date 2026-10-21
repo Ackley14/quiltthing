@@ -102,7 +102,7 @@ function quiltLayerPaths(Q, layer) {
     case 'ditch': {
       const seen = new Set();
       const segs = [];
-      const shapes = [...Q.cells.map(c => c.pts), ...Q.tiles.map(t => t.pts), ...Q.patches.map(p => p.pts)];
+      const shapes = [...Q.cells.flatMap(c => c.clip || [c.pts]), ...Q.tiles.map(t => t.pts), ...Q.patches.map(p => p.pts)];
       for (const s of shapes) for (let i = 0; i < s.length; i++) {
         const a = s[i], b = s[(i + 1) % s.length];
         const k = [ptKey(a), ptKey(b)].sort().join('|');
@@ -145,7 +145,7 @@ function quiltLayerPaths(Q, layer) {
       break;
     }
     case 'echo': {
-      const shapes = [...Q.cells.map(c => c.pts), ...Q.tiles.filter(t => t.whole).map(t => t.pts)];
+      const shapes = [...Q.cells.filter(c => !c.clip).map(c => c.pts), ...Q.tiles.filter(t => t.whole).map(t => t.pts)];
       for (const s of shapes) {
         for (let k = 0; k < Math.max(1, layer.echoes || 1); k++) {
           const ins = inflate(s, -(sp / 2 + k * sp));
@@ -171,6 +171,32 @@ function quiltingSvg(Q, layers = doc.quilting.layers, scaleHint = 1) {
     s += `<path d="${d}" stroke="${L.color}" stroke-width="${round(w, 4)}" stroke-dasharray="${round(w * 3, 4)} ${round(w * 1.6, 4)}"/>`;
   }
   return s + '</g>';
+}
+
+// The back of the finished quilt: backing fabric with its panel seams, the binding, and the
+// quilting stitches mirrored left to right (the quilt is turned over).
+function quiltBackSvg(Q, opts = {}) {
+  const bk = cuttingPlan(Q).backing, oh = doc.cutting.overhang ?? 4;
+  const fab = doc.layout.backing?.fabric, hair = Math.max(Q.W, Q.H) * 0.0012;
+  let s = `<svg class="${opts.cls || 'quilt-svg'}" viewBox="0 0 ${round(Q.W, 3)} ${round(Q.H, 3)}" xmlns="http://www.w3.org/2000/svg"${opts.size ? ` width="${opts.size[0]}" height="${opts.size[1]}"` : ''}>`;
+  s += `<rect width="${round(Q.W, 3)}" height="${round(Q.H, 3)}" fill="${fab ? fabricFill(fab) : '#f1eee7'}"/>`;
+  if (bk.panels > 1) {
+    // panels share the backing (quilt + overhang) equally; seams in quilt coordinates
+    const across = bk.seams === 'vertical' ? bk.w : bk.h;
+    for (let k = 1; k < bk.panels; k++) {
+      const v = round(-oh + across * k / bk.panels, 3);
+      s += bk.seams === 'vertical'
+        ? `<line x1="${v}" y1="0" x2="${v}" y2="${round(Q.H, 3)}" stroke="rgba(20,24,30,.45)" stroke-width="${hair * 1.4}" stroke-dasharray="${hair * 8} ${hair * 5}"/>`
+        : `<line x1="0" y1="${v}" x2="${round(Q.W, 3)}" y2="${v}" stroke="rgba(20,24,30,.45)" stroke-width="${hair * 1.4}" stroke-dasharray="${hair * 8} ${hair * 5}"/>`;
+    }
+  }
+  if (doc.layout.binding?.fabric) {
+    const bw = 0.375;
+    s += `<rect x="${bw / 2}" y="${bw / 2}" width="${round(Q.W - bw, 4)}" height="${round(Q.H - bw, 4)}" fill="none" stroke="${fabricFill(doc.layout.binding.fabric)}" stroke-width="${bw}"/>`;
+  }
+  const layers = (opts.layers || doc.quilting.layers).filter(L => L.visible);
+  if (layers.length) s += `<g transform="translate(${round(Q.W, 4)} 0) scale(-1 1)">${quiltingSvg(Q, layers, opts.scaleHint || 1)}</g>`;
+  return s + '</svg>';
 }
 
 function quiltingStats(Q) {

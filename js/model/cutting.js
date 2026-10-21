@@ -70,12 +70,23 @@ function recipeFor(cls, sa, opts = {}) {
       const mar = minAreaRect(cutOutline);
       const bb = bounds(cls.pts);
       const app = opts.applique;
-      return { key: `${app ? 'app' : 'tpl'}:${outlineSignature(cls.pts)}`, method: 'template', applique: app, curved: cls.curved,
-        w: mar.w, h: mar.h, outline: translatePoly(cls.pts, -bb.x, -bb.y), cutBox: mar, yield: 1, makes: shapeName(cls), holed: cls.shape === 'holed',
+      const holes = (opts.holes || []).map(h => translatePoly(h, -bb.x, -bb.y));
+      return { key: `${app ? 'app' : 'tpl'}:${outlineSignature(cls.pts)}${holes.map(h => '/' + outlineSignature(h)).join('')}`, method: 'template', applique: app, curved: cls.curved,
+        w: mar.w, h: mar.h, outline: translatePoly(cls.pts, -bb.x, -bb.y), holes, cutBox: mar, yield: 1, makes: shapeName(cls), holed: cls.shape === 'holed',
         // regular hexagons nest in a honeycomb; offsetting by sa grows the side by 2·sa/√3
         hexSide: cls.shape === 'hex' && !app ? cls.side + 2 * sa / Math.sqrt(3) : null };
     }
   }
+}
+// Geometry of a printed template. Pieced templates get the seam allowance; turned-edge appliqué
+// a 3/16" turn-under; fusible appliqué is printed reversed with no allowance, ready to trace
+// onto the paper side of fusible web.
+function templateGeom(recipe) {
+  const fusible = !!recipe.applique && doc.cutting.appMethod === 'fusible';
+  const sa = recipe.applique ? (fusible ? 0 : 0.1875) : doc.cutting.seam;
+  let pts = recipe.outline, holes = recipe.holes || [];
+  if (fusible) { const bb = bounds(pts), ax = bb.x + bb.w / 2; pts = mirrorPolyX(pts, ax); holes = holes.map(h => mirrorPolyX(h, ax)); }
+  return { sa, fusible, pts, holes, cut: inflate(pts, sa), cutHoles: holes.map(h => inflate(h, -sa)) };
 }
 function recipeStitchMain(rect, sa) {
   return recipeFor({ shape: 'rect', w: rect.w, h: rect.h }, sa);
@@ -118,12 +129,13 @@ function collectCutItems(Q) {
     for (const p of all) {
       if (handled.has(p)) continue;
       // mirrored placements only matter for pieces that have a left and right hand
-      let cls = p.cls;
+      let cls = p.cls, holes = p.holes;
       if (flip && ['rtri', 'para', 'tri', 'quad', 'poly', 'curved', 'holed'].includes(cls.shape)) {
         cls = classifyPiece(mirrorPolyX(p.pts, size / 2), { curved: p.curved });
+        holes = holes.map(h => mirrorPolyX(h, size / 2));
         if (p.cls.shape === 'holed') cls.shape = 'holed';
       }
-      add(p.fab, recipeFor(cls, sa, { directional: isDir(p.fab), applique: p.app }), n, name, use(p));
+      add(p.fab, recipeFor(cls, sa, { directional: isDir(p.fab), applique: p.app, holes }), n, name, use(p));
     }
   }
   // tiles & setting triangles
@@ -435,7 +447,7 @@ function fabricInstructions(f) {
     rows.push({ kind: 'joined', head: `Cut ${plural(j.count, 'strip')} ${fmtLen(j.w, 'up')} × WOF for ${j.src.toLowerCase()}`, parts: [desc], j });
   }
   for (const r of f.templates) {
-    rows.push({ kind: 'template', head: `Cut ${r.units} × ${r.recipe.makes.toLowerCase()} from template`, parts: [r.recipe.applique ? 'Appliqué piece: add a scant ¼" turn-under allowance as you cut.' : 'Trace the template, cut on the dashed (seam allowance) line.'], r });
+    rows.push({ kind: 'template', head: `Cut ${r.units} × ${r.recipe.makes.toLowerCase()} from template`, parts: [r.recipe.applique ? (doc.cutting.appMethod === 'fusible' ? 'Fusible appliqué: trace the reversed template onto fusible web, fuse it to the wrong side of the fabric and cut on the line.' : 'Appliqué piece: add a scant ¼" turn-under allowance as you cut.') : 'Trace the template, cut on the dashed (seam allowance) line.'], r });
   }
   return rows;
 }

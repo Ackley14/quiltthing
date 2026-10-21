@@ -8,7 +8,7 @@ function autoSkill(Q, plan) {
   const blocks = uniq(Q.cells.filter(c => c.b).map(c => c.b)).map(id => doc.blocks[id]);
   if (blocks.length > 3) score++;
   for (const b of blocks) {
-    const an = analyzeBlock(b, Q.BS);
+    const an = analyzeBlock(b, blockFrameSize(b));
     if (an.setIn) score += 2;
     if (an.units.some(u => u.unit.type === 'curved')) score += 2;
     if (an.applique.length) score++;
@@ -28,7 +28,69 @@ function patternFabricKeyTable(plan, compact) {
   return h + '</tbody></table>';
 }
 
-// Block diagram with fabric letters (size in inches on paper).
+/* ---------- piece codes ----------
+   Every distinct cut shape gets a short code: its fabric letter plus a number in cutting order
+   (A1, A2, B1…). The cutting list, block diagrams and the assembly map all use them, so any
+   piece can be followed from the fabric to its place in the quilt. */
+function pieceCodes(plan) {
+  const byKey = new Map(), list = [];
+  for (const f of plan.fabrics) {
+    let n = 0;
+    fabricSheet(f).rows.forEach((row, i) => {
+      for (const r of row.group?.recipes || (row.a ? [row.a] : row.r ? [row.r] : [])) {
+        const k = `${f.fab}|${r.recipe.key}`;
+        if (byKey.has(k)) continue;
+        const e = { code: `${fabricLetter(f.fab)}${++n}`, fab: f.fab, step: i + 1, r };
+        byKey.set(k, e); list.push(e);
+      }
+    });
+  }
+  const forRow = row => (row.group?.recipes || (row.a ? [row.a] : row.r ? [row.r] : [])).map(r => list.find(e => e.r === r)).filter(Boolean);
+  return { list, forRow, of: (fab, key) => byKey.get(`${resolveFab(fab)}|${key}`) };
+}
+const codeTag = c => `<span class="pcode">${c}</span>`;
+// The recipe a tessellation tile is cut with (must match collectCutItems).
+function tileRecipeKey(t, sa) {
+  return recipeFor(classifyPiece(t.role === 'trim' && t.full ? t.full : t.pts), sa, { directional: !!fabricById(t.fab).directional }).key;
+}
+// Piece object → its code(s) for one block (mirrored copies cut differently get a second code).
+function blockPieceCodes(codes, blockId, size) {
+  const all = blockPieces(doc.blocks[blockId], size, size), out = new Map();
+  for (const e of codes.list) {
+    const u = e.r.uses?.get(blockId);
+    if (!u) continue;
+    for (const i of u.idx) { const p = all[i]; if (p) out.set(p, [...(out.get(p) || []), e.code]); }
+  }
+  return out;
+}
+
+// Where to write a piece's label: the spot inside it farthest from any edge (centroids of
+// L-shapes, rings and pieces under appliqué can land somewhere else entirely).
+function labelSpot(pts, holes = [], avoid = []) {
+  const c = centroid(pts);
+  const inside = q => pointInPoly(q, pts) && !holes.some(h => pointInPoly(q, h)) && !avoid.some(a => pointInPoly(q, a));
+  const rings = [pts, ...holes, ...avoid];
+  const clearance = q => {
+    let d = Infinity;
+    for (const r of rings) for (let i = 0; i < r.length; i++) {
+      const a = r[i], b = r[(i + 1) % r.length], dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy || 1e-12;
+      const t = clamp(((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / L2, 0, 1);
+      d = Math.min(d, Math.hypot(q[0] - a[0] - t * dx, q[1] - a[1] - t * dy));
+    }
+    return d;
+  };
+  let best = inside(c) ? c : null, bd = best ? clearance(c) * 1.15 : -1;   // keep the centroid unless clearly worse
+  const bb = bounds(pts), N = 14;
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+    const q = [bb.minX + bb.w * (i + 0.5) / N, bb.minY + bb.h * (j + 0.5) / N];
+    if (!inside(q)) continue;
+    const d = clearance(q);
+    if (d > bd) { bd = d; best = q; }
+  }
+  return best || c;
+}
+
+// Block diagram with fabric letters, or piece codes when opts.codes is given (size in inches on paper).
 function blockDiagramSvg(block, BS, paperIn, opts = {}) {
   const an = analyzeBlock(block, BS);
   const gap = opts.level ? BS * 0.06 : 0;
@@ -51,9 +113,10 @@ function blockDiagramSvg(block, BS, paperIn, opts = {}) {
     const fs = BS * 0.055;
     for (const { p, dx, dy } of [...placed, ...(opts.level ? [] : app.map(p => ({ p, dx: 0, dy: 0 })))]) {
       if (p.cls.area < (BS * 0.07) ** 2) continue;
-      const [cx, cy] = centroid(p.pts);
+      const [cx, cy] = labelSpot(p.pts, p.holes, p.app || opts.level ? [] : app.map(a => a.pts));
       const ink = inkOn(fabricHex(p.fab));
-      s += `<text x="${round(cx + dx, 3)}" y="${round(cy + dy, 3)}" font-size="${round(fs, 3)}" text-anchor="middle" dominant-baseline="central" font-family="system-ui,sans-serif" font-weight="700" fill="${ink}">${fabricLetter(p.fab)}</text>`;
+      const label = opts.codes?.get(p)?.join('/') || fabricLetter(p.fab);
+      s += `<text x="${round(cx + dx, 3)}" y="${round(cy + dy, 3)}" font-size="${round(label.length > 3 ? fs * 0.75 : fs, 3)}" text-anchor="middle" dominant-baseline="central" font-family="system-ui,sans-serif" font-weight="700" fill="${ink}">${label}</text>`;
     }
   }
   return s + '</svg>';
@@ -138,26 +201,27 @@ function blockStepsHtml(block, BS, sa, copies = 1) {
     }
     let text = parts.join('. ') + '.';
     if (descr.diag) text += ' Diagonal edges are cut on the bias and stretch easily: pin well, centre each piece so its points ("dog ears") overhang equally at both ends, and press without steam. Trim the dog ears after sewing.';
-    if (isRoot) text += ` Press, then square the block to ${fmtSize(BS + 2 * sa, BS + 2 * sa)}.`;
+    if (isRoot) text += isHexBlock(block) ? ` Press, then trim the hexagon to ${blockSizeText(block, BS, 2 * sa)} (¼" beyond each point of the sewn shape).` : ` Press, then square the block to ${fmtSize(BS + 2 * sa, BS + 2 * sa)}.`;
     else if (descr.cols) text += ' Press seams in alternate directions from row to row so they nest.';
     steps.push({ text, diag: blockDiagramSvg(block, BS, STEP_DIAG_IN, { level: k }) });
   }
   if (an.applique.length) {
     steps.push({ text: `Appliqué ${plural(an.applique.length, 'piece')} (${uniq(an.applique.map(p => fabricLetter(p.fab))).map(l => `<b>${l}</b>`).join(', ')}) onto the block as shown — turn the edges under by hand, or fuse and stitch around the edge.`, diag: blockDiagramSvg(block, BS, STEP_DIAG_IN) });
   }
-  if (!steps.length) steps.push({ text: `This block is a single piece — cut it at ${fmtSize(BS + 2 * sa, BS + 2 * sa)}.`, diag: '' });
+  if (!steps.length) steps.push({ text: `This block is a single piece — cut it at ${isHexBlock(block) ? blockSizeText(block, BS, 2 * sa) : fmtSize(BS + 2 * sa, BS + 2 * sa)}.`, diag: '' });
   return steps;
 }
 
-function templateSvg(t, sa, maxW, maxH) {
-  const pts = t.outline, cut = inflate(pts, sa);
+function templateSvg(t, maxW, maxH) {
+  const g = templateGeom(t.r.recipe), pts = g.pts, cut = g.cut;
   const cb = bounds(cut);
+  const holesD = list => list.map(h => polyToPath(h)).join('');
   const pad = 0.15;
   const W = cb.w + 2 * pad, H = cb.h + 2 * pad;
   const tilesX = Math.ceil(W / maxW - 1e-9), tilesY = Math.ceil(H / maxH - 1e-9);
   const dom = fabricHex(t.fab);
-  const inner = `<path d="${polyToPath(cut)}" fill="${mix(dom, '#ffffff', .82)}" stroke="#2b3a4a" stroke-width="0.012" stroke-dasharray="0.06 0.04"/>
-    <path d="${polyToPath(pts)}" fill="none" stroke="#2b3a4a" stroke-width="0.016"/>
+  const inner = `<path d="${polyToPath(cut)}${holesD(g.cutHoles)}" fill="${mix(dom, '#ffffff', .82)}" fill-rule="evenodd" stroke="#2b3a4a" stroke-width="0.012"${g.sa ? ' stroke-dasharray="0.06 0.04"' : ''}/>
+    ${g.sa ? `<path d="${polyToPath(pts)}${holesD(g.holes)}" fill="none" stroke="#2b3a4a" stroke-width="0.016"/>` : ''}
     <text x="${round(cb.x + cb.w / 2, 3)}" y="${round(cb.y + cb.h / 2, 3)}" font-size="${round(Math.min(0.32, Math.min(cb.w, cb.h) / 4), 3)}" text-anchor="middle" dominant-baseline="central" font-family="system-ui,sans-serif" font-weight="700" fill="#2b3a4a">${t.id} · ${fabricLetter(t.fab)}</text>
     ${Math.min(cb.w, cb.h) > 1.4 ? `<path d="M${round(cb.x + cb.w * .25, 3)},${round(cb.y + cb.h / 2 + .32, 3)}h${round(cb.w * .5, 3)}" stroke="#2b3a4a" stroke-width=".012" marker-start="url(#arw)" marker-end="url(#arw)"/>` : ''}`;
   const tiles = [];
@@ -168,6 +232,88 @@ function templateSvg(t, sa, maxW, maxH) {
       <defs><marker id="arw" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="#2b3a4a"/></marker></defs>${inner}</svg>` });
   }
   return { tiles, tilesX, tilesY };
+}
+
+// Tessellation assembly map: every shape labelled with its piece code (blocks with #n), rows
+// numbered, and a legend. When the labels would be too small to read on one page, the map is
+// also printed in sections at a larger scale.
+function assemblyMap(Q, codes, sa, page, tplList, blockJobs) {
+  const MIN_LABEL_IN = 0.085;                       // ≈ 6pt on paper
+  const whole = Q.tiles.find(t => t.whole) || Q.tiles[0];
+  const fs0 = whole ? Math.sqrt(polyArea(whole.full || whole.pts)) * 0.27 : 1;
+  const blockNo = new Map(uniq(blockJobs.map(j => j.id)).map((id, i) => [id, i + 1]));
+  const counts = new Map();
+  let labels = '';
+  const txt = (x, y, fs, fill, t) => `<text x="${round(x, 3)}" y="${round(y, 3)}" font-size="${round(fs, 3)}" text-anchor="middle" dominant-baseline="central" font-family="system-ui,sans-serif" font-weight="700" fill="${fill}">${t}</text>`;
+  for (const t of Q.tiles) {
+    const e = codes.of(t.fab, tileRecipeKey(t, sa));
+    if (!e) continue;
+    const c = counts.get(e) || { whole: 0, trim: 0 };
+    if (t.whole) c.whole++; else c.trim++;
+    counts.set(e, c);
+    const fs = Math.min(fs0, Math.sqrt(polyArea(t.pts)) * 0.4);
+    if (fs < fs0 * 0.4) continue;                   // a sliver: its code is in the legend
+    const [x, y] = labelSpot(t.pts);
+    labels += txt(x, y, fs, inkOn(fabricHex(t.fab)), e.code);
+  }
+  for (const c of Q.cells) if (c.b) {
+    const [x, y] = c.clip ? centroid(c.clip[0]) : [c.cx, c.cy];
+    const fs = Math.min(c.size * 0.16, fs0 * 1.1);
+    labels += `<circle cx="${round(x, 3)}" cy="${round(y, 3)}" r="${round(fs * 0.85, 3)}" fill="#fff" fill-opacity=".85" stroke="#2b3a4a" stroke-width="${round(fs * 0.08, 3)}"/>` + txt(x, y, fs, '#2b3a4a', `#${blockNo.get(c.b) || '?'}`);
+  }
+  const svgAt = (size, vb, extra = '') => {
+    let s = quiltSvg(Q, { idp: 'pm', size, labels: !vb, seams: true, binding: false });
+    s = s.replace('<g class="hover-layer"', `<g pointer-events="none">${labels}${extra}</g><g class="hover-layer"`);
+    if (vb) s = s.replace(/viewBox="[^"]*"/, `viewBox="${vb.map(v => round(v, 3)).join(' ')}"`);
+    return s;
+  };
+  // one page if the labels are readable there, otherwise sections too
+  const heroW = page.w * 0.86, heroH = page.h * 0.46;
+  const k1 = Math.min(heroW / (Q.W * 1.08), heroH / (Q.H * 1.08));
+  const hero = `<div class="hero">${svgAt([round(Q.W * 1.08 * k1, 3) + 'in', round(Q.H * 1.08 * k1, 3) + 'in'])}</div>`;
+  const sections = [];
+  if (k1 < MIN_LABEL_IN / fs0 * 0.95) {
+    // split the pieced centre (borders carry no labels) into equal parts big enough to read
+    const I = Q.inner, pad = fs0 * 2.4, ov = fs0 * 1.5;
+    const availW = page.w, availH = page.h * 0.8, need = MIN_LABEL_IN / fs0;
+    const nx = Math.ceil((I.w + pad) * need / availW - 1e-6), ny = Math.ceil(I.h * need / availH - 1e-6);
+    const w = I.w / nx, hh = I.h / ny;
+    const k = Math.min(availW / (w + 2 * ov + pad), availH / (hh + 2 * ov));
+    const rowsY = new Map();
+    for (const t of Q.tiles) if (t.row !== undefined) { const r = rowsY.get(t.row) || []; r.push(centroid(t.pts)[1]); rowsY.set(t.row, r); }
+    const rows = [...rowsY.keys()].sort((a, b) => a - b).map((r, i) => ({ n: i + 1, y: sum(rowsY.get(r)) / rowsY.get(r).length }));
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      const x0 = I.x + Math.max(0, i * w - ov), y0 = I.y + Math.max(0, j * hh - ov), x1 = I.x + Math.min(I.w, (i + 1) * w + ov), y1 = I.y + Math.min(I.h, (j + 1) * hh + ov);
+      const inRows = rows.filter(r => r.y >= y0 && r.y <= y1);
+      const fsR = fs0 * 1.1;
+      const rowNums = `<rect x="${round(x0 - pad, 3)}" y="${round(y0, 3)}" width="${round(pad, 3)}" height="${round(y1 - y0, 3)}" fill="#fff"/>` + inRows.map(r => `<text x="${round(x0 - pad / 2, 3)}" y="${round(r.y, 3)}" font-size="${round(fsR, 3)}" text-anchor="middle" dominant-baseline="central" font-family="system-ui,sans-serif" font-weight="700" fill="#2b3a4a">${r.n}</text>`).join('');
+      const where = nx > 1 ? (i === 0 ? ', left side' : i === nx - 1 ? ', right side' : ', middle') : '';
+      const ovw = `<svg class="map-key" viewBox="0 0 ${round(Q.W, 2)} ${round(Q.H, 2)}" width="0.9in" height="${round(0.9 * Q.H / Q.W, 3)}in"><rect width="${round(Q.W, 2)}" height="${round(Q.H, 2)}" fill="#eef0f2" stroke="#8a95a3" stroke-width="${round(Q.W * 0.01, 3)}"/><rect x="${round(I.x, 2)}" y="${round(I.y, 2)}" width="${round(I.w, 2)}" height="${round(I.h, 2)}" fill="#dfe3e8"/><rect x="${round(x0, 2)}" y="${round(y0, 2)}" width="${round(x1 - x0, 2)}" height="${round(y1 - y0, 2)}" fill="#f2b134" fill-opacity=".75"/></svg>`;
+      const one = nx * ny === 1;
+      sections.push(`<div class="map-head">${ovw}<div><h2>Assembly map${one ? '' : ` — part ${j * nx + i + 1} of ${nx * ny}`}</h2><p>${inRows.length ? `Rows ${inRows[0].n}–${inRows[inRows.length - 1].n}${where}. ` : ''}${one ? 'The map again, large enough to read every code.' : 'Each part overlaps the next slightly so you can line them up.'} Codes are explained in the piece key on the assembly page.</p></div></div>
+        <div class="hero">${svgAt([round((x1 - x0 + pad) * k, 3) + 'in', round((y1 - y0) * k, 3) + 'in'], [x0 - pad, y0, x1 - x0 + pad, y1 - y0], rowNums)}</div>`);
+    }
+  }
+  // legend: one entry per piece code used in the map, then the blocks
+  const shapeThumb = e => {
+    const pts = e.r.recipe.outline || (Q.tiles.find(t => codes.of(t.fab, tileRecipeKey(t, sa)) === e)?.full);
+    if (!pts) return '';
+    const bb = bounds(pts), m = Math.max(bb.w, bb.h) * 0.08;
+    return `<svg viewBox="${round(bb.x - m, 3)} ${round(bb.y - m, 3)} ${round(bb.w + 2 * m, 3)} ${round(bb.h + 2 * m, 3)}" width="0.42in" height="0.42in"><path d="${polyToPath(pts)}" fill="${fabricFill(e.fab)}" stroke="#2b3a4a" stroke-width="${round(Math.max(bb.w, bb.h) * 0.02, 3)}"/></svg>`;
+  };
+  const items = [...counts.entries()].sort((a, b) => codes.list.indexOf(a[0]) - codes.list.indexOf(b[0]));
+  let legend = `<h3>Piece key</h3><p class="small">Each shape on the map is labelled with the code of the piece you cut for it (see the cutting list)${blockNo.size ? '; circled numbers are blocks' : ''}. Rows are numbered down the left side.</p><div class="piece-key">`;
+  for (const [e, c] of items) {
+    const t = tplList.find(x => x.r === e.r);
+    legend += `<div>${shapeThumb(e)}<span>${codeTag(e.code)}<b>${esc(e.r.recipe.makes)}</b> · ${c.whole + c.trim}${c.trim ? ` (${c.trim} at the edges${(doc.layout.tess.panels || []).length ? ' or panel' : ''} — sew whole, trim later)` : ''}<br>fabric <b>${fabricLetter(e.fab)}</b>, cutting step ${e.step}${t ? `, template ${t.id}` : ''}</span></div>`;
+  }
+  for (const [id, n] of blockNo) {
+    const cells = Q.cells.filter(c => c.b === id);
+    legend += `<div><span class="pcode blk">#${n}</span><span><b>${esc(doc.blocks[id].name)}</b> · ${cells.length} block${cells.length === 1 ? '' : 's'}${cells.some(c => c.clip) ? ` (${cells.filter(c => c.clip).length} trimmed)` : ''}<br>see its block page</span></div>`;
+  }
+  legend += '</div><div style="height:10px"></div>';
+  if (sections.length) legend += `<p class="small">The labels are small at this size — the map is repeated larger ${sections.length === 1 ? 'on its own page' : `over ${plural(sections.length, 'page')}`} after the assembly steps.</p>`;
+  return { hero, legend, sections };
 }
 
 function calibrationSvg() {
@@ -206,7 +352,7 @@ function renderPatternDoc() {
     <p>Yardage assumes ${fmtLen(doc.cutting.wof)}-wide fabric after removing selvages, includes ${doc.cutting.extra}% extra for shrinkage and mistakes, and is rounded up to the nearest ${({ none: 'inch', eighth: '⅛ yard', quarter: '¼ yard', half: '½ yard' })[doc.cutting.roundTo]}.</p>
     ${patternFabricKeyTable(plan)}
     <table class="pt"><tbody>
-      <tr><td><b>Backing</b></td><td>${fmtYards(plan.backing.buyIn)} of ${fmtLen(plan.backing.fabricWidth)}-wide fabric — ${plan.backing.panels > 1 ? `${plan.backing.panels} panels joined with ${plan.backing.seams} seams` : 'one piece'}, to make ${fmtSize(plan.backing.w, plan.backing.h)}</td></tr>
+      <tr><td><b>Backing</b></td><td>${fmtYards(plan.backing.buyIn)} of ${fmtLen(plan.backing.fabricWidth)}-wide ${doc.layout.backing?.fabric ? esc(fabricLabel(doc.layout.backing.fabric)) : 'fabric'} — ${plan.backing.panels > 1 ? `${plan.backing.panels} panels joined with ${plan.backing.seams} seams` : 'one piece'}, to make ${fmtSize(plan.backing.w, plan.backing.h)}</td></tr>
       <tr><td><b>Batting</b></td><td>${fmtSize(plan.batting.w, plan.batting.h)}</td></tr>
       ${doc.layout.binding?.fabric ? `<tr><td><b>Binding</b></td><td>Included above in fabric ${fabricLetter(doc.layout.binding.fabric)} (${fmtLen(doc.layout.binding.width)} strips, double fold)</td></tr>` : ''}
       ${stats.total > 0 ? `<tr><td><b>Thread</b></td><td>About ${Math.ceil(stats.threadYds / 50) * 50} yd for quilting (${Math.round(stats.total / 36)} yd of stitching, top + bobbin)</td></tr>` : ''}
@@ -216,7 +362,8 @@ function renderPatternDoc() {
   /* --- cutting --- */
   const tplList = [];
   for (const f of plan.fabrics) for (const r of f.templates) tplList.push({ id: `T${tplList.length + 1}`, fab: f.fab, r, outline: r.recipe.outline, units: r.units });
-  P('', `<h2>Cutting</h2><p>Cut strips across the width of fabric (selvage to selvage), then sub-cut, following the numbered order for each fabric. The map beside each list shows where every cut sits on the fabric you buy; the small pictures show where those pieces go. Label each stack with its fabric letter and step number.</p>` +
+  const codes = pieceCodes(plan);
+  P('', `<h2>Cutting</h2><p>Cut strips across the width of fabric (selvage to selvage), then sub-cut, following the numbered order for each fabric. The map beside each list shows where every cut sits on the fabric you buy; the small pictures show where those pieces go. Label each stack with its piece code (${codeTag('A1')} = fabric A, piece 1) — the block diagrams and the assembly map use the same codes.</p>` +
     plan.fabrics.map(f => {
       const sheet = fabricSheet(f);
       let list = '';
@@ -226,7 +373,7 @@ function renderPatternDoc() {
         const rec = row.group?.recipes || (row.a ? [row.a] : row.r ? [row.r] : []);
         const uses = [];
         for (const r of rec) for (const u of r.uses?.values() || []) if (u.b && !uses.some(x => x.b === u.b)) uses.push(u);
-        list += `<li><span class="stepno">${i + 1}</span><div><b>${row.head}</b>${extra}<br>${row.parts.map(esc).join('<br>')}${uses.length ? `<div class="uses">${uses.map(u => usageThumbSvg(u, 0.42, 'in')).join('')}</div>` : ''}</div></li>`;
+        list += `<li><span class="stepno">${i + 1}</span><div>${codes.forRow(row).map(e => codeTag(e.code)).join('')}<b>${row.head}</b>${extra}<br>${row.parts.map(esc).join('<br>')}${uses.length ? `<div class="uses">${uses.map(u => usageThumbSvg(u, 0.42, 'in')).join('')}</div>` : ''}</div></li>`;
       });
       return `<div class="cut-fab"><h3>${swatchHtml(f.fab, 20)} Fabric ${fabricLetter(f.fab)} — ${esc(fabricLabel(f.fab))} <span class="muted" style="font-weight:400">· buy ${fmtYards(f.buyIn)}</span></h3>
         <div class="cut-cols"><ol class="cut-list">${list}</ol><div class="cut-map">${fabricSheetSvg(sheet, f.fab, { width: 2.4, unit: 'in', idp: 'pc' })}</div></div></div>`;
@@ -237,8 +384,9 @@ function renderPatternDoc() {
     const maxW = page.w - 0.2, maxH = page.h - 1.4;
     const singles = [], multi = [];
     for (const t of tplList) {
-      const ts = templateSvg(t, t.r.recipe.applique ? 0.1875 : sa, maxW, maxH);
-      const head = `<div class="tpl-head"><b>${t.id}</b> · ${esc(t.r.recipe.makes)} · fabric ${fabricLetter(t.fab)} · cut ${t.units}${t.r.recipe.applique ? ' · appliqué (3/16" turn-under)' : ''}</div>`;
+      const ts = templateSvg(t, maxW, maxH);
+      const app = t.r.recipe.applique ? (doc.cutting.appMethod === 'fusible' ? ' · fusible appliqué — printed reversed, trace on the line, no allowance' : ' · appliqué (3/16" turn-under)') : '';
+      const head = `<div class="tpl-head"><b>${t.id}</b> · ${esc(t.r.recipe.makes)} · fabric ${fabricLetter(t.fab)} · cut ${t.units}${app}</div>`;
       if (ts.tiles.length === 1) singles.push(`<div class="tpl">${head}${ts.tiles[0].svg}</div>`);
       else for (const tile of ts.tiles) multi.push(`<div class="tpl">${head}<div class="tile-note">Part ${tile.ty * ts.tilesX + tile.tx + 1} of ${ts.tiles.length} (row ${tile.ty + 1}, column ${tile.tx + 1}) — trim and tape the parts together</div>${tile.svg}</div>`);
     }
@@ -251,12 +399,14 @@ function renderPatternDoc() {
     const b = doc.blocks[id];
     const inPanel = Q.cells.some(c => c.b === id && c.size === BSZ && c.row === 'panel');
     const n = Q.cells.filter(c => c.b === id && c.size === BSZ).length;
+    const trimmed = Q.cells.filter(c => c.b === id && c.size === BSZ && c.clip).length;
     const steps = blockStepsHtml(b, BSZ, sa, n);
     const fabs = uniq(blockPieces(b, BSZ, BSZ).map(p => resolveFab(p.fab))).sort((a, c) => fabricIndex(a) - fabricIndex(c));
     let h = `<h2>${esc(b.name)}${inPanel ? ' <span class="muted" style="font-weight:400;font-size:12pt">(centre panel)</span>' : ''}</h2>
-      <div class="block-head"><div>${blockDiagramSvg(b, BSZ, 2.2)}</div><div>
+      <div class="block-head"><div>${blockDiagramSvg(b, BSZ, 2.2, { codes: blockPieceCodes(codes, id, BSZ) })}</div><div>
         <div class="callout">Make <b>${n}</b> block${n === 1 ? '' : 's'}</div>
-        <p>Finished ${fmtSize(BSZ, BSZ)} · unfinished ${fmtSize(BSZ + 2 * sa, BSZ + 2 * sa)}</p>
+        <p>Finished ${blockSizeText(b, BSZ)} · unfinished ${blockSizeText(b, BSZ, 2 * sa)}</p>
+        ${trimmed ? `<p><b>${trimmed}</b> of them run off the edge${(doc.layout.tess.panels || []).length ? ' or under the panel' : ''}: make them whole — they're trimmed after the top is assembled.</p>` : ''}
         <div class="fab-key">${fabs.map(f => `<span>${swatchHtml(f, 16)}<b>${fabricLetter(f)}</b> ${esc(fabricLabel(f))}</span>`).join('')}</div>
       </div></div><ol class="steps">`;
     for (const s of steps) h += `<li><div class="step-text">${s.text}</div>${s.diag ? `<div class="step-diag">${s.diag}</div>` : ''}</li>`;
@@ -273,17 +423,25 @@ function renderPatternDoc() {
       });
     }
     if (pieceKey.length) {
-      h += `<h3>Pieces for one block</h3><div class="piece-key">${pieceKey.map(({ f, step, r, u }) =>
-        `<div>${usageThumbSvg(u, 0.55, 'in')}<span><b>${u.idx.size} × ${esc(r.recipe.makes)}</b><br>fabric <b>${fabricLetter(f)}</b>, cutting step ${step}</span></div>`).join('')}</div>`;
+      h += `<h3>Pieces for one block <span class="h-note">· codes match the block picture and the cutting list</span></h3><div class="piece-key">${pieceKey.map(({ f, step, r, u }) => {
+        const e = codes.list.find(x => x.r === r), t = tplList.find(x => x.r === r);
+        return `<div>${usageThumbSvg(u, 0.55, 'in')}<span>${e ? codeTag(e.code) : ''}<b>${u.idx.size} × ${esc(r.recipe.makes)}</b><br>fabric <b>${fabricLetter(f)}</b>, cutting step ${step}${t ? `, template ${t.id}` : ''}</span></div>`;
+      }).join('')}</div>`;
     }
     P('', h);
   }
 
   /* --- quilt top assembly --- */
-  const asmSize = fit(Q.W, Q.H, page.w * 0.8, page.h * 0.42);
-  let asm = `<h2>Quilt top assembly</h2><div class="hero">${quiltSvg(Q, { idp: 'pa', size: asmSize, labels: true, seams: true, binding: false })}</div>`;
-  asm += assemblyText(Q, sa);
-  P('', asm);
+  if (Q.mode === 'tess') {
+    const am = assemblyMap(Q, codes, sa, page, tplList, blockJobs);
+    P('', `<h2>Quilt top assembly</h2>${am.hero}${am.legend}${assemblyText(Q, sa)}`);
+    for (const sec of am.sections) P('', sec);
+  } else {
+    const asmSize = fit(Q.W, Q.H, page.w * 0.8, page.h * 0.42);
+    let asm = `<h2>Quilt top assembly</h2><div class="hero">${quiltSvg(Q, { idp: 'pa', size: asmSize, labels: true, seams: true, binding: false })}</div>`;
+    asm += assemblyText(Q, sa);
+    P('', asm);
+  }
 
   /* --- quilting --- */
   const layers = doc.quilting.layers.filter(l => l.visible);
@@ -298,7 +456,7 @@ function renderPatternDoc() {
   /* --- finishing --- */
   const bnd = doc.layout.binding;
   P('', `<h2>Finishing</h2>
-    <h3>Backing</h3><p>${plan.backing.panels > 1
+    <h3>Backing</h3>${doc.layout.backing?.fabric || layers.length ? `<figure class="back-fig">${quiltBackSvg(Q, { size: fit(Q.W, Q.H, page.w * 0.34, page.h * 0.3), layers, scaleHint: 1.4 })}<figcaption>The back of the finished quilt${layers.length ? ' — quilting shown mirrored, as it appears from behind' : ''}</figcaption></figure>` : ''}<p>${plan.backing.panels > 1
       ? `Cut the backing fabric into ${plan.backing.panels} equal lengths. Remove selvages, sew together with ½" ${plan.backing.seams} seams and press open, to make a backing at least ${fmtSize(plan.backing.w, plan.backing.h)}.`
       : `Cut a backing at least ${fmtSize(plan.backing.w, plan.backing.h)}.`}</p>
     <h3>Layer and baste</h3><p>Lay the backing wrong side up, smooth and tape it taut. Centre the batting (${fmtSize(plan.batting.w, plan.batting.h)}) and then the quilt top, right side up. Baste with pins every 4–6", spray baste, or thread baste, working from the centre out.</p>
@@ -362,8 +520,8 @@ function assemblyText(Q, sa) {
       diamond: 'Sew the diamonds into diagonal rows, then join the rows, matching points.',
       square: t.orient === 1 ? 'Sew the on-point squares into diagonal rows, then join the rows.' : 'Sew the squares into rows, then join the rows, nesting seams.',
     }[t.shape];
-    const nWhole = Q.tiles.filter(x => x.whole).length;
-    h += `<p>${t.shape === 'tumbling' ? `${nWhole} whole diamonds (about ${Math.round(nWhole / 3)} cubes)` : `${nWhole} whole ${name}`} make up the top.</p><ol><li>${how}</li><li>${edge}</li>`;
+    const nWhole = Q.tiles.filter(x => x.whole).length, hexBlocks = Q.cells.filter(c => c.hex);
+    h += `<p>${t.shape === 'tumbling' ? `${nWhole} whole diamonds (about ${Math.round(nWhole / 3)} cubes)` : `${nWhole} whole ${name}`}${hexBlocks.length ? ` and ${plural(hexBlocks.length, 'hexagon block')}` : ''} make up the top.</p><ol>${hexBlocks.length ? `<li>Make the hexagon blocks (see their pages) and lay them out with the plain hexagons as shown, turning each as pictured. Treat each block as one hexagon from here on.</li>` : ''}<li>${how}</li><li>${edge}</li>`;
     for (const p of t.panels || []) {
       const pg = panelGeom(p, ...tessSize(t));
       const content = p.b && doc.blocks[p.b] ? `the ${esc(doc.blocks[p.b].name)} block` : p.fab ? `a ${fmtSize(p.size, p.size)} square of fabric ${fabricLetter(p.fab)}` : 'the centre square';

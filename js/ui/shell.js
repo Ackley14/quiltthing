@@ -302,7 +302,7 @@ Actions.openProject = () => {
 /* ---------- export ---------- */
 function exportSvgString(opts = {}) {
   if (ui.view === 'block' && activeBlock()) {
-    const S = doc.layout.blockSize, b = activeBlock();
+    const b = activeBlock(), S = b.kind === 'drawn' ? blockFrameSize(b) : doc.layout.blockSize;
     return { svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${S} ${S}" width="${S * 96}" height="${S * 96}"><defs>${fabricDefs()}</defs>${blockSvg(b, S, S)}</svg>`, w: S, h: S, name: b.name };
   }
   const Q = buildQuilt();

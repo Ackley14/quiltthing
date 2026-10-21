@@ -33,7 +33,8 @@ Views.fabric = {
         <td class="num"><b>${fmtYards(f.buyIn)}</b>${f.fq ? '<br><span class="pill info" title="Everything for this fabric fits in an 18 × 21 in fat quarter">fits a fat quarter</span>' : ''}</td><td>${stash}</td></tr>`;
     }
     const bk = plan.backing;
-    h += `<tr><td><div class="fabcell"><span class="sw" style="--sw:26px;background:repeating-linear-gradient(135deg,#eee,#eee 4px,#ddd 4px,#ddd 8px)"></span><b>Backing</b></div></td>
+    const bf = doc.layout.backing?.fabric;
+    h += `<tr><td><div class="fabcell">${bf ? swatchHtml(bf, 26) : '<span class="sw" style="--sw:26px;background:repeating-linear-gradient(135deg,#eee,#eee 4px,#ddd 4px,#ddd 8px)"></span>'}<div><b>Backing</b>${bf ? ` · ${esc(fabricLabel(bf))}` : ' <span class="muted">(choose in Quilting)</span>'}</div></div></td>
       <td class="muted">${fmtSize(bk.w, bk.h)}${bk.panels > 1 ? ` · ${bk.panels} panels, ${bk.seams} seams` : ' · one piece'}</td><td class="num">${bk.panels}</td><td class="num">${fmtYards(bk.len)}</td><td class="num"><b>${fmtYards(bk.buyIn)}</b><br><span class="muted">${fmtLen(bk.fabricWidth)} wide</span></td><td></td></tr>
       <tr><td><div class="fabcell"><span class="sw" style="--sw:26px;background:#fbf8f0"></span><b>Batting</b></div></td><td class="muted">${fmtSize(plan.batting.w, plan.batting.h)}</td><td></td><td></td><td></td><td></td></tr>`;
     h += `</tbody></table>`;
@@ -59,7 +60,8 @@ Views.fabric = {
       ${lenField('Usable width of fabric (WOF)', 'cutting.wof', { min: 10, max: 120 })}
       <p class="hint">Quilting cotton is 42–44" wide; about 40–42" is usable after trimming selvages.</p>
       <div class="f-row">${numField('Extra %', 'cutting.extra', { min: 0, max: 50 })}
-      ${selectField('Round up to', 'cutting.roundTo', [['eighth', '⅛ yard'], ['quarter', '¼ yard'], ['half', '½ yard'], ['none', "Don't round"]])}</div>`, { key: 'cutset' });
+      ${selectField('Round up to', 'cutting.roundTo', [['eighth', '⅛ yard'], ['quarter', '¼ yard'], ['half', '½ yard'], ['none', "Don't round"]])}</div>
+      ${selectField('Appliqué method', 'cutting.appMethod', [['turned', 'Turned edge (3/16" turn-under)'], ['fusible', 'Fusible web (reversed templates)']])}`, { key: 'cutset' });
     h += section('Backing & batting', `<div class="f-row">
       ${selectField('Backing fabric width', 'cutting.backingWidth', [[42, '42" quilting cotton'], [60, '60" fabric'], [108, '108" wide back']], { type: 'num' })}
       ${lenField('Overhang per side', 'cutting.overhang', { min: 0, max: 12 })}</div>`, { key: 'backing' });
