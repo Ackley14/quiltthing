@@ -155,8 +155,9 @@ function renderTopbar() {
     <span class="save-dot hide-sm">${saveStatus.at && !saveStatus.ok ? 'Not saved' : ''}</span>
     <button class="icon-btn" data-act="undo" ${undoStack.past.length ? '' : 'disabled'} aria-label="Undo" title="Undo (Ctrl+Z)">${icon('undo')}</button>
     <button class="icon-btn" data-act="redo" ${undoStack.future.length ? '' : 'disabled'} aria-label="Redo" title="Redo (Ctrl+Shift+Z)">${icon('redo')}</button>
-    <button class="icon-btn" data-act="fileMenu" aria-haspopup="menu">File ${icon('down', 14)}</button>
-    <button class="icon-btn hide-sm" data-act="helpMenu" aria-haspopup="menu" aria-label="Help" title="Help">${icon('help')}</button>`;
+    <button class="icon-btn mobile-only" data-act="fileMenu" aria-haspopup="menu">File</button>
+`;
+  $('#menubar').innerHTML = menubarHtml();
 }
 
 /* ---------- event delegation ---------- */
@@ -277,18 +278,22 @@ function confirmModal(title, body, okLabel, onOk, danger) {
 }
 
 let _menuEl = null;
-function openMenu(anchor, items) {
+// Items: { label, act, arg, kb, danger, checked (true/false shows a tick column), disabled }, '-' for a
+// divider, or { header } for a small group title. opts.align: 'left' drops the menu from the anchor's left edge.
+function openMenu(anchor, items, opts = {}) {
   closeMenu();
   const m = document.createElement('div');
   m.className = 'menu';
   m.setAttribute('role', 'menu');
-  m.innerHTML = items.map(it => it === '-' ? '<hr>' : `<button role="menuitem" class="${it.danger ? 'danger' : ''}" data-act="${it.act}" ${it.arg !== undefined ? `data-arg="${esc(it.arg)}"` : ''}>${it.label}${it.kb ? `<span class="kb">${it.kb}</span>` : ''}</button>`).join('');
+  const ticks = items.some(it => it && it.checked !== undefined);
+  m.innerHTML = items.filter(Boolean).map(it => it === '-' ? '<hr>' : it.header ? `<div class="menu-h">${it.header}</div>`
+    : `<button role="menuitem" class="${it.danger ? 'danger' : ''}" data-act="${it.act}" ${it.arg !== undefined ? `data-arg="${esc(it.arg)}"` : ''} ${it.disabled ? 'disabled' : ''}>${ticks ? (it.checked ? icon('check', 14) : '<span class="ic-gap"></span>') : ''}${it.label}${it.kb ? `<span class="kb">${it.kb}</span>` : ''}</button>`).join('');
   document.body.appendChild(m);
   const mw = m.offsetWidth, mh = m.offsetHeight;
   if (anchor.getBoundingClientRect) {
     const r = anchor.getBoundingClientRect();
-    m.style.top = `${r.bottom + 6}px`;
-    m.style.left = `${clamp(r.right - mw, 8, window.innerWidth - mw - 8)}px`;
+    m.style.top = `${clamp(r.bottom + (opts.align === 'bar' ? 2 : 6), 8, Math.max(8, window.innerHeight - mh - 8))}px`;
+    m.style.left = `${clamp(opts.align ? r.left : r.right - mw, 8, window.innerWidth - mw - 8)}px`;
   } else {
     m.style.top = `${clamp(anchor.y, 8, window.innerHeight - mh - 8)}px`;
     m.style.left = `${clamp(anchor.x, 8, window.innerWidth - mw - 8)}px`;
@@ -298,7 +303,7 @@ function openMenu(anchor, items) {
 }
 function closeMenu() { if (!_menuEl) return false; _menuEl.remove(); _menuEl = null; return true; }
 document.addEventListener('pointerdown', e => { if (_menuEl && !_menuEl.contains(e.target)) closeMenu(); }, true);
-document.addEventListener('click', e => { if (_menuEl && _menuEl.contains(e.target) && e.target.closest('[data-act]')) setTimeout(closeMenu, 0); });
+document.addEventListener('click', e => { if (_menuEl && _menuEl.contains(e.target) && e.target.closest('[data-act]:not([disabled])')) setTimeout(closeMenu, 0); });
 
 function toast(msg, ms = 2600) {
   const t = document.createElement('div');

@@ -14,7 +14,7 @@ function fabricsSection() {
   const bgId = doc.layout.background;
   let chips = '';
   doc.fabrics.forEach((f, i) => {
-    chips += `<button class="fab-chip${f.id === bgId ? ' is-bg' : ''}" aria-pressed="${ui.fabric === f.id}" data-act="pickFabric" data-arg="${f.id}" title="${esc(f.name)} (${letterFor(i)})${f.id === bgId ? ' · background' : ''}. Double-click to edit.">
+    chips += `<button class="fab-chip${f.id === bgId ? ' is-bg' : ''}" draggable="true" aria-pressed="${ui.fabric === f.id}" data-act="pickFabric" data-arg="${f.id}" title="${esc(f.name)} (${letterFor(i)})${f.id === bgId ? ' · background' : ''}. Double-click to edit.">
       ${swatchHtml(f.id, 40)}<span class="lt" style="color:${inkOn(f.color)};text-shadow:0 0 2px ${inkOn(f.color) === '#ffffff' ? 'rgba(0,0,0,.6)' : 'rgba(255,255,255,.9)'}">${letterFor(i)}</span>${ui.grayscale ? `<span class="val">${valueLetter(f.color)}</span>` : ''}</button>`;
   });
   chips += `<button class="fab-chip add" data-act="addFabric" title="Add a fabric" aria-label="Add a fabric">${icon('plus', 18)}</button>`;
@@ -58,8 +58,8 @@ function fabricEditor(f) {
     <label class="check"><input type="checkbox" ${f.directional ? 'checked' : ''} data-change="fabDir"> Directional print</label>
     ${fabricFormatFields(f)}
     ${!isBg && contrast < 1.6 ? '<p class="hint warn">Low contrast with the background.</p>' : ''}
-    <div class="sub-h">Goes well with</div>
-    <div class="harm">${harmonies(f.color).map(h => `<button style="background:${h.hex}" data-act="addFabricColor" data-arg="${h.hex}" title="Add ${colorName(h.hex)}" aria-label="Add ${h.label}"></button>`).join('')}</div>
+    <div class="sub-h">Goes well with <span class="muted" style="font-weight:400">· click to add</span></div>
+    <div class="harm">${harmonies(f.color).map(h => `<button style="background:${h.hex}" data-act="addFabricColor" data-arg="${h.hex}" title="${colorName(h.hex)}: add as a new fabric" aria-label="Add ${h.label} as a new fabric"></button>`).join('')}</div>
     <div class="btn-row">
       ${isBg ? '<span class="muted">Quilt background</span>' : `<button class="btn small" data-act="setBackground" data-arg="${f.id}">Use as background</button>`}
       <button class="btn small" data-act="dupFabric" data-arg="${f.id}">Duplicate</button>
@@ -94,7 +94,11 @@ Actions.addFabric = () => {
   const f = makeFabric(hslToHex([h + 137.5, clamp(s, 0.35, 0.7), clamp(l, 0.35, 0.65)]));
   doc.fabrics.push(f); ui.fabric = ui.fabPop = f.id; commit();
 };
-Actions.addFabricColor = hex => { const f = makeFabric(hex); doc.fabrics.push(f); ui.fabric = f.id; if (ui.fabPop) ui.fabPop = f.id; commit(); toast(`Added ${f.name}`); };
+// Suggested colours ask first, so a click doesn't silently add fabrics.
+Actions.addFabricColor = hex => openModal(`<h2>Add a new fabric?</h2>
+  <div class="add-fab-preview"><span class="sw" style="--sw:40px;background:${hex}"></span><div><b>${esc(colorName(hex))}</b><br><span class="muted">${hex}</span></div></div>
+  <div class="actions"><button class="btn" data-act="closeModal">Cancel</button><button class="btn primary" data-act="addFabricColorOk" data-arg="${hex}">Add fabric</button></div>`);
+Actions.addFabricColorOk = hex => { closeModal(); const f = makeFabric(hex); doc.fabrics.push(f); ui.fabric = f.id; if (ui.fabPop) ui.fabPop = f.id; commit(); toast(`Added ${f.name}`); };
 Actions.dupFabric = id => { const f = { ...JSON.parse(JSON.stringify(fabricById(id))), id: uid('f') }; f.name += ' 2'; doc.fabrics.splice(fabricIndex(id) + 1, 0, f); ui.fabric = f.id; if (ui.fabPop) ui.fabPop = f.id; commit(); };
 Actions.fabName = v => { const f = selFabric(); if (f) { f.name = v.trim() || colorName(f.color); commit(); } };
 Actions.fabColorLive = v => { const f = selFabric(); if (f && normHex(v)) { f.color = normHex(v); updateFabricDefs(); renderMainOnly(); } };
@@ -178,7 +182,14 @@ document.addEventListener('dragstart', e => {
   dragBlockId = el?.dataset.arg || null;
   if (dragBlockId) { e.dataTransfer.setData('text/plain', doc.blocks[dragBlockId]?.name || ''); e.dataTransfer.effectAllowed = 'copy'; }
 });
-document.addEventListener('dragend', () => { dragBlockId = null; });
+document.addEventListener('dragend', () => { dragBlockId = null; dragFabricId = null; });
+// fabrics can be dragged onto pieces in the block editor and onto plain squares and shapes in Layout
+let dragFabricId = null;
+document.addEventListener('dragstart', e => {
+  const el = e.target.closest?.('.fab-chip[data-act="pickFabric"]');
+  dragFabricId = el?.dataset.arg || null;
+  if (dragFabricId) { e.dataTransfer.setData('text/plain', fabricLabel(dragFabricId)); e.dataTransfer.effectAllowed = 'copy'; }
+});
 function myBlocksSection() {
   const fillingSlot = ui.view === 'block' && activeBlock()?.kind === 'compound' && ui.activeSlot != null;
   let grid = '';

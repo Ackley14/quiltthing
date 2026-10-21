@@ -43,6 +43,10 @@ Views.layout = {
     svg.addEventListener('pointerleave', () => { if (!lay.drag) hoverCell(null); });
     svg.addEventListener('contextmenu', e => e.preventDefault());
     // blocks dragged in from My blocks
+    // or a fabric onto a plain square, setting triangle or shape
+    const fabTarget = e => { const key = layTarget(e); return dragFabricId && key && !cellContent(key)?.b ? key : null; };
+    svg.addEventListener('dragover', e => { const key = fabTarget(e); if (key) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; hoverCell(key); } });
+    svg.addEventListener('drop', e => { const key = fabTarget(e); if (key) { e.preventDefault(); setCellContent(key, { fab: resolveFab(dragFabricId) }); commit(); } });
     svg.addEventListener('dragover', e => {
       const key = layTarget(e), b = doc.blocks[dragBlockId];
       if (!b || !key || !isBlockKey(key) || !keyAcceptsBlock(key, b)) return;

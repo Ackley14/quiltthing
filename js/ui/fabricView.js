@@ -6,6 +6,20 @@ const STASH_PRESETS = [
   ['Charm square', 5, 5], ['Layer cake', 10, 10], ['Jelly roll strip', 42, 2.5], ['Scrap', 12, 12],
 ];
 
+// Seam allowance, fabric width and the other cutting settings (opened from Options or Fabric & cutting).
+function cuttingSettingsHtml() {
+  const c = doc.cutting;
+  return `<div class="f-row">${lenField('Seam allowance', 'cutting.seam', { min: 0, max: 1 })}${lenField('Fabric width', 'cutting.wof', { min: 10, max: 140 })}</div>
+    <label class="f">Default fabric<select data-change="defaultFormat">${formatOptionsHtml(c.defaultFormat?.kind === 'yardage' ? null : c.defaultFormat, false).replace('value="yardage"', `value="yardage" ${!c.defaultFormat || c.defaultFormat.kind === 'yardage' ? 'selected' : ''}`)}</select></label>
+    <div class="f-row">${numField('Extra %', 'cutting.extra', { min: 0, max: 50 })}
+    ${selectField('Round up to', 'cutting.roundTo', [['eighth', '⅛ yard'], ['quarter', '¼ yard'], ['half', '½ yard'], ['none', "Don't round"]])}</div>
+    <div class="f-row">${selectField('Appliqué', 'cutting.appMethod', [['turned', 'Turned edge, 3/16"'], ['fusible', 'Fusible web']])}
+    ${lenField('Backing extra all round', 'cutting.overhang', { min: 0, max: 12 })}</div>
+    ${doc.layout.mode === 'tess' && doc.layout.tess.edge === 'trim' ? `<label class="check"><input type="checkbox" data-bind="layout.tess.cutEdges" data-type="bool" ${doc.layout.tess.cutEdges ? 'checked' : ''}> Cut edge pieces to shape</label>` : ''}
+    ${doc.layout.mode !== 'tess' && Qnow().cells.some(cl => cl.b && cl.clip) ? partialToggle() : ''}
+    <p class="hint">Fabric width is what's left after trimming the selvages. Quilting cotton is usually 40–42".</p>`;
+}
+
 Views.fabric = {
   main() {
     const Q = Qnow(), plan = cuttingPlan(Q);
@@ -33,17 +47,7 @@ Views.fabric = {
       ${rows ? `<div class="stash-row hdr"><span>Name</span><span>Width</span><span>Length</span><span></span></div>${rows}` : ''}
       <div class="btn-row"><button class="btn small" data-act="stashMenu" data-arg="${stashFabric()}">${icon('plus', 14)} Add a piece</button></div>`, { key: 'stash', closed: !n });
     const c = doc.cutting;
-    h += section('Settings', `
-      <div class="f-row">${lenField('Seam allowance', 'cutting.seam', { min: 0, max: 1 })}${lenField('Fabric width', 'cutting.wof', { min: 10, max: 140 })}</div>
-      <label class="f">Default fabric<select data-change="defaultFormat">${formatOptionsHtml(c.defaultFormat?.kind === 'yardage' ? null : c.defaultFormat, false).replace('value="yardage"', `value="yardage" ${!c.defaultFormat || c.defaultFormat.kind === 'yardage' ? 'selected' : ''}`)}</select></label>
-      <div class="f-row">${numField('Extra %', 'cutting.extra', { min: 0, max: 50 })}
-      ${selectField('Round up to', 'cutting.roundTo', [['eighth', '⅛ yard'], ['quarter', '¼ yard'], ['half', '½ yard'], ['none', "Don't round"]])}</div>
-      ${selectField('Appliqué', 'cutting.appMethod', [['turned', 'Turned edge, 3/16"'], ['fusible', 'Fusible web']])}
-      ${lenField('Backing extra all round', 'cutting.overhang', { min: 0, max: 12 })}
-      ${doc.layout.mode === 'tess' && doc.layout.tess.edge === 'trim' ? `<label class="check"><input type="checkbox" data-bind="layout.tess.cutEdges" data-type="bool" ${doc.layout.tess.cutEdges ? 'checked' : ''}> Cut edge pieces to shape</label>` : ''}
-      ${doc.layout.mode !== 'tess' && Qnow().cells.some(cl => cl.b && cl.clip) ? partialToggle() : ''}
-      ${ui.fabPane === 'cut' ? `<label class="check"><input type="checkbox" ${ui.cutDiagrams !== false ? 'checked' : ''} data-change="cutDiagrams"> Show cutting maps</label>` : ''}
-      <p class="hint">Fabric width is what's left after trimming the selvages. Quilting cotton is usually 40–42".</p>`, { key: 'cutset', closed: true });
+    h += `<section class="sec"><div class="btn-row" style="margin-top:10px"><button class="btn small" data-act="cuttingSettings">Cutting settings…</button></div></section>`;
     return h + nextStep('pattern', 'Pattern');
   },
 };
@@ -72,17 +76,22 @@ function shoppingListHtml(plan) {
   return h + `</tbody></table>`;
 }
 // Row menu: other ways to buy this fabric, and its settings.
-Actions.fabRowMenu = (fab, el) => {
+// Other ways to buy a fabric, and its settings (the row's ⋯ button and right-click).
+function fabRowItems(fab) {
   const f = cuttingPlan(Qnow()).fabrics.find(x => x.fab === fab);
   const fb = fabricById(fab);
   const opts = f && !f.stashOwned ? formatOptions(f) : [];
-  openMenu(el, [
+  return [
+    { header: esc(fabricLabel(fab)) },
     ...opts.map(o => ({ label: `Buy as ${o.label}`, act: 'useFormat', arg: `${fab}|${o.key}` })),
     ...(fb.format ? [{ label: 'Buy as yardage', act: 'useFormat', arg: `${fab}|` }] : []),
     ...(opts.length || fb.format ? ['-'] : []),
+    { label: 'Add a stash piece…', act: 'stashMenuAt', arg: fab },
     { label: 'Fabric settings…', act: 'fabricPopover', arg: fab },
-  ]);
-};
+  ];
+}
+Actions.fabRowMenu = (fab, el) => openMenu(el, fabRowItems(fab));
+Actions.stashMenuAt = fab => { ui.stashFab = fab; Actions.stashPicker(); };
 Actions.defaultFormat = v => { const fm = formatFromChoice(v, doc.cutting.defaultFormat); doc.cutting.defaultFormat = fm && fm.kind !== 'yardage' ? fm : { kind: 'yardage' }; commit(); };
 Actions.useFormat = (arg, el, e) => {
   e?.preventDefault?.();

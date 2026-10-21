@@ -16,6 +16,8 @@ Everything runs in the browser and nothing is uploaded. Projects save automatica
 
 Two sample quilts are built in (File menu): **Midnight Bullseye**, a straight set with a curved-pieced bullseye ringed by stars, and **Hexie Bloom**, a hexagon tessellation with hexie star and cube blocks around a framed lettering panel.
 
+A menu bar (File, Edit, View, Options, a menu for the current step, and Help) and right-click menus on blocks, fabrics, quilting layers and fabric rows give quick access to everything. Fabrics can be dragged onto block pieces and onto plain squares in the layout.
+
 ## Running it
 
 Open `index.html` in a browser; no build step or server is required. To host it, push the folder to a GitHub repository and enable **Settings → Pages** (deploy from the branch root).

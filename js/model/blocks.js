@@ -139,7 +139,7 @@ function blockKey(block, depth = 0) {
   if (block.kind === 'compound' && depth < 6) {
     return JSON.stringify([block.sub, block.slots.map(s => s ? [blockKey(doc.blocks[s.b], depth + 1), s.r || 0, !!s.f] : null)]);
   }
-  return JSON.stringify([block.n, block.regions, block.seams, block.shape || '']);
+  return JSON.stringify([block.n, block.regions, block.seams, block.shape || '', block.appSeams || []]);
 }
 
 const _pieceCache = new Map();
@@ -213,9 +213,11 @@ function drawnPieces(block, w, h) {
   // seams split pieced (not appliqué) pieces
   const seams = (block.seams || []).map(([A, B]) => [[A[0] * sx, A[1] * sy], [B[0] * sx, B[1] * sy]]);
   let list = raw.map(p => ({ pts: p.outer, holes: p.holes, fab: p.fab, app: p.app }));
-  if (seams.length) {
+  // appSeams cut appliqué (and lettering) into pieces sewn as one shape
+  const appSeams = (block.appSeams || []).map(([A, B]) => [[A[0] * sx, A[1] * sy], [B[0] * sx, B[1] * sy]]);
+  if (seams.length || appSeams.length) {
     const pc = list.filter(p => !p.app), ap = list.filter(p => p.app);
-    list = [...splitBySeams(pc, seams), ...ap];
+    list = [...(seams.length ? splitBySeams(pc, seams) : pc), ...(appSeams.length ? splitBySeams(ap, appSeams) : ap)];
   }
   return list
     .filter(p => polyArea(p.pts) - sum(p.holes, polyArea) > w * h * 1e-6)
@@ -404,8 +406,8 @@ function blockSvg(block, w, h, opts = {}, depth = 0) {
     s += `<path d="${regionPathD(r, sx, sy)}" fill="${fill}" stroke="${fill}" stroke-width="${hair}" stroke-linejoin="round"${id}/>`;
   }
   s += hex ? `</g></svg>` : `</svg>`;
-  if (opts.seams && block.seams?.length) {
-    for (const [A, B] of block.seams) {
+  if (opts.seams && (block.seams?.length || block.appSeams?.length)) {
+    for (const [A, B] of [...(block.seams || []), ...(block.appSeams || [])]) {
       s += `<line x1="${A[0] * sx}" y1="${A[1] * sy}" x2="${B[0] * sx}" y2="${B[1] * sy}" stroke="rgba(20,24,30,.6)" stroke-width="${hair * 1.4}"/>`;
     }
   }

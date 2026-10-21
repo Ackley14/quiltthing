@@ -51,6 +51,9 @@ Views.block = {
     svg.addEventListener('dblclick', edDbl);
     svg.addEventListener('contextmenu', edContext);
     svg.addEventListener('wheel', edWheel, { passive: false });
+    // a fabric swatch dropped on a piece paints it
+    svg.addEventListener('dragover', e => { if (dragFabricId) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+    svg.addEventListener('drop', e => { if (dragFabricId) { e.preventDefault(); dropFabric(e, dragFabricId); } });
     svg.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });   // no autoscroll on middle-drag
     if (ui.tool === 'text') ensureFont();
     scheduleSeamCheck();
@@ -110,9 +113,19 @@ function seamTargets(b) {
   const lines = [];
   const ring = pts => pts.forEach((a, i) => lines.push([a, pts[(i + 1) % pts.length]]));
   ring(blockOutline(b, b.n));
-  for (const r of b.regions) if (!r.app) ring(r.b?.some(x => x) ? regionRing(r, 1, 1) : r.pts);
-  for (const s of b.seams || []) lines.push(s);
+  for (const r of b.regions) ring(r.b?.some(x => x) ? regionRing(r, 1, 1) : r.pts);   // appliqué and lettering too
+  for (const s of [...(b.seams || []), ...(b.appSeams || [])]) lines.push(s);
   return lines;
+}
+// Which parts a new seam cuts: through appliqué it cuts the appliqué; elsewhere the pieces.
+function seamKinds(b, a, d) {
+  const app = b.regions.filter(r => r.app).map(r => r.b?.some(x => x) ? regionRing(r, 1, 1) : r.pts);
+  let inApp = false, outside = false;
+  for (let i = 1; i < 20; i++) {
+    const q = [a[0] + (d[0] - a[0]) * i / 20, a[1] + (d[1] - a[1]) * i / 20];
+    if (app.some(p => pointInPoly(q, p))) inApp = true; else outside = true;
+  }
+  return { inApp, outside };
 }
 // The point on a line nearest the pointer (preferring grid points on it), or null when no line is close.
 function seamSnap(b, p, fine) {
@@ -126,7 +139,7 @@ function seamSnap(b, p, fine) {
   // grid points and corners that sit on a line
   let best = null, bd = tol;
   const cands = [...latticeDots(b, fine), ...b.regions.filter(r => !r.app).flatMap(r => r.pts)];
-  for (const c of cands) {
+  for (const c of [...cands, ...b.regions.filter(r => r.app).flatMap(r => r.pts)]) {
     const dp = Math.hypot(c[0] - p[0], c[1] - p[1]);
     if (dp < bd && lines.some(l => near(c, l).d < 1e-4)) { bd = dp; best = [c[0], c[1]]; }
   }
@@ -203,10 +216,10 @@ function editorGuides(b) {
       <circle cx="${c}" cy="${c}" r="${u * 0.012}" fill="#d6336c" pointer-events="none"/>`;
   }
   // seams (always shown while the seam tool is active, so they can be clicked to remove)
-  if (ui.showSeamLines !== false || ui.tool === 'seam') (b.seams || []).forEach(([A, B], i) => {
+  if (ui.showSeamLines !== false || ui.tool === 'seam') [['s', b.seams], ['a', b.appSeams]].forEach(([tag, list]) => (list || []).forEach(([A, B], i) => {
     s += `<line class="seam-line" x1="${A[0] * k}" y1="${A[1] * k}" x2="${B[0] * k}" y2="${B[1] * k}" stroke-width="${hair * 1.6}"/>`;
-    if (ui.tool === 'seam') s += `<line data-seam="${i}" x1="${A[0] * k}" y1="${A[1] * k}" x2="${B[0] * k}" y2="${B[1] * k}" stroke="transparent" stroke-width="${u * 0.025}" style="cursor:pointer"/>`;
-  });
+    if (ui.tool === 'seam') s += `<line data-seam="${tag}:${i}" x1="${A[0] * k}" y1="${A[1] * k}" x2="${B[0] * k}" y2="${B[1] * k}" stroke="transparent" stroke-width="${u * 0.025}" style="cursor:pointer"/>`;
+  }));
   if (ui.showPieces) {
     for (const p of blockPieces(b, S, S)) s += `<path d="${polyToPath(p.pts)}" fill="none" stroke="rgba(20,30,40,.75)" stroke-width="${hair * 1.4}" stroke-dasharray="${hair * 5} ${hair * 3}" pointer-events="none"/>`;
   }
@@ -242,7 +255,11 @@ function drawOverlay() {
     const [a, c] = [dr[0], h];
     s += `<rect x="${Math.min(a[0], c[0]) * k}" y="${Math.min(a[1], c[1]) * k}" width="${Math.abs(c[0] - a[0]) * k}" height="${Math.abs(c[1] - a[1]) * k}" fill="${fabricFill(ui.fabric)}" fill-opacity=".75" stroke="#c98a1f" stroke-width="${hair * 2}"/>`;
   }
-  if (ui.tool === 'seam' && dr.length === 1 && h) s += `<line x1="${dr[0][0] * k}" y1="${dr[0][1] * k}" x2="${h[0] * k}" y2="${h[1] * k}" stroke="#b5482f" stroke-width="${hair * 2}" stroke-dasharray="${hair * 4} ${hair * 2}"/>`;
+  // the seam follows the pointer: red where it would land on a line, grey where it can't end
+  if (ui.tool === 'seam' && dr.length === 1 && (h || ed.cursor)) {
+    const e2 = h || ed.cursor;
+    s += `<line x1="${dr[0][0] * k}" y1="${dr[0][1] * k}" x2="${e2[0] * k}" y2="${e2[1] * k}" stroke="${h ? '#b5482f' : '#8a94a0'}" stroke-width="${hair * 2}" stroke-dasharray="${hair * 4} ${hair * 2}"/>`;
+  }
   if (ui.tool === 'tri' && ed.triPreview) s += `<path d="${polyToPath(ed.triPreview.map(([x, y]) => [x * k, y * k]))}" fill="${fabricFill(ui.fabric)}" fill-opacity=".75" stroke="#c98a1f" stroke-width="${hair * 2}"/>`;
   if (ui.tool === 'arc' && ed.triPreview?.pts) s += `<path d="${regionPathD(ed.triPreview, k)}" fill="${fabricFill(ui.fabric)}" fill-opacity=".75" stroke="#c98a1f" stroke-width="${hair * 2}"/>`;
   if (ui.tool === 'text' && h) {
@@ -276,7 +293,7 @@ function blockStatus(b) {
     case 'text': return loadedFont(textOpts().font) ? '<b>Text</b>: click where the words go. Type them on the right.' : 'Loading the font…';
     case 'arc': return isHexBlock(b) || b.lattice === 'tri' ? 'Quarter circles need a square grid.' : '<b>Quarter circle</b>: click a square, or drag from a corner for a bigger one.';
     case 'tri': return b.lattice === 'tri' || isHexBlock(b) ? '<b>Triangle</b>: click inside a lattice triangle. Shift for half size.' : '<b>Triangle</b>: click near a corner of a square. Shift for half size.';
-    case 'seam': return ui.drawing.length ? 'Now click a point on another line.' : '<b>Seam line</b>: click a point on a line or the block edge, then a point on another line. Click a seam to remove it.';
+    case 'seam': return ui.drawing.length ? 'Now click a point on another line. Esc cancels.' : '<b>Seam line</b>: click a point on any edge, then on another. Through appliqué or lettering it cuts them too. Click a seam to remove it.';
   }
   return '';
 }
@@ -315,7 +332,7 @@ function positionSelBar() {
   const cs = [[bb.minX, bb.minY], [bb.maxX, bb.minY], [bb.maxX, bb.maxY], [bb.minX, bb.maxY]].map(([x, y]) => new DOMPoint(x * k, y * k).matrixTransform(ctm));
   const tl = { x: Math.min(...cs.map(q => q.x)), y: Math.min(...cs.map(q => q.y)) }, br = { x: Math.max(...cs.map(q => q.x)), y: Math.max(...cs.map(q => q.y)) };
   bar.innerHTML = `<span class="sb-count">${sel.length > 1 ? sel.length : ''}</span>
-    <button data-act="selPaint" title="Paint with ${esc(fabricLabel(ui.fabric))}">${swatchHtml(ui.fabric === BG ? doc.layout.background : ui.fabric, 16)}</button>
+    ${(() => { const fs = uniq(sel.map(i => b.regions[i].fab)), f = fs.length === 1 ? fs[0] : null; return `<button class="sb-fab" data-act="selFabricMenu" aria-haspopup="menu" title="Change fabric">${f ? swatchHtml(f === BG ? doc.layout.background : f, 16) : '<span class="sw mixed"></span>'}${icon('down', 12)}</button>`; })()}
     <button data-act="selDup" title="Duplicate (Ctrl+D)" aria-label="Duplicate">${icon('dup')}</button>
     <button data-act="selRotate" data-arg="cw" title="Turn 90° (E)" aria-label="Turn">${icon('rotate')}</button>
     <button data-act="selMirror" data-arg="h" title="Mirror (X)" aria-label="Mirror">${icon('mirror')}</button>
@@ -420,15 +437,23 @@ function edDown(e) {
   }
   if (tool === 'seam') {
     const sl = e.target.closest('[data-seam]');
-    if (sl && !ui.drawing.length) { b.seams.splice(+sl.dataset.seam, 1); commit(); toast('Seam removed', 1200); return; }
+    if (sl && !ui.drawing.length) {
+      const [list, i] = sl.dataset.seam.split(':'), arr = list === 'a' ? b.appSeams : b.seams, [A, B] = arr[+i];
+      arr.splice(+i, 1);
+      // a seam through appliqué is stored in both lists
+      const other = list === 'a' ? b.seams : b.appSeams, j = (other || []).findIndex(([P, Q]) => samePt(P, A) && samePt(Q, B));
+      if (j >= 0) other.splice(j, 1);
+      commit(); toast('Seam removed', 1200); return;
+    }
     const d = seamSnap(b, p, fine);
     if (!d) { toast(ui.drawing.length ? 'End the seam on a line or the block edge' : 'Start the seam on a line or the block edge', 1600); return; }
     if (!ui.drawing.length) { ui.drawing = [d]; refreshEditor(); return; }
     const a = ui.drawing[0];
     ui.drawing = [];
     if (samePt(a, d) || seamTargets(b).some(([A, B]) => [a, d].every(q => Math.abs((B[0] - A[0]) * (q[1] - A[1]) - (B[1] - A[1]) * (q[0] - A[0])) < 1e-6 * (1 + dist(A, B))))) { refreshEditor(); return; }   // nothing, or along an existing line
-    b.seams = b.seams || [];
-    b.seams.push([a, d]);
+    const { inApp, outside } = seamKinds(b, a, d);
+    if (outside || !inApp) b.seams = [...(b.seams || []), [a, d]];
+    if (inApp) b.appSeams = [...(b.appSeams || []), [a, d]];
     commit();
   }
 }
@@ -496,6 +521,7 @@ function edMove(e) {
   if (ui.tool === 'text') { ed.hover = ui.snapOff ? p : snapDot(b, p, fine); drawOverlay(); return; }
   if (['polygon', 'rect', 'seam'].includes(ui.tool)) {
     const d = ui.tool === 'seam' ? seamSnap(b, p, fine) : snapDot(b, p, fine);
+    if (ui.tool === 'seam' && ui.drawing.length) { ed.hover = d; ed.cursor = p; drawOverlay(); return; }
     if (!samePt(d, ed.hover)) { ed.hover = d; drawOverlay(); }
   } else if (ui.tool === 'tri') {
     ed.triPreview = triangleAt(b, p, fine);
@@ -558,6 +584,14 @@ function edDbl(e) {
     if (r?.b) { r.b[+eh.dataset.eh] = 0; commit(); }
   }
 }
+function dropFabric(e, fab) {
+  const b = activeBlock(); if (b?.kind !== 'drawn') return;
+  const prev = ui.fabric;
+  ui.fabric = fab; ed.drag = { kind: 'paint', changed: false };
+  try { paintAt(e, b); } finally { ui.fabric = prev; }
+  const changed = ed.drag.changed; ed.drag = null;
+  if (changed) commit();
+}
 function paintAt(e, b) {
   const ri = regionAtEvent(e);
   // seam lines split shapes into pieces you can paint one by one
@@ -574,7 +608,7 @@ function paintAt(e, b) {
   }
   if (ri == null) {
     // painting the bare background gives this block its own background fabric
-    if (!ed.drag.bgDone && ui.fabric !== BG && e.type === 'pointerdown') {
+    if (!ed.drag.bgDone && ui.fabric !== BG && (e.type === 'pointerdown' || e.type === 'drop')) {
       b.regions.unshift({ pts: blockOutline(b, b.n), fab: ui.fabric });
       ed.drag.changed = true; ed.drag.bgDone = true;
       refreshEditor(false);
@@ -801,7 +835,7 @@ Actions.autoSeams = () => {
   if (!sg.required.length && !sg.optional.length) { toast(sg.unresolved ? 'No straight seams found for those pieces' : 'Every piece is already rotary-cut'); return; }
   Actions.applySeams('all');
 };
-Actions.clearSeams = () => { const b = activeBlock(); b.seams = []; commit(); };
+Actions.clearSeams = () => { const b = activeBlock(); b.seams = []; b.appSeams = []; commit(); };
 Actions.blockName = v => { const b = activeBlock(); if (b) { b.name = v.trim() || 'Untitled block'; commit(); } };
 Actions.blockGrid = v => {
   const b = activeBlock(); let n = clamp(parseInt(v, 10) || b.n, 1, 48);
@@ -810,6 +844,7 @@ Actions.blockGrid = v => {
   // scale geometry exactly so the design keeps its shape
   for (const r of b.regions) r.pts = r.pts.map(([x, y]) => [round(x * k, 6), round(y * k, 6)]);
   b.seams = (b.seams || []).map(s => s.map(([x, y]) => [round(x * k, 6), round(y * k, 6)]));
+  if (b.appSeams) b.appSeams = b.appSeams.map(s => s.map(([x, y]) => [round(x * k, 6), round(y * k, 6)]));
   b.n = n; ui.drawing = [];
   commit();
 };
@@ -835,6 +870,7 @@ Actions.blockDelete = () => {
 function transformBlock(b, fn, mirror) {
   for (const r of b.regions) { r.pts = r.pts.map(fn); if (mirror && r.b) r.b = r.b.map(x => -x); }
   b.seams = (b.seams || []).map(s => s.map(fn));
+  if (b.appSeams) b.appSeams = b.appSeams.map(s => s.map(fn));
 }
 Actions.blockRotate = () => {
   const b = activeBlock(), n = b.n; if (b.kind === 'compound') return;
@@ -848,7 +884,7 @@ function turnPt([x, y], [cx, cy], deg) {
   return [round(cx + (x - cx) * c - (y - cy) * s, 6), round(cy + (x - cx) * s + (y - cy) * c, 6)];
 }
 Actions.blockMirror = () => { const b = activeBlock(), n = b.n; if (b.kind === 'compound') return; transformBlock(b, ([x, y]) => [round(n - x, 6), y], true); commit(); };
-Actions.blockClear = () => confirmModal('Clear this block?', 'Removes every shape and seam (the whole block becomes background).', 'Clear', () => { const b = activeBlock(); b.regions = []; b.seams = []; ui.selRegion = null; commit(); }, true);
+Actions.blockClear = () => confirmModal('Clear this block?', 'Removes every shape and seam (the whole block becomes background).', 'Clear', () => { const b = activeBlock(); b.regions = []; b.seams = []; b.appSeams = []; ui.selRegion = null; commit(); }, true);
 
 const selRegion = () => activeBlock()?.regions?.[ui.selRegion];
 Actions.selectRegion = (i, el, e) => {
@@ -877,6 +913,15 @@ Actions.selDelete = () => {
   setSel([]); commit(); toast(`Deleted ${plural(sel.length, 'shape')}`, 1400);
 };
 Actions.selPaint = () => Actions.regionFab(ui.fabric);
+// The fabric dropdown on the selection bar: pick the fabric for the selected shapes.
+Actions.selFabricMenu = (a, el) => {
+  const b = activeBlock(), cur = uniq(selList().map(i => b.regions[i].fab));
+  openMenu(el, [
+    ...doc.fabrics.map((f, i) => ({ label: `${swatchHtml(f.id, 16)} <b>${letterFor(i)}</b> ${esc(f.name)}`, act: 'regionFab', arg: f.id, checked: cur.length === 1 && cur[0] === f.id })),
+    '-',
+    { label: `<span class="sw bgsw"></span> Background`, act: 'regionFab', arg: BG, checked: cur.length === 1 && cur[0] === BG },
+  ], { align: 'left' });
+};
 Actions.selPick = () => { const b = activeBlock(), sel = selList(); if (!sel.length) return; ui.fabric = b.regions[sel[sel.length - 1]].fab; saveUi(); render(); toast(`Picked ${ui.fabric === BG ? 'quilt background' : fabricLabel(ui.fabric)}`, 1200); };
 Actions.selDup = () => {
   const b = activeBlock(), sel = selList(); if (!sel.length) return;
