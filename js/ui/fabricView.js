@@ -1,23 +1,28 @@
 /* Fabric & cutting: what to buy (with your stash, backing and batting) and the cutting plan,
-   one step with two panes. Cutting settings live here, and only here. */
+   one step with two panes. The default fabric and seam settings open from here or from Edit. */
 
 const STASH_PRESETS = [
   ['Fat quarter', 21, 18], ['Fat eighth', 21, 9], ['¼ yard', 42, 9], ['½ yard', 42, 18], ['1 yard', 42, 36],
   ['Charm square', 5, 5], ['Layer cake', 10, 10], ['Jelly roll strip', 42, 2.5], ['Scrap', 12, 12],
 ];
 
-// Seam allowance, fabric width and the other cutting settings (opened from Options or Fabric & cutting).
-function cuttingSettingsHtml() {
+// The fabric every colour starts from: how it's bought, its usable width, and the yardage margin.
+function fabricDefaultsHtml() {
   const c = doc.cutting;
-  return `<div class="f-row">${lenField('Seam allowance', 'cutting.seam', { min: 0, max: 1 })}${lenField('Usable width (WOF)', 'cutting.wof', { min: 10, max: 140 })}</div>
-    <label class="f">Default fabric<select data-change="defaultFormat">${formatOptionsHtml(c.defaultFormat?.kind === 'yardage' ? null : c.defaultFormat, false).replace('value="yardage"', `value="yardage" ${!c.defaultFormat || c.defaultFormat.kind === 'yardage' ? 'selected' : ''}`)}</select></label>
+  return `<label class="f">Bought as<select data-change="defaultFormat">${formatOptionsHtml(c.defaultFormat?.kind === 'yardage' ? null : c.defaultFormat, false).replace('value="yardage"', `value="yardage" ${!c.defaultFormat || c.defaultFormat.kind === 'yardage' ? 'selected' : ''}`)}</select></label>
+    ${lenField('Usable width (WOF)', 'cutting.wof', { min: 10, max: 140 })}
     <div class="f-row">${numField('Extra %', 'cutting.extra', { min: 0, max: 50 })}
     ${selectField('Round up to', 'cutting.roundTo', [['eighth', '⅛ yard'], ['quarter', '¼ yard'], ['half', '½ yard'], ['none', "Don't round"]])}</div>
-    <div class="f-row">${selectField('Appliqué', 'cutting.appMethod', [['turned', 'Turned edge, 3/16"'], ['fusible', 'Fusible web']])}
-    ${lenField('Backing extra all round', 'cutting.overhang', { min: 0, max: 12 })}</div>
+    <p class="hint">Every fabric uses these unless its own settings say otherwise. Usable width is what's left after trimming the selvages; quilting cotton is usually 40–42".</p>`;
+}
+// How pieces are sewn and cut: seam allowance, appliqué method, backing margin, edge pieces.
+function seamSettingsHtml() {
+  return `${lenField('Seam allowance', 'cutting.seam', { min: 0, max: 1 })}
+    <div class="btn-row"><button class="btn small" data-act="setSeam" data-arg="0.25">¼"</button><button class="btn small" data-act="setSeam" data-arg="0.375">⅜"</button><button class="btn small" data-act="setSeam" data-arg="0.5">½"</button><button class="btn small" data-act="setSeam" data-arg="0.3937">1 cm</button></div>
+    ${selectField('Appliqué', 'cutting.appMethod', [['turned', 'Turned edge, 3/16"'], ['fusible', 'Fusible web']])}
+    ${lenField('Backing extra all round', 'cutting.overhang', { min: 0, max: 12 })}
     ${doc.layout.mode === 'tess' && doc.layout.tess.edge === 'trim' ? `<label class="check"><input type="checkbox" data-bind="layout.tess.cutEdges" data-type="bool" ${doc.layout.tess.cutEdges ? 'checked' : ''}> Cut edge pieces to shape</label>` : ''}
-    ${doc.layout.mode !== 'tess' && Qnow().cells.some(cl => cl.b && cl.clip) ? partialToggle() : ''}
-    <p class="hint">Usable width is what's left after trimming the selvages. Quilting cotton is usually 40–42".</p>`;
+    ${doc.layout.mode !== 'tess' && Qnow().cells.some(cl => cl.b && cl.clip) ? partialToggle() : ''}`;
 }
 
 Views.fabric = {
@@ -26,7 +31,7 @@ Views.fabric = {
     const Q = Qnow(), plan = cuttingPlan(Q), pre = precutSummary(plan.fabrics);
     return `<div class="seg" role="group" aria-label="Show"><button aria-pressed="${!cut}" data-act="fabPane" data-arg="shop">Shopping list</button><button aria-pressed="${cut}" data-act="fabPane" data-arg="cut">Cutting plan</button></div>
       ${cut ? `<button class="tool toggle" data-act="toggleCutMaps" aria-pressed="${ui.cutDiagrams !== false}">Cutting maps</button>` : ''}
-      <button class="tool" data-act="cuttingSettings">Cutting settings…</button>
+      <button class="tool" data-act="fabricDefaults">Default fabric…</button><button class="tool" data-act="seamSettings">Seams &amp; appliqué…</button>
       <span class="sep"></span><span class="tb-label">${fmtSize(Q.W, Q.H)} · buy <b>${fmtYards(sum(plan.fabrics, f => f.buyIn) + plan.backing.buyIn)}</b>${pre ? ` + ${esc(pre)}` : ''} · ${plural(plan.totalPieces, 'piece')}</span>`;
   },
   main() {

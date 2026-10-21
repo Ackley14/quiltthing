@@ -574,3 +574,6 @@ details.more[open] summary::before { transform: rotate(45deg); }
 .proj-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .proj-meta b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .proj-acts { display: flex; gap: 4px; }
+
+.menu { max-height: calc(100vh - 70px); overflow-y: auto; }
+.menu .menu-h:first-child { padding-top: 2px; }

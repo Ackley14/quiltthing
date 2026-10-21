@@ -18,7 +18,7 @@ function roundYardIn(inches, mode) {
 /* ---------- how each fabric comes ----------
    A fabric is bought as yardage of some width, or as precut pieces (fat quarters, charm
    squares…) or same-size pieces of your own choosing. There's a default for all fabrics
-   (Fabric → Cutting settings); any fabric can override it. */
+   (Edit → Default fabric); any fabric can override it. */
 // w × h is the size sold; use is what's left to cut from after trimming selvages and squaring up
 // (precut squares are cut exactly, so they're used whole).
 const PRECUTS = [

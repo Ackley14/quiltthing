@@ -1,12 +1,12 @@
-/* Menu bar and right-click menus. The bar has File, Edit, View and Options, a menu for the step
-   you're on (Block, Layout, Quilting, Fabric or Pattern) and Help; once one is open, pointing at
+/* Menu bar and right-click menus. The bar has File, Edit, View, Insert and Help. Edit is
+   in sections: history, the step you're on, the quilt's defaults, and your preferences; once one is open, pointing at
    another opens it, like a desktop app. Right-click menus give the same actions on things in the
    panels (blocks, fabrics, quilting layers, fabric rows). */
 
 let _barMenu = null;            // which menu-bar menu is open
 
 // The menus never change name or position; Edit, View and Insert offer what applies to the step you're on.
-const BAR_MENUS = [['file', 'File'], ['edit', 'Edit'], ['view', 'View'], ['insert', 'Insert'], ['options', 'Options'], ['help', 'Help']];
+const BAR_MENUS = [['file', 'File'], ['edit', 'Edit'], ['view', 'View'], ['insert', 'Insert'], ['help', 'Help']];
 function menubarHtml() {
   return BAR_MENUS.map(([k, l]) => `<button data-act="menubar" data-arg="${k}" aria-haspopup="menu" aria-expanded="${_barMenu === k}">${l}</button>`).join('');
 }
@@ -48,34 +48,43 @@ const MENUS = {
     { label: 'Print pattern', act: 'printPattern', kb: 'Ctrl+P' },
   ],
   edit: () => {
+    // History, then what the current step works on, then the quilt's defaults and your preferences
     const items = [
+      { header: 'History' },
       { label: 'Undo', act: 'undo', kb: 'Ctrl+Z', disabled: !undoStack.past.length },
       { label: 'Redo', act: 'redo', kb: 'Ctrl+Shift+Z', disabled: !undoStack.future.length },
     ];
     const b = activeBlock();
-    if (ui.view === 'block' && b?.kind === 'drawn') {
-      const n = selList().length;
-      items.push('-', { header: n ? plural(n, 'shape') : 'Shapes' },
-        { label: 'Copy', act: 'selCopy', kb: 'Ctrl+C', disabled: !n },
-        { label: 'Paste', act: 'selPaste', kb: 'Ctrl+V', disabled: !_edClip },
-        { label: 'Duplicate', act: 'selDup', kb: 'Ctrl+D', disabled: !n },
-        { label: 'Select all', act: 'selAll', kb: 'Ctrl+A' },
-        { label: 'Rotate 90°', act: 'selRotate', arg: 'cw', kb: 'E', disabled: !n },
-        { label: 'Flip horizontal', act: 'selMirror', arg: 'h', kb: 'X', disabled: !n },
-        { label: 'Flip vertical', act: 'selMirror', arg: 'v', kb: 'Y', disabled: !n },
-        { label: 'Bring to front', act: 'selOrder', arg: 'front', disabled: !n },
-        { label: 'Send to back', act: 'selOrder', arg: 'back', disabled: !n },
-        { label: 'Delete', act: 'selDelete', kb: 'Del', disabled: !n });
+    // the shape commands only while shapes are selected, so the menu stays short
+    const n = ui.view === 'block' && b?.kind === 'drawn' ? selList().length : 0;
+    if (n) {
+      items.push('-', { header: plural(n, 'shape') },
+        { label: 'Copy', act: 'selCopy', kb: 'Ctrl+C' },
+        { label: 'Duplicate', act: 'selDup', kb: 'Ctrl+D' },
+        { label: 'Rotate 90°', act: 'selRotate', arg: 'cw', kb: 'E' },
+        { label: 'Flip horizontal', act: 'selMirror', arg: 'h', kb: 'X' },
+        { label: 'Flip vertical', act: 'selMirror', arg: 'v', kb: 'Y' },
+        { label: 'Bring to front', act: 'selOrder', arg: 'front' },
+        { label: 'Send to back', act: 'selOrder', arg: 'back' },
+        { label: 'Delete', act: 'selDelete', kb: 'Del' });
     }
     if (ui.view === 'block' && b) {
       items.push('-', { header: esc(b.name) },
+        ...(b.kind === 'drawn' ? [{ label: 'Select all shapes', act: 'selAll', kb: 'Ctrl+A' }, { label: 'Paste', act: 'selPaste', kb: 'Ctrl+V', disabled: !_edClip }, '-'] : []),
         ...(b.kind === 'drawn' ? [{ label: `Rotate block ${isHexBlock(b) ? 60 : 90}°`, act: 'blockRotate' }, { label: 'Flip block', act: 'blockMirror' }] : []),
         { label: 'Duplicate block', act: 'blockDuplicate' },
         ...(b.kind === 'drawn' ? [{ label: 'Add suggested seams', act: 'autoSeams' }, { label: 'Remove all seams', act: 'clearSeams', disabled: !(b.seams?.length || b.appSeams?.length) }, { label: 'Clear all shapes…', act: 'blockClear', danger: true }] : []),
         { label: 'Delete block…', act: 'blockDelete', danger: true });
     }
-    if (ui.view === 'layout') items.push('-', { label: 'Clear layout…', act: 'clearLayout', danger: true });
-    if (ui.view === 'quilting' && doc.quilting.layers.length) items.push('-', { label: 'Show all layers', act: 'qShowAll', arg: '1' }, { label: 'Hide all layers', act: 'qShowAll', arg: '' });
+    if (ui.view === 'layout') items.push('-', { header: 'Layout' }, { label: 'Clear layout…', act: 'clearLayout', danger: true });
+    if (ui.view === 'quilting' && doc.quilting.layers.length) items.push('-', { header: 'Quilting layers' }, { label: 'Show all layers', act: 'qShowAll', arg: '1' }, { label: 'Hide all layers', act: 'qShowAll', arg: '' });
+    items.push('-', { header: 'Quilt defaults' },
+      { label: 'Default fabric…', act: 'fabricDefaults' },
+      { label: 'Seams & appliqué…', act: 'seamSettings' },
+      '-', { header: 'Preferences' },
+      tick('Inches', 'setUnits', 'in', ui.units !== 'cm'),
+      tick('Centimetres', 'setUnits', 'cm', ui.units === 'cm'),
+      tick('Snap to grid', 'toggleSnap', undefined, !ui.snapOff));
     return items;
   },
   view: () => {
@@ -110,15 +119,6 @@ const MENUS = {
     { label: 'Fabric', act: 'addFabric' },
     { label: 'Stash piece…', act: 'stashPicker' },
   ],
-  options: () => [
-    { header: 'Units' },
-    tick('Inches', 'setUnits', 'in', ui.units !== 'cm'),
-    tick('Centimetres', 'setUnits', 'cm', ui.units === 'cm'),
-    '-',
-    tick('Snap to grid', 'toggleSnap', undefined, !ui.snapOff),
-    '-',
-    { label: 'Cutting settings…', act: 'cuttingSettings' },
-  ],
   help: () => [
     { label: 'How it works', act: 'help', kb: '?' },
     { label: 'Keyboard shortcuts', act: 'shortcuts' },
@@ -142,9 +142,8 @@ Actions.stashPickerOk = () => {
   const [l, w, h] = STASH_PRESETS[+$('#stash-pick-size').value], fab = $('#stash-pick-fab').value;
   closeModal(); Actions.stashAdd(`${l}|${w}|${h}|${fab}`);
 };
-Actions.cuttingSettings = () => {
-  openModal(`<h2>Cutting settings</h2>${cuttingSettingsHtml()}<div class="actions"><button class="btn primary" data-act="closeModal">Done</button></div>`);
-};
+Actions.fabricDefaults = () => openModal(`<h2>Default fabric</h2>${fabricDefaultsHtml()}<div class="actions"><button class="btn primary" data-act="closeModal">Done</button></div>`);
+Actions.seamSettings = () => openModal(`<h2>Seams and appliqué</h2>${seamSettingsHtml()}<div class="actions"><button class="btn primary" data-act="closeModal">Done</button></div>`);
 // Rename a block: open it and put the cursor in its name field.
 Actions.blockRename = id => {
   if (!doc.blocks[id]) return;
