@@ -96,6 +96,13 @@ function recipeStitchCorner(leg, sa) {
   return { key: `sf:${q}`, method: 'strip', w: q, sub: q, yield: 1, cut: 'stitch', unitName: 'square', unitLabel: `${fmtLen(q, 'up')} square`, makes: 'stitch-and-flip corner' };
 }
 
+// The shape cut for a tessellation tile. Shapes cut off by the quilt edge or a panel are cut
+// whole and trimmed after assembly, unless "cut edge pieces to shape" is on: then each is cut
+// to its exact outline (and identical edge shapes share a cutting step and piece code).
+function tileCutShape(t) {
+  return t.role === 'trim' && t.full && !doc.layout.tess.cutEdges ? t.full : t.pts;
+}
+
 /* ---------- collect every piece in the quilt ---------- */
 function collectCutItems(Q) {
   const sa = doc.cutting.seam;
@@ -140,8 +147,7 @@ function collectCutItems(Q) {
   }
   // tiles & setting triangles
   for (const t of Q.tiles) {
-    // trimmed edge shapes are cut whole and trimmed after the top is sewn
-    const cls = classifyPiece(t.role === 'trim' && t.full ? t.full : t.pts);
+    const cls = classifyPiece(tileCutShape(t));
     const src = t.role === 'side-setting' || t.role === 'corner-setting' ? 'Setting triangles' : t.role === 'tile' ? 'Tiles' : 'Edge pieces';
     add(t.fab, recipeFor(cls, sa, { directional: isDir(t.fab) }), 1, src, { kind: src });
   }

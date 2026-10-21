@@ -51,7 +51,7 @@ function pieceCodes(plan) {
 const codeTag = c => `<span class="pcode">${c}</span>`;
 // The recipe a tessellation tile is cut with (must match collectCutItems).
 function tileRecipeKey(t, sa) {
-  return recipeFor(classifyPiece(t.role === 'trim' && t.full ? t.full : t.pts), sa, { directional: !!fabricById(t.fab).directional }).key;
+  return recipeFor(classifyPiece(tileCutShape(t)), sa, { directional: !!fabricById(t.fab).directional }).key;
 }
 // Piece object → its code(s) for one block (mirrored copies cut differently get a second code).
 function blockPieceCodes(codes, blockId, size) {
@@ -332,7 +332,8 @@ function assemblyMap(Q, codes, sa, page, tplList, blockJobs) {
   }
   // legend: one entry per piece code used in the map, then the blocks
   const shapeThumb = e => {
-    const pts = e.r.recipe.outline || (Q.tiles.find(t => codes.of(t.fab, tileRecipeKey(t, sa)) === e)?.full);
+    const tile = Q.tiles.find(t => codes.of(t.fab, tileRecipeKey(t, sa)) === e);
+    const pts = e.r.recipe.outline || (tile && tileCutShape(tile));
     if (!pts) return '';
     const bb = bounds(pts), m = Math.max(bb.w, bb.h) * 0.08;
     return `<svg viewBox="${round(bb.x - m, 3)} ${round(bb.y - m, 3)} ${round(bb.w + 2 * m, 3)} ${round(bb.h + 2 * m, 3)}" width="0.42in" height="0.42in"><path d="${polyToPath(pts)}" fill="${fabricFill(e.fab)}" stroke="#2b3a4a" stroke-width="${round(Math.max(bb.w, bb.h) * 0.02, 3)}"/></svg>`;
@@ -341,7 +342,7 @@ function assemblyMap(Q, codes, sa, page, tplList, blockJobs) {
   let legend = `<h3>Piece key</h3><p class="small">Each shape on the map is labelled with the code of the piece you cut for it (see the cutting list)${blockNo.size ? '; circled numbers are blocks' : ''}. Rows are numbered down the left side.</p><div class="piece-key">`;
   for (const [e, c] of items) {
     const t = tplList.find(x => x.r === e.r);
-    legend += `<div>${shapeThumb(e)}<span>${codeTag(e.code)}<b>${esc(e.r.recipe.makes)}</b> · ${c.whole + c.trim}${c.trim ? ` (${c.trim} at the edges${(doc.layout.tess.panels || []).length ? ' or panel' : ''} — sew whole, trim later)` : ''}<br>fabric <b>${fabricLetter(e.fab)}</b>, cutting step ${e.step}${t ? `, template ${t.id}` : ''}</span></div>`;
+    legend += `<div>${shapeThumb(e)}<span>${codeTag(e.code)}<b>${esc(e.r.recipe.makes)}</b> · ${c.whole + c.trim}${c.trim ? (doc.layout.tess.cutEdges ? ` — edge piece${c.trim === 1 ? '' : 's'}, cut to fit` : ` (${c.trim} at the edges${(doc.layout.tess.panels || []).length ? ' or panel' : ''} — sew whole, trim later)`) : ''}<br>fabric <b>${fabricLetter(e.fab)}</b>, cutting step ${e.step}${t ? `, template ${t.id}` : ''}</span></div>`;
   }
   for (const [id, n] of blockNo) {
     const cells = Q.cells.filter(c => c.b === id);
@@ -565,7 +566,7 @@ function assemblyText(Q, sa) {
       <li>Trim the edges straight, leaving ${fmtLen(sa)} beyond the block points for seam allowance.</li></ol>`;
   } else {
     const t = L.tess, name = tessShape(t.shape).label.replace(/ \(.*\)$/, '').toLowerCase();
-    const edge = t.edge === 'fill' ? `Partial shapes at the edges are cut from fabric ${fabricLetter(t.fill)} so the quilt finishes with straight edges.` : 'Shapes at the edges are trimmed straight after the top is assembled — cut them as whole shapes and trim later, or use the edge templates.';
+    const edge = t.edge !== 'fill' && t.cutEdges ? 'Edge pieces are cut to their exact shape (each has its own code on the map), so the edges come out straight — no trimming needed. Sew them in with their rows.' : t.edge === 'fill' ? `Partial shapes at the edges are cut from fabric ${fabricLetter(t.fill)} so the quilt finishes with straight edges.` : 'Shapes at the edges are trimmed straight after the top is assembled — cut them as whole shapes and trim later, or use the edge templates.';
     const how = {
       hex: 'Hexagons need set-in (Y) seams. English paper piecing (EPP) is the easiest route: baste each hexagon over a paper template and whip-stitch neighbours together. By machine, sew hexagons into rows, stopping ¼" from each end, then set rows together.',
       tumbling: 'Sew three diamonds (one of each orientation) into a hexagon "cube" with set-in seams, then join the cubes into rows. EPP works well here too.',
@@ -582,7 +583,7 @@ function assemblyText(Q, sa) {
       const content = p.b && doc.blocks[p.b] ? `the ${esc(doc.blocks[p.b].name)} block` : p.fab ? `a ${fmtSize(p.size, p.size)} square of fabric ${fabricLetter(p.fab)}` : 'the centre square';
       const frames = (p.frames || []).filter(f => f.width > 0);
       h += `<li><b>Panel:</b> ${frames.length ? `frame ${content} with ${frames.map((f, k) => `${fmtLen(f.width)} strips of fabric ${fabricLetter(f.fabric)}${k === 0 ? ' (innermost)' : ''}`).join(', then ')} — sides first, then top and bottom — so it measures ${fmtSize(pg.outer + 2 * sa, pg.outer + 2 * sa)} unfinished.` : `${content} measures ${fmtSize(pg.outer + 2 * sa, pg.outer + 2 * sa)} unfinished.`}</li>
-        <li><b>Setting the panel in:</b> piece the ${name} in sections — the full-width rows above and below the panel, and the shorter rows to its left and right. Trim each section's edge that meets the panel straight, ${fmtLen(sa)} beyond the panel line. Sew the left and right sections to the panel, then add the top and bottom sections, matching the shape points along each seam.</li>`;
+        <li><b>Setting the panel in:</b> piece the ${name} in sections — the full-width rows above and below the panel, and the shorter rows to its left and right. ${t.cutEdges ? 'The pieces along the panel are cut to shape, so each section already has a straight edge there.' : `Trim each section's edge that meets the panel straight, ${fmtLen(sa)} beyond the panel line.`} Sew the left and right sections to the panel, then add the top and bottom sections, matching the shape points along each seam.</li>`;
     }
     h += '</ol>';
   }

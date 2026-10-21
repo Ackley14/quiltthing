@@ -422,7 +422,8 @@ function layoutInspector() {
       <label class="check"><input type="checkbox" data-bind="layout.tess.snap" data-type="bool" ${t.snap !== false ? 'checked' : ''}> Fit to whole shapes</label>
       <p class="hint">${t.snap !== false ? `Adjusted to the shape repeat: <b>${fmtSize(...tessSize(t))}</b>. Untick to use your exact size (edge pieces may get thin).` : 'Using your exact size; very thin edge pieces are merged into their neighbours when filling gaps.'}</p>
       <h4>Edges</h4><div class="seg">${[['trim', 'Trim shapes'], ['fill', 'Fill gaps']].map(([k, l]) => `<button aria-pressed="${t.edge === k}" data-act="tessEdge" data-arg="${k}">${l}</button>`).join('')}</div>
-      <p class="hint">${t.edge === 'trim' ? 'Shapes run off the edge and are trimmed straight.' : 'Partial shapes at the edge are cut from a gap-fill fabric instead:'}</p>
+      ${t.edge === 'trim' ? `<label class="check"><input type="checkbox" data-bind="layout.tess.cutEdges" data-type="bool" ${t.cutEdges ? 'checked' : ''}> Cut edge pieces to their exact shape</label>` : ''}
+      <p class="hint">${t.edge === 'trim' ? (t.cutEdges ? `Every shape cut off by the edge${(t.panels || []).length ? ' or a panel' : ''} is cut to its exact outline, with its own cutting step and piece code — no trimming after assembly.` : 'Shapes run off the edge and are trimmed straight: they\'re cut whole and trimmed after the top is sewn.') : 'Partial shapes at the edge are cut from a gap-fill fabric instead:'}</p>
       ${t.edge === 'fill' ? fabricPicker(t.fill, 'tessFill') : ''}
       <div class="hint">Base fabric (unpainted shapes)</div>${fabricPicker(t.base, 'tessBase')}`, { key: 'shape' });
     const set = paintSet();
