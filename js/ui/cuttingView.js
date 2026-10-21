@@ -28,7 +28,7 @@ Views.cutting = {
           <div class="step-icons">${icons}</div></li>`;
       });
       const st = stashUseText(f);
-      const maps = fabricSheets(f).map((sh, i) => `<div class="hint" style="margin:${i ? '12px' : 0} 0 4px">${sh.src.stash ? `Your ${esc(sh.src.name.toLowerCase())} — ${plural(sh.src.pieces, 'piece')}` : st ? `Yardage for the rest — ${fmtYards(f.buyIn)}` : `Cutting map — ${fmtYards(f.buyIn)} of fabric`}</div>${fabricSheetSvg(sh, f.fab, { width: 380, idp: 'cv' + i, title: sh.title })}`).join('');
+      const maps = fabricSheets(f).map((sh, i) => `<div class="hint" style="margin:${i ? '12px' : 0} 0 4px">${sh.src.kind === 'stash' ? `Your ${esc(sh.src.name.toLowerCase())} — ${piecesText(sh.src.pieces)}` : sh.src.kind === 'precut' ? `${esc(sh.src.name)} — ${piecesText(sh.src.pieces)}` : sh.src.fallback ? `Yardage for the larger cuts — ${fmtYards(f.buyIn)}` : st ? `Yardage for the rest — ${fmtYards(f.buyIn)}` : `Cutting map — ${fmtYards(f.buyIn)} of ${esc(formatLabel(f.format))}`}</div>${fabricSheetSvg(sh, f.fab, { width: 380, idp: 'cv' + i, title: sh.title })}`).join('');
       h += `<div class="fabcard" id="cut-${f.fab}"><div class="fabcard-h">${swatchHtml(f.fab, 26)}<h3>${fabricLetter(f.fab)} · ${esc(fabricLabel(f.fab))}</h3>
         <div class="meta"><span class="pill">${f.pieces} pieces</span>${f.lengthIn > 0 ? `<span class="pill">${fmtYards(f.lengthIn)} used</span>` : ''}<span class="pill info">buy ${buyText(f)}</span>${st ? `<span class="pill ok">uses ${esc(st)}</span>` : f.fq ? '<span class="pill ok">fits a fat quarter</span>' : ''}</div></div>
         ${hasStashFor(f.fab) ? `<label class="check" style="margin:-4px 0 8px"><input type="checkbox" data-change="toggleStashUse" data-arg="${f.fab}" ${fabricById(f.fab).skipStash ? '' : 'checked'}> Cut from my stash first</label>` : ''}
@@ -45,11 +45,11 @@ Views.cutting = {
   },
   inspector() {
     const plan = cuttingPlan(Qnow());
-    let h = section('Settings', `<dl class="kv"><dt>Seam allowance</dt><dd>${fmtLen(doc.cutting.seam)}</dd><dt>Width of fabric</dt><dd>${fmtLen(doc.cutting.wof)}</dd><dt>Extra</dt><dd>${doc.cutting.extra}%</dd></dl>
+    let h = section('Settings', `<dl class="kv"><dt>Seam allowance</dt><dd>${fmtLen(doc.cutting.seam)}</dd><dt>Fabric comes as</dt><dd>${esc(formatLabel(defaultFormat()))}</dd><dt>Extra</dt><dd>${doc.cutting.extra}%</dd></dl>
       <div class="btn-row"><button class="btn small" data-act="view" data-arg="fabric">Change in Fabric →</button></div>
       <label class="check"><input type="checkbox" ${ui.cutDiagrams !== false ? 'checked' : ''} data-change="cutDiagrams"> Show cutting diagrams</label>
       ${doc.layout.mode === 'tess' && doc.layout.tess.edge === 'trim' ? `<label class="check"><input type="checkbox" data-bind="layout.tess.cutEdges" data-type="bool" ${doc.layout.tess.cutEdges ? 'checked' : ''}> Cut edge pieces to their exact shape</label>` : ''}
-      <dl class="kv" style="margin-top:8px"><dt>Fabric to buy</dt><dd><b>${fmtYards(sum(plan.fabrics, f => f.buyIn))}</b>${doc.stash.length ? ' <span class="muted">after stash</span>' : ''}</dd><dt>Pieces to cut</dt><dd>${plan.totalPieces}</dd><dt>Templates</dt><dd>${sum(plan.fabrics, f => f.templates.length)}</dd></dl>
+      <dl class="kv" style="margin-top:8px"><dt>Fabric to buy</dt><dd><b>${fmtYards(sum(plan.fabrics, f => f.buyIn))}</b>${precutSummary(plan.fabrics) ? ` + ${esc(precutSummary(plan.fabrics))}` : ''}${doc.stash.length ? ' <span class="muted">after stash</span>' : ''}</dd><dt>Pieces to cut</dt><dd>${plan.totalPieces}</dd><dt>Templates</dt><dd>${sum(plan.fabrics, f => f.templates.length)}</dd></dl>
       <p class="hint">Flip settings and watch these totals to compare options. Backing isn't included.</p>`, { key: 'cutsettings' });
     h += section('Fabrics', plan.fabrics.map(f => `<div class="region-row" data-act="jumpFab" data-arg="${f.fab}">${swatchHtml(f.fab, 18)}<span class="nm"><b>${fabricLetter(f.fab)}</b> ${esc(fabricLabel(f.fab))}</span><span class="muted">${buyText(f)}</span></div>`).join('') || '<p class="hint">Nothing to cut yet.</p>', { key: 'cutfabs' });
     h += section('Tips', `<p class="hint" style="margin-top:0">Press fabric before cutting. Square up the fabric edge first, then cut the widest strips. Label each stack with its fabric letter and size. Directional prints keep their orientation in these plans.</p>`, { key: 'cuttips' });

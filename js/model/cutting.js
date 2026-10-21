@@ -15,9 +15,37 @@ function roundYardIn(inches, mode) {
   return step ? Math.ceil(inches / step - 1e-9) * step : inches;
 }
 
+/* ---------- how each fabric comes ----------
+   A fabric is bought as yardage of some width, or as precut pieces (fat quarters, charm
+   squares…) or same-size pieces of your own choosing. There's a default for all fabrics
+   (Fabric → Cutting settings); any fabric can override it. */
+const PRECUTS = [
+  { key: 'fq', name: 'Fat quarter', w: 21, h: 18 },
+  { key: 'f8', name: 'Fat eighth', w: 21, h: 9 },
+  { key: 'lq', name: 'Long quarter', w: 42, h: 9 },
+  { key: 'layer', name: 'Layer cake square', w: 10, h: 10 },
+  { key: 'charm', name: 'Charm square', w: 5, h: 5 },
+  { key: 'mini', name: 'Mini charm', w: 2.5, h: 2.5 },
+  { key: 'jelly', name: 'Jelly roll strip', w: 42, h: 2.5 },
+];
+// A format setting ({ kind: 'yardage', width } | { kind: 'precut', key } | { kind: 'piece', w, h })
+// resolved to { yardage: true, width } or { yardage: false, name, W, H } (W = the longer side).
+function resolveFormat(fm) {
+  if (fm?.kind === 'yardage' && fm.width > 0) return { yardage: true, width: fm.width };
+  if (fm?.kind === 'precut') { const pc = PRECUTS.find(x => x.key === fm.key); if (pc) return { yardage: false, name: pc.name, W: Math.max(pc.w, pc.h), H: Math.min(pc.w, pc.h) }; }
+  if (fm?.kind === 'piece' && fm.w > 0 && fm.h > 0) return { yardage: false, name: 'Piece', W: Math.max(fm.w, fm.h), H: Math.min(fm.w, fm.h) };
+  return null;
+}
+function defaultFormat() { return resolveFormat(doc.cutting.defaultFormat) || { yardage: true, width: doc.cutting.wof }; }
+function fabricFormat(fab) { return resolveFormat(fabricById(fab)?.format) || defaultFormat(); }
+// The longest strip a fabric gives without joining: its width, or the long side of its pieces.
+// Pieces bigger than a precut fall back to the default yardage, so recipes may use that too.
+function fabricRun(fab) { const fm = fabricFormat(fab); return fm.yardage ? fm.width : Math.max(fm.W, doc.cutting.wof); }
+function formatLabel(fm) { return fm.yardage ? `yardage, ${fmtLen(fm.width)} wide` : `${fm.name.toLowerCase()}s (${fmtSize(fm.W, fm.H)})`; }
+
 /* ---------- recipes ---------- */
 function recipeFor(cls, sa, opts = {}) {
-  const wof = doc.cutting.wof;
+  const wof = opts.wof || doc.cutting.wof;
   const dir = !!opts.directional;
   switch (cls.shape) {
     case 'rect': {
@@ -109,13 +137,14 @@ function collectCutItems(Q) {
   const items = [];   // { fab, recipe, count, src, use }
   // `use` says where the cut ends up: { b: blockId, i: piece index } or { kind } for tiles/patches
   const add = (fab, recipe, count, src, use) => items.push({ fab: resolveFab(fab), recipe, count, src, use });
+  const ro = (fab, o = {}) => ({ ...o, wof: fabricRun(resolveFab(fab)) });   // recipe options for this fabric
   const isDir = fab => !!fabricById(fab).directional;
 
   // blocks: group identical placements
   const groups = new Map();
   for (const c of Q.cells) {
     if (c.b) { const k = `${c.b}|${c.flip ? 'f' : ''}|${c.size}`; groups.set(k, (groups.get(k) || 0) + 1); }
-    else if (c.fab) add(c.fab, recipeFor({ shape: 'rect', w: c.size, h: c.size }, sa, { directional: isDir(c.fab) }), 1, 'Plain squares', { kind: 'plain' });
+    else if (c.fab) add(c.fab, recipeFor({ shape: 'rect', w: c.size, h: c.size }, sa, ro(c.fab, { directional: isDir(c.fab) })), 1, 'Plain squares', { kind: 'plain' });
   }
   for (const [k, n] of groups) {
     const [bid, flipFlag, sizeStr] = k.split('|');
@@ -142,14 +171,14 @@ function collectCutItems(Q) {
         holes = holes.map(h => mirrorPolyX(h, size / 2));
         if (p.cls.shape === 'holed') cls.shape = 'holed';
       }
-      add(p.fab, recipeFor(cls, sa, { directional: isDir(p.fab), applique: p.app, holes }), n, name, use(p));
+      add(p.fab, recipeFor(cls, sa, ro(p.fab, { directional: isDir(p.fab), applique: p.app, holes })), n, name, use(p));
     }
   }
   // tiles & setting triangles
   for (const t of Q.tiles) {
     const cls = classifyPiece(tileCutShape(t));
     const src = t.role === 'side-setting' || t.role === 'corner-setting' ? 'Setting triangles' : t.role === 'tile' ? 'Tiles' : 'Edge pieces';
-    add(t.fab, recipeFor(cls, sa, { directional: isDir(t.fab) }), 1, src, { kind: src });
+    add(t.fab, recipeFor(cls, sa, ro(t.fab, { directional: isDir(t.fab) })), 1, src, { kind: src });
   }
   // sashing, cornerstones, borders — long pieces become joined strips
   const joined = new Map();
@@ -157,13 +186,14 @@ function collectCutItems(Q) {
     const bb = bounds(p.pts);
     const long = Math.max(bb.w, bb.h), short = Math.min(bb.w, bb.h);
     const src = p.role === 'border' ? `Border ${p.ring + 1}` : p.role === 'frame' ? `Panel frame ${p.ring + 1}` : p.role === 'corner' ? 'Cornerstones' : 'Sashing';
-    if ((p.role === 'border' || p.role === 'sashLong' || p.role === 'frame') && long + 2 * sa > doc.cutting.wof) {
+    const run = fabricFormat(resolveFab(p.fab)).yardage ? fabricRun(resolveFab(p.fab)) : fabricFormat(resolveFab(p.fab)).W;
+    if ((p.role === 'border' || p.role === 'sashLong' || p.role === 'frame') && long + 2 * sa > run) {
       const w = ceilEighth(short + 2 * sa);
       const key = `${resolveFab(p.fab)}|${w}|${src}`;
       if (!joined.has(key)) joined.set(key, { fab: resolveFab(p.fab), w, lengths: [], src, join: 'straight' });
       joined.get(key).lengths.push(ceilEighth(long + 2 * sa));
     } else {
-      add(p.fab, recipeFor({ shape: 'rect', w: bb.w, h: bb.h }, sa, { directional: isDir(p.fab) }), 1, src, { kind: src });
+      add(p.fab, recipeFor({ shape: 'rect', w: bb.w, h: bb.h }, sa, ro(p.fab, { directional: isDir(p.fab) })), 1, src, { kind: src });
     }
   }
   // binding: one continuous strip around the quilt (+12" for corners and joining the ends)
@@ -175,8 +205,8 @@ function collectCutItems(Q) {
 }
 
 /* ---------- plan per fabric ---------- */
-function joinedStripCount(total, w, join) {
-  const wof = doc.cutting.wof, loss = join === 'diagonal' ? w : 2 * doc.cutting.seam;
+function joinedStripCount(total, w, join, wof = doc.cutting.wof) {
+  const loss = join === 'diagonal' ? w : 2 * doc.cutting.seam;
   if (total <= wof) return 1;
   return Math.ceil((total - loss) / (wof - loss) - 1e-9);
 }
@@ -292,6 +322,7 @@ function computePlan(Q) {
 
   const fabrics = [];
   for (const f of byFab.values()) {
+    const fmt = fabricFormat(f.fab), wof = fmt.yardage ? fmt.width : doc.cutting.wof;   // yardage width for this fabric
     const recs = [...f.recipes.values()].map(r => ({ ...r, units: Math.ceil(r.pieces / r.recipe.yield - 1e-9) }));
     // rotary strips grouped by strip width
     const groupsW = new Map();
@@ -314,22 +345,34 @@ function computePlan(Q) {
     });
     const joinedPlans = f.joined.map(j => {
       const total = sum(j.lengths);
-      return { ...j, total, count: joinedStripCount(total, j.w, j.join) };
+      return { ...j, total, count: joinedStripCount(total, j.w, j.join, wof) };
     });
     const templates = recs.filter(r => r.recipe.method === 'template');
     // cut from your stash pieces of this fabric first (in the order listed), the rest from yardage
     const dir = !!fabricById(f.fab).directional;
     const d = cutDemand({ stripGroups, angled, tri60, joined: joinedPlans, templates });
-    const owned = fabricById(f.fab).skipStash ? [] : doc.stash.filter(x => resolveFab(x.fabric) === f.fab);
+    const owned = fabricById(f.fab).skipStash ? [] : doc.stash.filter(x => !x.backing && resolveFab(x.fabric) === f.fab);
     const names = stashNames(owned);
     const layouts = owned.map((piece, i) => {
-      const W = Math.max(piece.w, piece.h), H = Math.min(piece.w, piece.h), before = demandPieces(d);
+      const W = Math.max(piece.w, piece.h), H = Math.min(piece.w, piece.h), before = demandPieces(d), work = demandWork(d);
       const L = layoutBin(d, W, H, dir);
-      return { stash: true, piece, name: names[i], W, H, L, pieces: before - demandPieces(d) };
+      return { kind: 'stash', stash: true, piece, name: names[i], W, H, L, pieces: before - demandPieces(d), used: work - demandWork(d) > 1e-9 };
     });
+    // precut / fixed-size pieces: as many as it takes; cuts too big for them go on to yardage
+    let buyPieces = 0;
+    if (!fmt.yardage) {
+      const start = layouts.length;
+      while (demandWork(d) > 1e-9 && buyPieces < 400) {
+        const before = demandPieces(d), work = demandWork(d), L = layoutBin(d, fmt.W, fmt.H, dir);
+        if (work - demandWork(d) < 1e-9) break;
+        buyPieces++;
+        layouts.push({ kind: 'precut', name: `${fmt.name} ${buyPieces}`, W: fmt.W, H: fmt.H, L, pieces: before - demandPieces(d), used: true });
+      }
+      if (buyPieces === 1) layouts[start].name = fmt.name;
+    }
     const yardPieces = demandPieces(d);
     const yard = layoutBin(d, wof, Infinity, dir);
-    layouts.push({ stash: false, name: 'yardage', W: wof, H: yard.H, L: yard, pieces: yardPieces });
+    layouts.push({ kind: 'yardage', stash: false, name: 'yardage', W: wof, H: yard.H, L: yard, pieces: yardPieces, fallback: !fmt.yardage });
     for (const g of stripGroups) { const res = yard.groups.get(g); g.strips = res.strips; g.partials = res.partials; g.count = res.strips.length; }
     for (const a of [...angled, ...tri60]) a.count = yard.runs.get(a)?.count || 0;
     for (const j of joinedPlans) j.count = yard.joinedCount.get(j) || 0;
@@ -338,27 +381,17 @@ function computePlan(Q) {
     const withExtra = lengthIn * (1 + (doc.cutting.extra || 0) / 100);
     fabrics.push({
       fab: f.fab, sources: [...f.sources], stripGroups, angled, tri60, joined: joinedPlans, templates, sheet: yard, layouts,
-      stashOwned: owned.length, lengthIn, buyIn: lengthIn > 1e-6 ? roundYardIn(withExtra, doc.cutting.roundTo) : 0, pieces, recipes: recs,
+      stashOwned: owned.length, format: fmt, buyPieces, lengthIn, buyIn: lengthIn > 1e-6 ? roundYardIn(withExtra, doc.cutting.roundTo) : 0, pieces, recipes: recs,
     });
   }
   fabrics.sort((a, b) => fabricIndex(a.fab) - fabricIndex(b.fab));
-  for (const f of fabrics) f.fq = f.lengthIn > 0 && f.lengthIn <= 18 ? stashPlan(f, [{ w: 21, h: 18 }]).ok : false;
+  for (const f of fabrics) f.fq = f.format.yardage && f.lengthIn > 0 && f.lengthIn <= 18 ? stashPlan(f, [{ w: 21, h: 18 }]).ok : false;
 
-  // backing, batting
-  const oh = doc.cutting.overhang ?? 4;
-  const bw = doc.cutting.backingWidth || 42, usable = bw - 2;
-  const BW = Q.W + 2 * oh, BH = Q.H + 2 * oh;
-  const opt = (across, along) => {
-    if (across <= usable) return { panels: 1, len: along };
-    const n = Math.ceil((across - 1) / (usable - 1) - 1e-9);   // ½" seams between panels
-    return { panels: n, len: n * along };
-  };
-  const vert = opt(BW, BH), horiz = opt(BH, BW);
-  const back = vert.len <= horiz.len ? { ...vert, seams: 'vertical' } : { ...horiz, seams: 'horizontal' };
-  const backing = { w: BW, h: BH, fabricWidth: bw, ...back, buyIn: roundYardIn(back.len, doc.cutting.roundTo) };
-  const batting = { w: BW, h: BH };
+  // backing (see backing.js), batting
+  const backing = computeBacking(Q);
+  const batting = { w: backing.w, h: backing.h };
   const problems = [];
-  for (const f of fabrics) for (const g of f.stripGroups) if (g.oversize) problems.push(`${fabricLabel(f.fab)}: a piece is wider than your fabric — piece it from two cuts or use wide fabric.`);
+  for (const f of fabrics) for (const g of f.stripGroups) if (g.oversize) problems.push(`${fabricLabel(f.fab)}: a piece is longer than your fabric is wide — piece it from two cuts or use wider fabric.`);
   return { fabrics, backing, batting, quilt: { w: Q.W, h: Q.H }, totalPieces: sum(fabrics, f => f.pieces), problems };
 }
 
@@ -388,6 +421,10 @@ function demandPieces(d) {
   return sum(d.groups, g => sum(g.units, u => u.r.recipe.yield || 1)) + sum(d.runs, a => a.left)
     + d.joined.filter(j => j.left > 1e-6).length + d.items.length + sum(d.hexes, h => h.left);
 }
+
+// Progress measure: pieces still to cut, plus a little for every inch of joined strip still to cut
+// (so a piece that only takes some binding strips still counts as used).
+const demandWork = d => demandPieces(d) + sum(d.joined, j => Math.max(0, j.left)) / 1000;
 
 // Lay what's left of `d` onto a W-wide piece of fabric at most Hmax long, using it up as it goes.
 function layoutBin(d, W, Hmax, directional) {
@@ -520,12 +557,68 @@ function splitFree(free, b) {
 
 // "Uses your fat quarter and half yard" style summary of the stash pieces a fabric's plan uses.
 function stashUseText(f) {
-  const used = (f.layouts || []).filter(x => x.stash && x.pieces > 0).map(x => `your ${x.name.toLowerCase()}`);
+  const used = (f.layouts || []).filter(x => x.stash && x.used).map(x => `your ${x.name.toLowerCase()}`);
   return used.length ? used.length === 1 ? used[0] : `${used.slice(0, -1).join(', ')} and ${used[used.length - 1]}` : '';
 }
-const hasStashFor = fab => doc.stash.some(x => resolveFab(x.fabric) === fab);
+const hasStashFor = fab => doc.stash.some(x => !x.backing && resolveFab(x.fabric) === fab);
 // Buy column text: yardage still needed, or nothing when the stash covers it.
-function buyText(f) { return f.buyIn > 0 ? fmtYards(f.buyIn) : f.stashOwned ? 'nothing (stash)' : fmtYards(0); }
+function buyText(f) {
+  const parts = [];
+  if (f.buyPieces) parts.push(plural2(f.buyPieces, f.format.name));
+  if (f.buyIn > 0) parts.push(f.buyPieces ? `${fmtYards(f.buyIn)} for the larger cuts` : fmtYards(f.buyIn));
+  return parts.length ? parts.join(' + ') : f.stashOwned ? 'nothing (stash)' : fmtYards(0);
+}
+
+// <option>s for a "comes as" setting; value is 'default' | 'yardage' | precut key | 'piece'.
+function formatOptionsHtml(cur, withDefault) {
+  const k = !cur ? 'default' : cur.kind === 'precut' ? cur.key : cur.kind;
+  const def = defaultFormat();
+  return [
+    ...(withDefault ? [['default', `Default (${def.yardage ? `yardage, ${fmtLen(def.width)}` : def.name.toLowerCase() + 's'})`]] : []),
+    ['yardage', withDefault ? 'Yardage, its own width' : 'Yardage'],
+    ...PRECUTS.map(pc => [pc.key, `${pc.name}s (${fmtSize(pc.w, pc.h)})`]),
+    ['piece', 'Pieces of a size I choose'],
+  ].map(([v, l]) => `<option value="${v}" ${v === k ? 'selected' : ''}>${esc(l)}</option>`).join('');
+}
+// A "comes as" choice → the stored setting (keeping any width/size already entered).
+function formatFromChoice(v, prev) {
+  if (v === 'default') return null;
+  if (v === 'yardage') return { kind: 'yardage', width: prev?.width || doc.cutting.wof };
+  if (v === 'piece') return { kind: 'piece', w: prev?.w || 18, h: prev?.h || 22 };
+  return { kind: 'precut', key: v };
+}
+
+// How many W×H pieces a fabric's cuts need (ignoring stash), or null if some cut doesn't fit one.
+function piecesNeeded(f, W, H) {
+  const d = cutDemand(f), dir = !!fabricById(f.fab).directional;
+  let n = 0;
+  while (demandWork(d) > 1e-9 && n < 400) {
+    const before = demandWork(d);
+    layoutBin(d, Math.max(W, H), Math.min(W, H), dir);
+    if (before - demandWork(d) < 1e-9) return null;
+    n++;
+  }
+  return n;
+}
+// Other ways to buy a fabric that hold all its cuts: "or 2 fat quarters · 4 fat eighths".
+function formatOptions(f) {
+  if (!f.format.yardage) return [];
+  const out = [];
+  for (const pc of PRECUTS.filter(x => ['fq', 'f8', 'layer', 'charm'].includes(x.key))) {
+    const n = piecesNeeded(f, pc.w, pc.h);
+    if (n && n <= 12) out.push({ key: pc.key, n, label: `${n} ${pc.name.toLowerCase()}${n === 1 ? '' : 's'}` });
+  }
+  return out.slice(0, 3);
+}
+const plural2 = (n, name) => `${n} ${name.toLowerCase()}${n === 1 ? '' : 's'}`;
+// "5 fat quarters, 10 charm squares" for everything bought as pieces (same kinds added up).
+function precutSummary(fabrics) {
+  const by = new Map();
+  for (const f of fabrics) if (f.buyPieces) by.set(f.format.name, (by.get(f.format.name) || 0) + f.buyPieces);
+  return [...by].map(([n, c]) => plural2(c, n)).join(', ');
+}
+// "8 pieces", or "strips" for a piece that only gives strips for joining (binding, borders).
+const piecesText = n => n ? plural(n, 'piece') : 'strips for joining';
 
 // Names for stash pieces on the plan: "Fat quarter", or "Fat quarter 1", "Fat quarter 2" when repeated.
 function stashNames(pieces) {
@@ -549,7 +642,7 @@ function stashPlan(f, pieces) {
   });
   const left = demandPieces(d);
   let buyIn = 0;
-  if (left) buyIn = roundYardIn(layoutBin(d, doc.cutting.wof, Infinity, dir).H * (1 + (doc.cutting.extra || 0) / 100), doc.cutting.roundTo);
+  if (left) buyIn = roundYardIn(layoutBin(d, fabricRun(f.fab), Infinity, dir).H * (1 + (doc.cutting.extra || 0) / 100), doc.cutting.roundTo);
   return { bins, ok: !left, total, covered: total - left, buyIn };
 }
 
@@ -559,9 +652,9 @@ function stashPlan(f, pieces) {
 function fabricSheet(f) { return sheetFromLayout(f, f.sheet, doc.cutting.wof, f.sheet.H, f.buyIn); }
 // Every map for a fabric: each stash piece it uses, then the yardage (if any is still needed).
 function fabricSheets(f) {
-  return f.layouts.filter(s => s.stash ? s.pieces > 0 : s.L.H > 1e-6 || f.layouts.length === 1).map(s => ({
-    ...sheetFromLayout(f, s.L, s.W, s.stash ? s.H : s.L.H, s.stash ? 0 : f.buyIn),
-    src: s, title: s.stash ? `Your ${s.name.toLowerCase()} — ${fmtSize(s.W, s.H)}` : null,
+  return f.layouts.filter(s => s.kind !== 'yardage' ? s.used : s.L.H > 1e-6 || f.layouts.length === 1).map(s => ({
+    ...sheetFromLayout(f, s.L, s.W, s.kind !== 'yardage' ? s.H : s.L.H, s.kind !== 'yardage' ? 0 : f.buyIn),
+    src: s, title: s.kind === 'stash' ? `Your ${s.name.toLowerCase()} — ${fmtSize(s.W, s.H)}` : s.kind === 'precut' ? `${s.name} — ${fmtSize(s.W, s.H)}` : null,
   }));
 }
 // A drawable map for a layout (the yardage, or one stash piece), with each cut carrying the
@@ -591,10 +684,10 @@ function fabricInstructions(f) {
   const rows = [];
   const stepOf = ref => rows.findIndex(r => r.group === ref || r.a === ref || r.j === ref || r.r === ref) + 1;
   // with stash pieces, each step lists what to cut from each piece
-  const srcs = (f.layouts || []).filter(x => x.stash ? x.pieces > 0 : true);
-  const multi = srcs.some(x => x.stash);
-  const fromWhat = x => x.stash ? `From your ${x.name.toLowerCase()}` : 'From yardage';
-  const length = x => x.stash ? `${fmtLen(x.W, 'up')} long` : 'WOF';
+  const srcs = (f.layouts || []).filter(x => x.kind !== 'yardage' ? x.used : true);
+  const multi = srcs.some(x => x.kind !== 'yardage');
+  const fromWhat = x => x.kind === 'stash' ? `From your ${x.name.toLowerCase()}` : x.kind === 'precut' ? `From ${x.name.toLowerCase()}` : 'From yardage';
+  const length = x => x.kind !== 'yardage' ? `${fmtLen(x.W, 'up')} long` : 'WOF';
   const bySource = (count, w) => srcs.map(x => ({ x, n: count(x) })).filter(o => o.n).map(o => `${fromWhat(o.x)}: ${plural(o.n, 'strip')} ${fmtLen(w, 'up')} × ${length(o.x)}.`);
   // "from the leftover of step 2: …" lines, grouped by the step they come from
   const fromLeftovers = (list, what) => {

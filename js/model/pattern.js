@@ -386,10 +386,10 @@ function renderPatternDoc() {
   /* --- materials --- */
   const stats = quiltingStats(Q);
   P('', `<h2>Materials</h2>
-    <p>Yardage assumes ${fmtLen(doc.cutting.wof)}-wide fabric after removing selvages, includes ${doc.cutting.extra}% extra for shrinkage and mistakes, and is rounded up to the nearest ${({ none: 'inch', eighth: '⅛ yard', quarter: '¼ yard', half: '½ yard' })[doc.cutting.roundTo]}.</p>
+    <p>Yardage assumes ${fmtLen(doc.cutting.wof)}-wide fabric after removing selvages (unless a fabric says otherwise below), includes ${doc.cutting.extra}% extra for shrinkage and mistakes, and is rounded up to the nearest ${({ none: 'inch', eighth: '⅛ yard', quarter: '¼ yard', half: '½ yard' })[doc.cutting.roundTo]}.</p>
     ${patternFabricKeyTable(plan)}
     <table class="pt"><tbody>
-      <tr><td><b>Backing</b></td><td>${fmtYards(plan.backing.buyIn)} of ${fmtLen(plan.backing.fabricWidth)}-wide ${doc.layout.backing?.fabric ? esc(fabricLabel(doc.layout.backing.fabric)) : 'fabric'} — ${plan.backing.panels > 1 ? `${plan.backing.panels} panels joined with ${plan.backing.seams} seams` : 'one piece'}, to make ${fmtSize(plan.backing.w, plan.backing.h)}</td></tr>
+      <tr><td><b>Backing</b></td><td>${plan.backing.chosen.from === 'stash' ? `From your stash (${esc(plan.backing.chosen.title.toLowerCase())})` : `${fmtYards(plan.backing.buyIn)} of ${fmtLen(plan.backing.fabricWidth)}-wide ${doc.layout.backing?.fabric ? esc(fabricLabel(doc.layout.backing.fabric)) : 'fabric'}`} — ${esc(plan.backing.chosen.title.toLowerCase())}, to make ${fmtSize(plan.backing.w, plan.backing.h)}</td></tr>
       <tr><td><b>Batting</b></td><td>${fmtSize(plan.batting.w, plan.batting.h)}</td></tr>
       ${doc.layout.binding?.fabric ? `<tr><td><b>Binding</b></td><td>Included above in fabric ${fabricLetter(doc.layout.binding.fabric)} (${fmtLen(doc.layout.binding.width)} strips, double fold)</td></tr>` : ''}
       ${stats.total > 0 ? `<tr><td><b>Thread</b></td><td>About ${Math.ceil(stats.threadYds / 50) * 50} yd for quilting (${Math.round(stats.total / 36)} yd of stitching, top + bobbin)</td></tr>` : ''}
@@ -413,7 +413,7 @@ function renderPatternDoc() {
         list += `<li><span class="stepno">${i + 1}</span><div>${codes.forRow(row).map(e => codeTag(e.code)).join('')}<b>${row.head}</b>${extra}<br>${row.parts.map(esc).join('<br>')}${uses.length ? `<div class="uses">${uses.map(u => usageThumbSvg(u, 0.42, 'in')).join('')}</div>` : ''}</div></li>`;
       });
       const st = stashUseText(f);
-      const maps = fabricSheets(f).map((sh, i) => `${sh.src.stash ? `<div class="map-cap">Your ${esc(sh.src.name.toLowerCase())}</div>` : st ? '<div class="map-cap">Yardage for the rest</div>' : ''}${fabricSheetSvg(sh, f.fab, { width: 2.4, unit: 'in', idp: 'pc' + i, title: sh.title })}`).join('');
+      const maps = fabricSheets(f).map((sh, i) => `${sh.src.kind === 'stash' ? `<div class="map-cap">Your ${esc(sh.src.name.toLowerCase())}</div>` : sh.src.kind === 'precut' ? `<div class="map-cap">${esc(sh.src.name)}</div>` : sh.src.fallback ? '<div class="map-cap">Yardage for the larger cuts</div>' : st ? '<div class="map-cap">Yardage for the rest</div>' : ''}${fabricSheetSvg(sh, f.fab, { width: 2.4, unit: 'in', idp: 'pc' + i, title: sh.title })}`).join('');
       return `<div class="cut-fab"><h3>${swatchHtml(f.fab, 20)} Fabric ${fabricLetter(f.fab)} — ${esc(fabricLabel(f.fab))} <span class="muted" style="font-weight:400">· ${st && !f.buyIn ? `all from ${esc(st)}` : `buy ${buyText(f)}${st ? `, plus ${esc(st)}` : ''}`}</span></h3>
         <div class="cut-cols"><ol class="cut-list">${list}</ol><div class="cut-map">${maps}</div></div></div>`;
     }).join(''));
@@ -514,9 +514,8 @@ function renderPatternDoc() {
   /* --- finishing --- */
   const bnd = doc.layout.binding;
   P('', `<h2>Finishing</h2>
-    <h3>Backing</h3>${doc.layout.backing?.fabric || layers.length ? `<figure class="back-fig">${quiltBackSvg(Q, { size: fit(Q.W, Q.H, page.w * 0.34, page.h * 0.3), layers, scaleHint: 1.4 })}<figcaption>The back of the finished quilt${layers.length ? ' — quilting shown mirrored, as it appears from behind' : ''}</figcaption></figure>` : ''}<p>${plan.backing.panels > 1
-      ? `Cut the backing fabric into ${plan.backing.panels} equal lengths. Remove selvages, sew together with ½" ${plan.backing.seams} seams and press open, to make a backing at least ${fmtSize(plan.backing.w, plan.backing.h)}.`
-      : `Cut a backing at least ${fmtSize(plan.backing.w, plan.backing.h)}.`}</p>
+    <h3>Backing</h3>${doc.layout.backing?.fabric || layers.length ? `<figure class="back-fig">${quiltBackSvg(Q, { size: fit(Q.W, Q.H, page.w * 0.34, page.h * 0.3), layers, scaleHint: 1.4 })}<figcaption>The back of the finished quilt${layers.length ? ' — quilting shown mirrored, as it appears from behind' : ''}</figcaption></figure>` : ''}<p>Make a backing at least ${fmtSize(plan.backing.w, plan.backing.h)} (the quilt plus ${fmtLen(doc.cutting.overhang ?? 4)} all round) — ${esc(plan.backing.chosen.title.toLowerCase())}:</p>
+    <div class="back-plan">${backingDiagramSvg(plan.backing, plan.backing.chosen, { width: '2.8in' })}<ol>${plan.backing.chosen.steps.map(t => `<li>${esc(t)}</li>`).join('')}</ol></div>
     <h3>Layer and baste</h3><p>Lay the backing wrong side up, smooth and tape it taut. Centre the batting (${fmtSize(plan.batting.w, plan.batting.h)}) and then the quilt top, right side up. Baste with pins every 4–6", spray baste, or thread baste, working from the centre out.</p>
     <h3>Quilt</h3><p>${layers.length ? 'Quilt as shown on the Quilting page.' : 'Quilt as desired — straight lines, free motion, or hand quilting.'} Keep the quilting density even across the quilt. Trim the batting and backing even with the top.</p>
     ${bnd?.fabric ? `<h3>Binding</h3><ol>

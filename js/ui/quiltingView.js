@@ -12,7 +12,7 @@ Views.quilting = {
         ${back ? '' : `<button class="tool" data-act="toggleUi" data-arg="qFade" aria-pressed="${!!ui.qFade}" title="Fade the quilt so lines stand out">Fade quilt</button>`}
         <button class="tool" data-act="toggleUi" data-arg="grayscale" aria-pressed="${!!ui.grayscale}">Value</button></div>
       <div class="canvas-wrap">${back ? quiltBackSvg(Q) : quiltSvg(Q, { faded: !!ui.qFade, quilting: quiltingSvg(Q) })}</div>
-      <div class="status-bar">${back ? `<b>Back of the quilt</b> — turned over, so the stitching is mirrored left to right. ${bf ? `Backing: ${esc(fabricLabel(bf))}, ` : 'No backing fabric chosen yet (pick one on the right) · '}${fmtYards(bk.buyIn)} of ${fmtLen(bk.fabricWidth)}-wide fabric${bk.panels > 1 ? `, ${bk.panels} panels joined with ${bk.seams} seams (dashed)` : ', one piece'}.` : ''}${back ? '' : layers.length
+      <div class="status-bar">${back ? `<b>Back of the quilt</b> — turned over, so the stitching is mirrored left to right. ${bf ? `Backing: ${esc(fabricLabel(bf))} — ` : 'No backing fabric chosen yet (pick one on the right) · '}${esc(bk.chosen.title.toLowerCase())}, ${bk.chosen.from === 'stash' ? 'nothing to buy' : `${fmtYards(bk.buyIn)} to buy`}${bk.chosen.kind !== 'piece' && (bk.panels > 1 || bk.chosen.ana?.mode === 'cut') ? ' (seams dashed)' : ''}.` : ''}${back ? '' : layers.length
         ? `About <b>${Math.round(stats.total / 36)} yd</b> of stitching · allow ~<b>${Math.ceil(stats.threadYds / 50) * 50} yd</b> of thread (top + bobbin)`
         : 'Add a quilting layer on the right to plan your stitching lines. They appear in the printed pattern before the binding step.'}</div></div>`;
   },
@@ -41,14 +41,39 @@ Views.quilting = {
         <div class="btn-row"><button class="btn small" data-act="qMove" data-arg="${i}|-1" ${i ? '' : 'disabled'}>↑</button><button class="btn small" data-act="qMove" data-arg="${i}|1" ${i < layers.length - 1 ? '' : 'disabled'}>↓</button><button class="btn small" data-act="qDup" data-arg="${i}">Duplicate</button><button class="btn small danger" data-act="qDel" data-arg="${i}">Remove</button></div>`,
       { key: 'ql-' + L.id, right: `<span class="layer-sw" style="background:${L.color}"></span>` });
     });
-    const bk = cuttingPlan(Q).backing, bf = doc.layout.backing?.fabric;
-    h += section('Backing', `<div class="hint" style="margin-top:0">Backing fabric</div>${fabricPicker(bf, 'backingFab')}
-      <div class="btn-row"><button class="btn small" data-act="backingFab" data-arg="" ${bf ? '' : 'disabled'}>None chosen</button>${ui.qSide === 'back' ? '' : '<button class="btn small" data-act="qSide" data-arg="back">See the back</button>'}</div>
-      <p class="hint">Needs ${fmtYards(bk.buyIn)} of ${fmtLen(bk.fabricWidth)}-wide fabric (${fmtSize(bk.w, bk.h)} with ${fmtLen(doc.cutting.overhang ?? 4)} extra all round)${bk.panels > 1 ? ` — ${bk.panels} panels joined with ${bk.seams} seams` : ''}. Change the fabric width in <b>Fabric</b>. A busy print on the back hides wobbly stitching; a plain one shows the quilting off.</p>`, { key: 'backing' });
+    h += section('Backing', backingPanelHtml(), { key: 'backing' });
     return h;
   },
 };
 Actions.qSide = v => { ui.qSide = v === 'back' ? 'back' : 'front'; saveUi(); render(); };
+// The backing settings: fabric, the width it's sold in, pieces you have, and how to make it.
+function backingPanelHtml() {
+  const bk = cuttingPlan(Qnow()).backing, bf = doc.layout.backing?.fabric;
+  const mine = doc.stash.filter(x => x.backing);
+  const auto = !doc.layout.backing?.method || !bk.options.some(o => o.id === doc.layout.backing.method);
+  const cost = o => o.from === 'stash' ? 'nothing to buy' : `buy ${fmtYards(o.buyIn)}`;
+  return `<div class="hint" style="margin-top:0">Backing fabric</div>${fabricPicker(bf, 'backingFab')}
+    <div class="btn-row"><button class="btn small" data-act="backingFab" data-arg="" ${bf ? '' : 'disabled'}>None chosen</button>${ui.qSide === 'back' ? '' : '<button class="btn small" data-act="qSide" data-arg="back">See the back</button>'}</div>
+    <div class="f-row">${lenField('Width it\'s sold in', 'cutting.backingWidth', { min: 10, max: 140 })}${lenField('Extra all round', 'cutting.overhang', { min: 0, max: 12 })}</div>
+    <div class="btn-row">${[42, 44, 60, 90, 108].map(w => `<button class="btn small" data-act="backingWidth" data-arg="${w}" aria-pressed="${(doc.cutting.backingWidth || 42) === w}">${w}"</button>`).join('')}</div>
+    <h4>Pieces I have for the backing</h4>
+    ${mine.map(p => `<div class="stash-row back-piece"><input type="text" value="${esc(p.label)}" data-change="stashLabel" data-arg="${p.id}" aria-label="Name">
+      <input type="text" inputmode="decimal" value="${esc(inputLen(p.w))}" data-change="stashW" data-arg="${p.id}" aria-label="Width" title="Width">
+      <input type="text" inputmode="decimal" value="${esc(inputLen(p.h))}" data-change="stashH" data-arg="${p.id}" aria-label="Length" title="Length">
+      <button class="btn small ghost" data-act="stashDel" data-arg="${p.id}" aria-label="Remove">✕</button></div>`).join('') || '<p class="hint" style="margin-top:0">None yet — add a piece you own (measured after trimming selvages) and it\'s used if it can make the backing.</p>'}
+    <div class="btn-row"><button class="btn small" data-act="backingPieceAdd">+ Add a piece I have</button></div>
+    <h4>How to make it <span class="muted" style="font-weight:400">· ${fmtSize(bk.w, bk.h)}</span></h4>
+    <label class="check opt"><input type="radio" name="bkm" data-change="backingMethod" value="auto" ${auto ? 'checked' : ''}> Best option <span class="muted">(${esc(bk.auto.title.toLowerCase())})</span></label>
+    ${bk.options.map(o => `<label class="check opt"><input type="radio" name="bkm" data-change="backingMethod" value="${o.id}" ${!auto && bk.chosen === o ? 'checked' : ''}> ${esc(o.title)} <span class="muted">· ${cost(o)}</span></label>`).join('')}
+    <div class="back-plan">${backingDiagramSvg(bk, bk.chosen, { width: 290 })}<ol>${bk.chosen.steps.map(t => `<li>${esc(t)}</li>`).join('')}</ol></div>`;
+}
+Actions.backingWidth = w => { doc.cutting.backingWidth = +w; commit(); };
+Actions.backingMethod = (v, el) => { if (!el.checked) return; doc.layout.backing = { ...(doc.layout.backing || {}) }; if (v === 'auto') delete doc.layout.backing.method; else doc.layout.backing.method = v; commit(); };
+Actions.backingPieceAdd = () => {
+  const bk = cuttingPlan(Qnow()).backing;
+  doc.stash.push({ id: uid('s'), label: 'Backing piece', fabric: doc.layout.backing?.fabric || doc.layout.background, w: Math.min(42, Math.round(bk.w)), h: Math.round(bk.h * 1.5), backing: true });
+  commit();
+};
 Actions.backingFab = id => { doc.layout.backing = { ...(doc.layout.backing || {}), fabric: id || null }; commit(); };
 
 // Per-face line direction for dimensional quilting (orientation groups present in the tessellation).

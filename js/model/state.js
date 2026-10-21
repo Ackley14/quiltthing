@@ -56,7 +56,7 @@ function newDoc() {
       panels: [],             // inset panels: framed squares set into the centre (any setting)
     },
     quilting: { layers: [] },
-    cutting: { seam: 0.25, wof: 42, extra: 10, roundTo: 'eighth', backingWidth: 42, overhang: 4, appMethod: 'turned' },
+    cutting: { seam: 0.25, wof: 42, extra: 10, roundTo: 'eighth', backingWidth: 42, overhang: 4, appMethod: 'turned', defaultFormat: { kind: 'yardage' } },
     stash: [],
   };
 }

@@ -169,6 +169,12 @@ input[type=color] { width: 36px; height: 30px; padding: 0 2px; border: 1px solid
 .canvas-wrap svg.editor { width: min(100%, calc(100vh - 150px)); aspect-ratio: 1; background: transparent; filter: none; touch-action: none; user-select: none; -webkit-user-select: none; }
 .canvas-wrap svg.quilt-svg { touch-action: none; }
 .grayscale .canvas-wrap svg, .grayscale .blk svg { filter: grayscale(1) drop-shadow(0 3px 10px rgba(31,41,51,.18)); }
+.back-plan { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; margin-top: 8px; }
+.back-plan svg { max-width: 100%; height: auto; background: #fff; border: 1px solid var(--line, #ddd); border-radius: 6px; }
+.back-plan ol { margin: 0; padding-left: 18px; font-size: 12px; flex: 1; min-width: 180px; }
+.page .back-plan ol { font-size: 9.5pt; }
+label.check.opt { margin: 2px 0; }
+.stash-row.back-piece { margin-bottom: 6px; }
 .zoom-ctl { display: inline-flex; }
 .zoom-ctl .tool { border-radius: 0; margin: 0; min-width: 30px; justify-content: center; }
 .zoom-ctl .tool:first-child { border-radius: 7px 0 0 7px; }

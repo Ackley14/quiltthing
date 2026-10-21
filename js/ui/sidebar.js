@@ -24,6 +24,20 @@ function fabricsSection() {
   return section('Fabrics', body, { key: 'fabrics' });
 }
 
+// How this fabric comes (its own width, precuts, or pieces of a set size); default = the shared setting.
+function fabricFormatFields(f) {
+  const i = doc.fabrics.indexOf(f), fm = f.format;
+  return `<label class="f">Comes as<select data-change="fabFormat">${formatOptionsHtml(fm, true)}</select></label>
+    ${fm?.kind === 'yardage' ? lenField('Usable width', `fabrics.${i}.format.width`, { min: 5, max: 140 }) : ''}
+    ${fm?.kind === 'piece' ? `<div class="f-row">${lenField('Piece width', `fabrics.${i}.format.w`, { min: 1, max: 140 })}${lenField('Piece length', `fabrics.${i}.format.h`, { min: 1, max: 400 })}</div>` : ''}`;
+}
+Actions.fabFormat = v => {
+  const f = doc.fabrics.find(x => x.id === ui.fabric); if (!f) return;
+  const fm = formatFromChoice(v, f.format);
+  if (fm) f.format = fm; else delete f.format;
+  commit();
+};
+
 function fabricEditor() {
   const f = doc.fabrics.find(x => x.id === ui.fabric);
   if (!f) {
@@ -45,6 +59,7 @@ function fabricEditor() {
       <label class="f">Print scale<input type="range" min="0.3" max="3" step="0.1" value="${p.scale || 1}" data-input="fabScaleLive" data-change="fabScale"></label>
     </div>` : ''}
     <label class="check"><input type="checkbox" ${f.directional ? 'checked' : ''} data-change="fabDir"> Directional print (don't rotate when cutting)</label>
+    ${fabricFormatFields(f)}
     <p class="hint">${esc(colorName(f.color))} · <b>${valueClass(f.color)}</b> value${isBg ? ' · <b>quilt background</b>' : ` · contrast with background ${contrast.toFixed(1)}:1${contrast < 1.6 ? ' — <b>low</b>, may blend in' : ''}`}</p>
     <div class="hint" style="margin-top:8px">Suggestions — click to add:</div>
     <div class="harm">${harmonies(f.color).map(h => `<button style="background:${h.hex}" data-act="addFabricColor" data-arg="${h.hex}" title="${h.label} · ${colorName(h.hex)}" aria-label="Add ${h.label}"></button>`).join('')}</div>

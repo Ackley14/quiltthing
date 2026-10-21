@@ -221,7 +221,13 @@ function quiltBackSvg(Q, opts = {}) {
   const fab = doc.layout.backing?.fabric, hair = Math.max(Q.W, Q.H) * 0.0012;
   let s = `<svg class="${opts.cls || 'quilt-svg'}" viewBox="0 0 ${round(Q.W, 3)} ${round(Q.H, 3)}" xmlns="http://www.w3.org/2000/svg"${opts.size ? ` width="${opts.size[0]}" height="${opts.size[1]}"` : ''}>`;
   s += `<rect width="${round(Q.W, 3)}" height="${round(Q.H, 3)}" fill="${fab ? fabricFill(fab) : '#f1eee7'}"/>`;
-  if (bk.panels > 1) {
+  const ana = bk.chosen?.ana;
+  if (ana?.mode === 'cut') {
+    // the cut runs from (sw, 0) to (0, sh) with the backing at [0, w] × [0, h] (y up); quilt coordinates
+    const q = ([x, y]) => [round(x - oh, 3), round(bk.h - y - oh, 3)];
+    const [a, b] = [q([ana.sourceW, 0]), q([0, ana.sourceH])];
+    s += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="rgba(20,24,30,.45)" stroke-width="${hair * 1.4}" stroke-dasharray="${hair * 8} ${hair * 5}"/>`;
+  } else if (bk.panels > 1) {
     // panels share the backing (quilt + overhang) equally; seams in quilt coordinates
     const across = bk.seams === 'vertical' ? bk.w : bk.h;
     for (let k = 1; k < bk.panels; k++) {
