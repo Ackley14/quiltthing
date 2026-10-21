@@ -317,15 +317,28 @@ function computePlan(Q) {
       return { ...j, total, count: joinedStripCount(total, j.w, j.join) };
     });
     const templates = recs.filter(r => r.recipe.method === 'template');
-    const sheet = layoutBin(cutDemand({ stripGroups, angled, tri60, joined: joinedPlans, templates }), wof, Infinity, !!fabricById(f.fab).directional);
-    for (const g of stripGroups) { const res = sheet.groups.get(g); g.strips = res.strips; g.partials = res.partials; g.count = res.strips.length; }
-    const tplPack = sheet.tplPack;
-    const lengthIn = sheet.H;
+    // cut from your stash pieces of this fabric first (in the order listed), the rest from yardage
+    const dir = !!fabricById(f.fab).directional;
+    const d = cutDemand({ stripGroups, angled, tri60, joined: joinedPlans, templates });
+    const owned = fabricById(f.fab).skipStash ? [] : doc.stash.filter(x => resolveFab(x.fabric) === f.fab);
+    const names = stashNames(owned);
+    const layouts = owned.map((piece, i) => {
+      const W = Math.max(piece.w, piece.h), H = Math.min(piece.w, piece.h), before = demandPieces(d);
+      const L = layoutBin(d, W, H, dir);
+      return { stash: true, piece, name: names[i], W, H, L, pieces: before - demandPieces(d) };
+    });
+    const yardPieces = demandPieces(d);
+    const yard = layoutBin(d, wof, Infinity, dir);
+    layouts.push({ stash: false, name: 'yardage', W: wof, H: yard.H, L: yard, pieces: yardPieces });
+    for (const g of stripGroups) { const res = yard.groups.get(g); g.strips = res.strips; g.partials = res.partials; g.count = res.strips.length; }
+    for (const a of [...angled, ...tri60]) a.count = yard.runs.get(a)?.count || 0;
+    for (const j of joinedPlans) j.count = yard.joinedCount.get(j) || 0;
+    const lengthIn = yard.H;
     const pieces = sum(recs, r => r.pieces) + joinedPlans.length;
     const withExtra = lengthIn * (1 + (doc.cutting.extra || 0) / 100);
     fabrics.push({
-      fab: f.fab, sources: [...f.sources], stripGroups, angled, tri60, joined: joinedPlans, templates, tplPack, sheet,
-      lengthIn, buyIn: roundYardIn(withExtra, doc.cutting.roundTo), pieces, recipes: recs,
+      fab: f.fab, sources: [...f.sources], stripGroups, angled, tri60, joined: joinedPlans, templates, sheet: yard, layouts,
+      stashOwned: owned.length, lengthIn, buyIn: lengthIn > 1e-6 ? roundYardIn(withExtra, doc.cutting.roundTo) : 0, pieces, recipes: recs,
     });
   }
   fabrics.sort((a, b) => fabricIndex(a.fab) - fabricIndex(b.fab));
@@ -505,6 +518,26 @@ function splitFree(free, b) {
   return next.filter((a, i) => !next.some((c, j) => j !== i && a.x >= c.x - 1e-6 && a.y >= c.y - 1e-6 && a.x + a.w <= c.x + c.w + 1e-6 && a.y + a.h <= c.y + c.h + 1e-6 && (j < i || a.w * a.h < c.w * c.h - 1e-9)));
 }
 
+// "Uses your fat quarter and half yard" style summary of the stash pieces a fabric's plan uses.
+function stashUseText(f) {
+  const used = (f.layouts || []).filter(x => x.stash && x.pieces > 0).map(x => `your ${x.name.toLowerCase()}`);
+  return used.length ? used.length === 1 ? used[0] : `${used.slice(0, -1).join(', ')} and ${used[used.length - 1]}` : '';
+}
+const hasStashFor = fab => doc.stash.some(x => resolveFab(x.fabric) === fab);
+// Buy column text: yardage still needed, or nothing when the stash covers it.
+function buyText(f) { return f.buyIn > 0 ? fmtYards(f.buyIn) : f.stashOwned ? 'nothing (stash)' : fmtYards(0); }
+
+// Names for stash pieces on the plan: "Fat quarter", or "Fat quarter 1", "Fat quarter 2" when repeated.
+function stashNames(pieces) {
+  const label = p => (p.label || 'Piece').trim() || 'Piece';
+  const seen = new Map();
+  return pieces.map(p => {
+    const l = label(p), n = pieces.filter(q => label(q) === l).length;
+    seen.set(l, (seen.get(l) || 0) + 1);
+    return n > 1 ? `${l} ${seen.get(l)}` : l;
+  });
+}
+
 // The stash check: lay a fabric's cuts onto the pieces you own, one after another, with the
 // same layout as the cutting maps, then work out what you'd still need to buy.
 function stashPlan(f, pieces) {
@@ -524,6 +557,13 @@ function stashPlan(f, pieces) {
    Bands run across the full width of fabric, stacked down its length in cutting order.
    Each cut carries the instruction step number it belongs to. */
 function fabricSheet(f) { return sheetFromLayout(f, f.sheet, doc.cutting.wof, f.sheet.H, f.buyIn); }
+// Every map for a fabric: each stash piece it uses, then the yardage (if any is still needed).
+function fabricSheets(f) {
+  return f.layouts.filter(s => s.stash ? s.pieces > 0 : s.L.H > 1e-6 || f.layouts.length === 1).map(s => ({
+    ...sheetFromLayout(f, s.L, s.W, s.stash ? s.H : s.L.H, s.stash ? 0 : f.buyIn),
+    src: s, title: s.stash ? `Your ${s.name.toLowerCase()} — ${fmtSize(s.W, s.H)}` : null,
+  }));
+}
 // A drawable map for a layout (the yardage, or one stash piece), with each cut carrying the
 // number of the cutting step it belongs to.
 function sheetFromLayout(f, L, W, H, buyIn) {
@@ -550,6 +590,12 @@ function cutVerb(recipe, units) {
 function fabricInstructions(f) {
   const rows = [];
   const stepOf = ref => rows.findIndex(r => r.group === ref || r.a === ref || r.j === ref || r.r === ref) + 1;
+  // with stash pieces, each step lists what to cut from each piece
+  const srcs = (f.layouts || []).filter(x => x.stash ? x.pieces > 0 : true);
+  const multi = srcs.some(x => x.stash);
+  const fromWhat = x => x.stash ? `From your ${x.name.toLowerCase()}` : 'From yardage';
+  const length = x => x.stash ? `${fmtLen(x.W, 'up')} long` : 'WOF';
+  const bySource = (count, w) => srcs.map(x => ({ x, n: count(x) })).filter(o => o.n).map(o => `${fromWhat(o.x)}: ${plural(o.n, 'strip')} ${fmtLen(w, 'up')} × ${length(o.x)}.`);
   // "from the leftover of step 2: …" lines, grouped by the step they come from
   const fromLeftovers = (list, what) => {
     const by = new Map();
@@ -561,36 +607,55 @@ function fabricInstructions(f) {
       const v = cutVerb(r.recipe, r.units);
       return `${r.units} × ${r.recipe.unitLabel}${v ? ` — ${v}` : ''}`;
     });
-    const np = g.partials.length;
-    if (np) parts.unshift(...fromLeftovers(g.partials, xs => `cut ${xs.map(x => `a ${fmtLen(g.w, 'up')} × ${fmtLen(x.w, 'up')} ${x.w < g.w * 1.5 ? 'piece' : 'strip'}`).join(', ')}.`));
-    const head = g.count && np ? `Cut ${plural(g.count, 'strip')} ${fmtLen(g.w, 'up')} × WOF, plus ${plural(np, 'shorter strip')} from leftovers`
-      : g.count ? `Cut ${plural(g.count, 'strip')} ${fmtLen(g.w, 'up')} × WOF` : `Cut ${plural(np, 'strip')} ${fmtLen(g.w, 'up')} wide from leftovers`;
+    const leftoverLines = list => fromLeftovers(list, xs => `cut ${xs.map(x => `a ${fmtLen(g.w, 'up')} × ${fmtLen(x.w, 'up')} ${x.w < g.w * 1.5 ? 'piece' : 'strip'}`).join(', ')}.`);
+    let head;
+    if (multi) {
+      const allPartials = srcs.flatMap(x => x.L.groups.get(g)?.partials || []);
+      const total = sum(srcs, x => x.L.groups.get(g)?.strips.length || 0) + allPartials.length;
+      parts.unshift(...bySource(x => x.L.groups.get(g)?.strips.length || 0, g.w), ...leftoverLines(allPartials));
+      head = `Cut ${plural(total, 'strip')} ${fmtLen(g.w, 'up')} wide`;
+    } else {
+      const np = g.partials.length;
+      if (np) parts.unshift(...leftoverLines(g.partials));
+      head = g.count && np ? `Cut ${plural(g.count, 'strip')} ${fmtLen(g.w, 'up')} × WOF, plus ${plural(np, 'shorter strip')} from leftovers`
+        : g.count ? `Cut ${plural(g.count, 'strip')} ${fmtLen(g.w, 'up')} × WOF` : `Cut ${plural(np, 'strip')} ${fmtLen(g.w, 'up')} wide from leftovers`;
+    }
     rows.push({ kind: 'strip', head, parts, group: g });
   }
+  // strips cut whole across a piece (angled, 60°, joined): totals and per-piece counts
+  const runHead = (a, w, what) => {
+    if (!multi) return { head: `Cut ${plural(a.count, 'strip')} ${fmtLen(w, 'up')} × WOF${what}`, lines: [] };
+    const n = x => (a.recipe ? x.L.runs.get(a)?.count : x.L.joinedCount.get(a)) || 0;
+    return { head: `Cut ${plural(sum(srcs, n), 'strip')} ${fmtLen(w, 'up')} wide${what}`, lines: bySource(n, w) };
+  };
   for (const a of f.angled) {
     if (a.recipe.method === 'trap') {
-      const r = a.recipe;
-      rows.push({ kind: 'angled', head: `Cut ${plural(a.count, 'strip')} ${fmtLen(r.w, 'up')} × WOF`,
-        parts: [`Cut ${a.units} trapezoids — long edge ${fmtLen(r.a, 'up')}, short edge ${fmtLen(r.b, 'up')}, ends at ${uniq(r.angles).join('° and ')}°.${r.alternate ? ' Turn the ruler end-for-end after each cut so the angled ends nest' : ''} (${a.perStrip} per strip)`], a });
+      const r = a.recipe, rh = runHead(a, r.w, '');
+      rows.push({ kind: 'angled', head: rh.head,
+        parts: [...rh.lines, `Cut ${a.units} trapezoids — long edge ${fmtLen(r.a, 'up')}, short edge ${fmtLen(r.b, 'up')}, ends at ${uniq(r.angles).join('° and ')}°.${r.alternate ? ' Turn the ruler end-for-end after each cut so the angled ends nest' : ''} (${a.perStrip} per strip)`], a });
       continue;
     }
     const lean = a.recipe.hand ? (a.recipe.hand === 'R' ? ', leaning right' : ', leaning left') : '';
-    rows.push({ kind: 'angled', head: `Cut ${plural(a.count, 'strip')} ${fmtLen(a.recipe.w, 'up')} × WOF`,
-      parts: [`Trim one end at ${a.recipe.angle}°${lean}, then cut ${a.units} × ${a.recipe.makes}s every ${fmtLen(a.recipe.step, 'up')} along the strip (${a.perStrip} per strip)`], a });
+    const rh = runHead(a, a.recipe.w, '');
+    rows.push({ kind: 'angled', head: rh.head,
+      parts: [...rh.lines, `Trim one end at ${a.recipe.angle}°${lean}, then cut ${a.units} × ${a.recipe.makes}s every ${fmtLen(a.recipe.step, 'up')} along the strip (${a.perStrip} per strip)`], a });
   }
   for (const a of f.tri60) {
-    rows.push({ kind: 'tri60', head: `Cut ${plural(a.count, 'strip')} ${fmtLen(a.recipe.w, 'up')} × WOF`,
-      parts: [`With a 60° triangle ruler, cut ${a.units} triangles, rotating the ruler each cut (${a.perStrip} per strip)`], a });
+    const rh = runHead(a, a.recipe.w, '');
+    rows.push({ kind: 'tri60', head: rh.head,
+      parts: [...rh.lines, `With a 60° triangle ruler, cut ${a.units} triangles, rotating the ruler each cut (${a.perStrip} per strip)`], a });
   }
   for (const j of f.joined) {
     const desc = j.binding
       ? `Join end to end with diagonal seams, press in half lengthwise → ${fmtLen(j.total)} of binding`
       : `Join end to end, then cut ${j.lengths.length} lengths: ${j.lengths.map(l => fmtLen(l, 'up')).join(', ')}`;
-    rows.push({ kind: 'joined', head: `Cut ${plural(j.count, 'strip')} ${fmtLen(j.w, 'up')} × WOF for ${j.src.toLowerCase()}`, parts: [desc], j });
+    const rh = runHead(j, j.w, ` for ${j.src.toLowerCase()}`);
+    rows.push({ kind: 'joined', head: rh.head, parts: [...rh.lines, desc], j });
   }
   for (const r of f.templates) {
     const inLeft = (f.sheet?.tplPlaced || []).filter(p => p.item.r === r && p.from);
-    rows.push({ kind: 'template', head: `Cut ${r.units} × ${r.recipe.makes.toLowerCase()} from template`, parts: [
+    const perSrc = multi ? srcs.map(x => ({ x, n: x.L.tplPlaced.filter(p => p.item.r === r).length })).filter(o => o.n).map(o => `${fromWhat(o.x)}: ${o.n}.`) : [];
+    rows.push({ kind: 'template', head: `Cut ${r.units} × ${r.recipe.makes.toLowerCase()} from template`, parts: [...perSrc,
       ...(inLeft.length ? [(() => {
         const n = inLeft.length, st = uniq(inLeft.map(p => stepOf(p.from))).sort((a, b) => a - b);
         return `${n === r.units ? (n === 1 ? 'It fits' : 'All of them fit') : `${n} of them ${n === 1 ? 'fits' : 'fit'}`} in the leftover${st.length > 1 ? 's' : ''} from step${st.length > 1 ? 's' : ''} ${st.join(', ')} — see the map.`;

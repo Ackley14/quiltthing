@@ -22,15 +22,15 @@ Views.fabric = {
     for (const w of [...Q.warnings, ...plan.problems]) h += `<div class="callout bad" style="margin-bottom:10px">${esc(w)}</div>`;
     h += `<table class="t"><thead><tr><th>Fabric</th><th>Used for</th><th class="num">Pieces</th><th class="num">Needed</th><th class="num">Buy</th><th>Your stash</th></tr></thead><tbody>`;
     for (const f of plan.fabrics) {
-      const owned = doc.stash.filter(s => s.fabric === f.fab);
       let stash = `<button class="btn small ghost" data-act="stashMenu" data-arg="${f.fab}" title="Add a piece of this fabric you already have">+ Add</button>`;
-      if (owned.length) {
-        const sp = stashPlan(f, owned);
-        stash = (sp.ok ? `<span class="pill ok">✓ stash covers it</span>` : `<span class="pill info" title="${sp.covered} of ${sp.total} pieces come from your stash">buy ${fmtYards(sp.buyIn)} with stash</span>`) + ' ' + stash;
+      if (hasStashFor(f.fab)) {
+        const used = (f.layouts || []).filter(x => x.stash), unused = used.filter(x => !x.pieces).length;
+        stash = (fabricById(f.fab).skipStash ? '<span class="pill">stash not used</span>'
+          : `<span class="pill ok" title="${sum(used, x => x.pieces)} of ${f.pieces} pieces are cut from your stash">uses ${esc(stashUseText(f) || 'none of it')}</span>${unused ? ` <span class="muted">(${unused} not needed)</span>` : ''}`) + ' ' + stash;
       }
       h += `<tr><td><div class="fabcell">${swatchHtml(f.fab, 26)}<div><b>${fabricLetter(f.fab)}</b> · ${esc(fabricLabel(f.fab))}${fabricById(f.fab).directional ? ' <span class="pill">directional</span>' : ''}</div></div></td>
         <td class="muted">${esc(f.sources.join(', '))}</td><td class="num">${f.pieces}</td><td class="num">${fmtYards(f.lengthIn)}</td>
-        <td class="num"><b>${fmtYards(f.buyIn)}</b>${f.fq ? '<br><span class="pill info" title="Everything for this fabric fits in an 18 × 21 in fat quarter">fits a fat quarter</span>' : ''}</td><td>${stash}</td></tr>`;
+        <td class="num"><b>${buyText(f)}</b>${f.fq && !f.stashOwned ? '<br><span class="pill info" title="Everything for this fabric fits in an 18 × 21 in fat quarter">fits a fat quarter</span>' : ''}</td><td>${stash}</td></tr>`;
     }
     const bk = plan.backing;
     const bf = doc.layout.backing?.fabric;
@@ -39,17 +39,7 @@ Views.fabric = {
       <tr><td><div class="fabcell"><span class="sw" style="--sw:26px;background:#fbf8f0"></span><b>Batting</b></div></td><td class="muted">${fmtSize(plan.batting.w, plan.batting.h)}</td><td></td><td></td><td></td><td></td></tr>`;
     h += `</tbody></table>`;
 
-    const withStash = plan.fabrics.filter(f => doc.stash.some(s => s.fabric === f.fab));
-    if (withStash.length) {
-      h += `<h2 style="margin-top:26px">Stash check</h2><p class="sub">How much of each fabric's cutting your stash covers. Pieces are laid out the same way as the cutting maps (leftovers reused, hexagons nested); the numbers on each map are the cutting steps. This is a check only — the shopping list and cutting plan above don't change.</p>`;
-      for (const f of withStash) {
-        const owned = doc.stash.filter(s => s.fabric === f.fab);
-        const sp = stashPlan(f, owned);
-        h += `<div class="fabcard"><div class="fabcard-h">${swatchHtml(f.fab, 22)}<h3>${fabricLetter(f.fab)} · ${esc(fabricLabel(f.fab))}</h3><div class="meta">${sp.ok ? '<span class="pill ok">Your stash covers it — nothing to buy</span>' : `<span class="pill info">Covers ${sp.covered} of ${sp.total} pieces</span>`}</div></div>
-          ${sp.ok ? '' : `<p class="hint" style="margin-top:0">With your stash you'd still buy <b>${fmtYards(sp.buyIn)}</b> (instead of ${fmtYards(f.buyIn)}) for the other ${sp.total - sp.covered} pieces.</p>`}
-          <div class="stash-diags">${sp.bins.map(bn => `<figure><figcaption>${esc(bn.piece.label || 'Piece')} · ${fmtSize(bn.piece.w, bn.piece.h)} · ${plural(bn.pieces, 'piece')}</figcaption>${fabricSheetSvg(sheetFromLayout(f, bn.L, bn.W, bn.H, 0), f.fab, { width: 300, idp: 'st' + doc.stash.indexOf(bn.piece), title: `${bn.piece.label || 'Piece'} — ${fmtSize(bn.W, bn.H)}` })}</figure>`).join('')}</div></div>`;
-      }
-    }
+    if (doc.stash.length) h += `<p class="hint" style="margin-top:14px">Your stash is cut first: the <b>Buy</b> column is what's still needed after it, and the <a href="#" data-act="view" data-arg="cutting">Cutting</a> view shows a map for each stash piece. Untick "Cut from my stash first" on a fabric in Cutting to compare.</p>`;
     return h + '</div>';
   },
   inspector() {
@@ -72,7 +62,7 @@ Views.fabric = {
         <button class="btn small ghost" data-act="stashDel" data-arg="${s.id}" aria-label="Remove">✕</button>
         <div class="sel-fab">${swatchHtml(s.fabric, 18)}<select data-change="stashFab" data-arg="${s.id}" style="flex:1">${doc.fabrics.map(f => `<option value="${f.id}" ${f.id === s.fabric ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select></div></div></div>`).join('');
     const sf = stashFabric();
-    h += section('My stash', `<p class="hint" style="margin-top:0">List fabric you already have to see how much of the cutting it covers.</p>
+    h += section('My stash', `<p class="hint" style="margin-top:0">Fabric you already have. It's cut first (in this order), and you only buy what's still needed.</p>
       ${rows}<label class="f">Add a piece of<div class="sel-fab">${swatchHtml(sf, 18)}<select data-change="stashFabPick" style="flex:1">${doc.fabrics.map(f => `<option value="${f.id}" ${f.id === sf ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select></div></label>
       <div class="btn-row">${STASH_PRESETS.map(([l, w, hh]) => `<button class="btn small" data-act="stashAdd" data-arg="${l}|${w}|${hh}|${sf}">+ ${l}</button>`).join('')}</div>`, { key: 'stash' });
     return h;

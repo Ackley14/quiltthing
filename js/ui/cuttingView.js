@@ -4,7 +4,7 @@ Views.cutting = {
   main() {
     const Q = Qnow(), plan = cuttingPlan(Q);
     let h = `<div class="docview wide"><h2>Cutting plan</h2>
-      <p class="sub">Each fabric gets a numbered cutting order and a to-scale map of the fabric you'll buy — ${fmtLen(doc.cutting.wof)} wide, top to bottom in the order you cut. Sizes include ${fmtLen(doc.cutting.seam)} seam allowances and are rounded up to the nearest ⅛". Hover a step to find it on the map.</p>`;
+      <p class="sub">Each fabric gets a numbered cutting order and a to-scale map of the fabric — any pieces from your stash first, then the yardage you'll buy (${fmtLen(doc.cutting.wof)} wide, top to bottom in the order you cut). Sizes include ${fmtLen(doc.cutting.seam)} seam allowances and are rounded up to the nearest ⅛". Hover a step to find it on the map.</p>`;
     if (!plan.fabrics.length) return h + `<div class="callout">Nothing to cut yet — place some blocks or shapes in the <a href="#" data-act="view" data-arg="layout">Layout</a>.</div></div>`;
     let tid = 0;
     for (const f of plan.fabrics) {
@@ -27,10 +27,13 @@ Views.cutting = {
           ${uses.length ? `<div class="uses"><span class="muted">Used for</span> ${uses.map(u => usageThumbSvg(u, 44)).join('')}</div>` : ''}</div>
           <div class="step-icons">${icons}</div></li>`;
       });
+      const st = stashUseText(f);
+      const maps = fabricSheets(f).map((sh, i) => `<div class="hint" style="margin:${i ? '12px' : 0} 0 4px">${sh.src.stash ? `Your ${esc(sh.src.name.toLowerCase())} — ${plural(sh.src.pieces, 'piece')}` : st ? `Yardage for the rest — ${fmtYards(f.buyIn)}` : `Cutting map — ${fmtYards(f.buyIn)} of fabric`}</div>${fabricSheetSvg(sh, f.fab, { width: 380, idp: 'cv' + i, title: sh.title })}`).join('');
       h += `<div class="fabcard" id="cut-${f.fab}"><div class="fabcard-h">${swatchHtml(f.fab, 26)}<h3>${fabricLetter(f.fab)} · ${esc(fabricLabel(f.fab))}</h3>
-        <div class="meta"><span class="pill">${f.pieces} pieces</span><span class="pill">${fmtYards(f.lengthIn)} used</span><span class="pill info">buy ${fmtYards(f.buyIn)}</span>${f.fq ? '<span class="pill ok">fits a fat quarter</span>' : ''}</div></div>
+        <div class="meta"><span class="pill">${f.pieces} pieces</span>${f.lengthIn > 0 ? `<span class="pill">${fmtYards(f.lengthIn)} used</span>` : ''}<span class="pill info">buy ${buyText(f)}</span>${st ? `<span class="pill ok">uses ${esc(st)}</span>` : f.fq ? '<span class="pill ok">fits a fat quarter</span>' : ''}</div></div>
+        ${hasStashFor(f.fab) ? `<label class="check" style="margin:-4px 0 8px"><input type="checkbox" data-change="toggleStashUse" data-arg="${f.fab}" ${fabricById(f.fab).skipStash ? '' : 'checked'}> Cut from my stash first</label>` : ''}
         <div class="cut-grid"><ol class="cutsteps">${steps}</ol>
-        ${ui.cutDiagrams !== false ? `<div class="sheet-wrap"><div class="hint" style="margin:0 0 4px">Cutting map — ${fmtYards(f.buyIn)} of fabric</div>${fabricSheetSvg(sheet, f.fab, { width: 380 })}</div>` : ''}</div></div>`;
+        ${ui.cutDiagrams !== false ? `<div class="sheet-wrap">${maps}</div>` : ''}</div></div>`;
     }
     return h + '</div>';
   },
@@ -46,13 +49,14 @@ Views.cutting = {
       <div class="btn-row"><button class="btn small" data-act="view" data-arg="fabric">Change in Fabric →</button></div>
       <label class="check"><input type="checkbox" ${ui.cutDiagrams !== false ? 'checked' : ''} data-change="cutDiagrams"> Show cutting diagrams</label>
       ${doc.layout.mode === 'tess' && doc.layout.tess.edge === 'trim' ? `<label class="check"><input type="checkbox" data-bind="layout.tess.cutEdges" data-type="bool" ${doc.layout.tess.cutEdges ? 'checked' : ''}> Cut edge pieces to their exact shape</label>` : ''}
-      <dl class="kv" style="margin-top:8px"><dt>Fabric to buy</dt><dd><b>${fmtYards(sum(plan.fabrics, f => f.buyIn))}</b></dd><dt>Pieces to cut</dt><dd>${plan.totalPieces}</dd><dt>Templates</dt><dd>${sum(plan.fabrics, f => f.templates.length)}</dd></dl>
+      <dl class="kv" style="margin-top:8px"><dt>Fabric to buy</dt><dd><b>${fmtYards(sum(plan.fabrics, f => f.buyIn))}</b>${doc.stash.length ? ' <span class="muted">after stash</span>' : ''}</dd><dt>Pieces to cut</dt><dd>${plan.totalPieces}</dd><dt>Templates</dt><dd>${sum(plan.fabrics, f => f.templates.length)}</dd></dl>
       <p class="hint">Flip settings and watch these totals to compare options. Backing isn't included.</p>`, { key: 'cutsettings' });
-    h += section('Fabrics', plan.fabrics.map(f => `<div class="region-row" data-act="jumpFab" data-arg="${f.fab}">${swatchHtml(f.fab, 18)}<span class="nm"><b>${fabricLetter(f.fab)}</b> ${esc(fabricLabel(f.fab))}</span><span class="muted">${fmtYards(f.buyIn)}</span></div>`).join('') || '<p class="hint">Nothing to cut yet.</p>', { key: 'cutfabs' });
+    h += section('Fabrics', plan.fabrics.map(f => `<div class="region-row" data-act="jumpFab" data-arg="${f.fab}">${swatchHtml(f.fab, 18)}<span class="nm"><b>${fabricLetter(f.fab)}</b> ${esc(fabricLabel(f.fab))}</span><span class="muted">${buyText(f)}</span></div>`).join('') || '<p class="hint">Nothing to cut yet.</p>', { key: 'cutfabs' });
     h += section('Tips', `<p class="hint" style="margin-top:0">Press fabric before cutting. Square up the fabric edge first, then cut the widest strips. Label each stack with its fabric letter and size. Directional prints keep their orientation in these plans.</p>`, { key: 'cuttips' });
     return h;
   },
 };
+Actions.toggleStashUse = (v, el) => { const fb = doc.fabrics.find(x => x.id === el.dataset.arg); if (fb) { if (v) delete fb.skipStash; else fb.skipStash = true; commit(); } };
 Actions.cutDiagrams = v => { ui.cutDiagrams = !!v; saveUi(); render(); };
 Actions.jumpFab = id => $(`#cut-${CSS.escape(id)}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 

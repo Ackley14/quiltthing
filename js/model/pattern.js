@@ -23,7 +23,7 @@ function patternFabricKeyTable(plan, compact) {
   let h = `<table class="pt"><thead><tr><th></th><th>Fabric</th><th>Used for</th>${compact ? '' : '<th>Cut length</th>'}<th>Buy</th></tr></thead><tbody>`;
   for (const f of plan.fabrics) {
     h += `<tr><td class="key">${swatchHtml(f.fab, 22)}<b>${fabricLetter(f.fab)}</b></td><td>${esc(fabricLabel(f.fab))}${fabricById(f.fab).directional ? ' <i>(directional)</i>' : ''}</td>
-      <td>${esc(f.sources.join(', '))}</td>${compact ? '' : `<td>${fmtYards(f.lengthIn)}</td>`}<td><b>${fmtYards(f.buyIn)}</b>${f.fq ? '<br><small>or 1 fat quarter</small>' : ''}</td></tr>`;
+      <td>${esc(f.sources.join(', '))}</td>${compact ? '' : `<td>${fmtYards(f.lengthIn)}</td>`}<td>${stashUseText(f) && !f.buyIn ? `<small>all from ${esc(stashUseText(f))}</small>` : `<b>${buyText(f)}</b>${stashUseText(f) ? `<br><small>plus ${esc(stashUseText(f))}</small>` : f.fq ? '<br><small>or 1 fat quarter</small>' : ''}`}</td></tr>`;
   }
   return h + '</tbody></table>';
 }
@@ -412,8 +412,10 @@ function renderPatternDoc() {
         for (const r of rec) for (const u of r.uses?.values() || []) if (u.b && !uses.some(x => x.b === u.b)) uses.push(u);
         list += `<li><span class="stepno">${i + 1}</span><div>${codes.forRow(row).map(e => codeTag(e.code)).join('')}<b>${row.head}</b>${extra}<br>${row.parts.map(esc).join('<br>')}${uses.length ? `<div class="uses">${uses.map(u => usageThumbSvg(u, 0.42, 'in')).join('')}</div>` : ''}</div></li>`;
       });
-      return `<div class="cut-fab"><h3>${swatchHtml(f.fab, 20)} Fabric ${fabricLetter(f.fab)} — ${esc(fabricLabel(f.fab))} <span class="muted" style="font-weight:400">· buy ${fmtYards(f.buyIn)}</span></h3>
-        <div class="cut-cols"><ol class="cut-list">${list}</ol><div class="cut-map">${fabricSheetSvg(sheet, f.fab, { width: 2.4, unit: 'in', idp: 'pc' })}</div></div></div>`;
+      const st = stashUseText(f);
+      const maps = fabricSheets(f).map((sh, i) => `${sh.src.stash ? `<div class="map-cap">Your ${esc(sh.src.name.toLowerCase())}</div>` : st ? '<div class="map-cap">Yardage for the rest</div>' : ''}${fabricSheetSvg(sh, f.fab, { width: 2.4, unit: 'in', idp: 'pc' + i, title: sh.title })}`).join('');
+      return `<div class="cut-fab"><h3>${swatchHtml(f.fab, 20)} Fabric ${fabricLetter(f.fab)} — ${esc(fabricLabel(f.fab))} <span class="muted" style="font-weight:400">· ${st && !f.buyIn ? `all from ${esc(st)}` : `buy ${buyText(f)}${st ? `, plus ${esc(st)}` : ''}`}</span></h3>
+        <div class="cut-cols"><ol class="cut-list">${list}</ol><div class="cut-map">${maps}</div></div></div>`;
     }).join(''));
 
   /* --- templates (true scale) --- */
