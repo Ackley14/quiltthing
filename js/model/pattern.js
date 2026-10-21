@@ -212,27 +212,63 @@ function blockStepsHtml(block, BS, sa, copies = 1) {
   return steps;
 }
 
+// A template at true size, split into page-sized sheets when it's bigger than a page. Each sheet
+// is named <template>-<row letter><column> (T1-B2). Sheets overlap by a shaded glue strip on their
+// right and bottom edges, so the next sheet's lines land exactly on top; sheets the template
+// doesn't reach aren't printed.
+const SHEET_GLUE = 0.3;
 function templateSvg(t, maxW, maxH) {
   const g = templateGeom(t.r.recipe), pts = g.pts, cut = g.cut;
   const cb = bounds(cut);
   const holesD = list => list.map(h => polyToPath(h)).join('');
   const pad = 0.15;
-  const W = cb.w + 2 * pad, H = cb.h + 2 * pad;
-  const tilesX = Math.ceil(W / maxW - 1e-9), tilesY = Math.ceil(H / maxH - 1e-9);
+  const W = cb.w + 2 * pad, H = cb.h + 2 * pad, X = cb.x - pad, Y = cb.y - pad;
+  const one = W <= maxW + 1e-9 && H <= maxH + 1e-9;
+  const stepX = W <= maxW + 1e-9 ? W : maxW - SHEET_GLUE, stepY = H <= maxH + 1e-9 ? H : maxH - SHEET_GLUE;
+  const tilesX = Math.max(1, Math.ceil((W - (W > maxW ? SHEET_GLUE : 0)) / stepX - 1e-9)), tilesY = Math.max(1, Math.ceil((H - (H > maxH ? SHEET_GLUE : 0)) / stepY - 1e-9));
   const dom = fabricHex(t.fab);
   const inner = `<path d="${polyToPath(cut)}${holesD(g.cutHoles)}" fill="${mix(dom, '#ffffff', .82)}" fill-rule="evenodd" stroke="#2b3a4a" stroke-width="0.012"${g.sa ? ' stroke-dasharray="0.06 0.04"' : ''}/>
     ${g.sa ? `<path d="${polyToPath(pts)}${holesD(g.holes)}" fill="none" stroke="#2b3a4a" stroke-width="0.016"/>` : ''}
     <text x="${round(cb.x + cb.w / 2, 3)}" y="${round(cb.y + cb.h / 2, 3)}" font-size="${round(Math.min(0.32, Math.min(cb.w, cb.h) / 4), 3)}" text-anchor="middle" dominant-baseline="central" font-family="system-ui,sans-serif" font-weight="700" fill="#2b3a4a">${t.id} · ${fabricLetter(t.fab)}</text>
     ${Math.min(cb.w, cb.h) > 1.4 ? `<path d="M${round(cb.x + cb.w * .25, 3)},${round(cb.y + cb.h / 2 + .32, 3)}h${round(cb.w * .5, 3)}" stroke="#2b3a4a" stroke-width=".012" marker-start="url(#arw)" marker-end="url(#arw)"/>` : ''}`;
+  const defs = `<defs><marker id="arw" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="#2b3a4a"/></marker></defs>`;
+  if (one) return { tiles: [{ tx: 0, ty: 0, id: t.id, blank: false, own: { x: X, y: Y, w: W, h: H }, svg: `<svg viewBox="${round(X, 4)} ${round(Y, 4)} ${round(W, 4)} ${round(H, 4)}" width="${round(W, 4)}in" height="${round(H, 4)}in">${defs}${inner}</svg>` }], tilesX: 1, tilesY: 1, box: { x: X, y: Y, w: W, h: H }, g };
   const tiles = [];
   for (let ty = 0; ty < tilesY; ty++) for (let tx = 0; tx < tilesX; tx++) {
-    const x0 = cb.x - pad + tx * maxW, y0 = cb.y - pad + ty * maxH;
-    const w = Math.min(maxW, W - tx * maxW), h = Math.min(maxH, H - ty * maxH);
-    tiles.push({ tx, ty, svg: `<svg viewBox="${round(x0, 4)} ${round(y0, 4)} ${round(w, 4)} ${round(h, 4)}" width="${round(w, 4)}in" height="${round(h, 4)}in">
-      <defs><marker id="arw" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="#2b3a4a"/></marker></defs>${inner}</svg>` });
+    const own = { x: X + tx * stepX, y: Y + ty * stepY, w: tx < tilesX - 1 ? stepX : W - tx * stepX, h: ty < tilesY - 1 ? stepY : H - ty * stepY };
+    const id = `${t.id}-${String.fromCharCode(65 + ty)}${tx + 1}`;
+    const hit = pcSafe('intersection', toPC(rectPts(own.x, own.y, own.w, own.h)), toPC(cut));
+    const blank = !hit || sum(fromPC(hit), pg => polyArea(pg.outer)) < 1e-3;
+    const gr = tx < tilesX - 1 ? SHEET_GLUE : 0, gb = ty < tilesY - 1 ? SHEET_GLUE : 0;
+    const vw = own.w + gr, vh = own.h + gb;
+    let marks = '';
+    // glue strips (the next sheet goes on top of them) and border lines to trim along
+    const glue = (x, y, w, h, vertical) => `<rect x="${round(x, 4)}" y="${round(y, 4)}" width="${round(w, 4)}" height="${round(h, 4)}" fill="#8a95a3" fill-opacity=".22"/>
+      <text transform="translate(${round(x + w / 2, 4)} ${round(y + h / 2, 4)})${vertical ? ' rotate(90)' : ''}" font-size="0.1" text-anchor="middle" dominant-baseline="central" font-family="system-ui,sans-serif" fill="#3a4754">glue — the next sheet goes on top</text>`;
+    if (gr) marks += glue(own.x + own.w, own.y, gr, own.h, true);
+    if (gb) marks += glue(own.x, own.y + own.h, own.w + gr, gb, false);
+    if (tx > 0) marks += `<line x1="${round(own.x, 4)}" y1="${round(own.y, 4)}" x2="${round(own.x, 4)}" y2="${round(own.y + vh, 4)}" stroke="#a33326" stroke-width="0.02"/>`;
+    if (ty > 0) marks += `<line x1="${round(own.x, 4)}" y1="${round(own.y, 4)}" x2="${round(own.x + vw, 4)}" y2="${round(own.y, 4)}" stroke="#a33326" stroke-width="0.02"/>`;
+    tiles.push({ tx, ty, id, blank, own, svg: `<svg viewBox="${round(own.x, 4)} ${round(own.y, 4)} ${round(vw, 4)} ${round(vh, 4)}" width="${round(vw, 4)}in" height="${round(vh, 4)}in">${defs}${inner}${marks}</svg>` });
   }
-  return { tiles, tilesX, tilesY };
+  return { tiles, tilesX, tilesY, box: { x: X, y: Y, w: W, h: H }, g };
 }
+// The whole template drawn small with its sheets marked — how the printed sheets fit together.
+function templateAtlasSvg(t, ts, maxWIn, maxHIn, hi) {
+  const { box, g } = ts, k = Math.min(maxWIn / box.w, maxHIn / box.h);
+  const fs = Math.max(box.w, box.h) * 0.045;
+  let s = `<svg class="atlas-svg" viewBox="${round(box.x, 3)} ${round(box.y, 3)} ${round(box.w, 3)} ${round(box.h, 3)}" width="${round(box.w * k, 3)}in" height="${round(box.h * k, 3)}in">
+    <path d="${polyToPath(g.cut)}${g.cutHoles.map(h => polyToPath(h)).join('')}" fill="${mix(fabricHex(t.fab), '#ffffff', .7)}" fill-rule="evenodd" stroke="#2b3a4a" stroke-width="${round(fs * 0.08, 4)}"/>`;
+  for (const tl of ts.tiles) {
+    const o = tl.own, mine = tl.id === hi;
+    s += `<rect x="${round(o.x, 3)}" y="${round(o.y, 3)}" width="${round(o.w, 3)}" height="${round(o.h, 3)}" fill="${mine ? '#f2b134' : tl.blank ? '#e6e8eb' : 'none'}" fill-opacity="${mine ? .55 : tl.blank ? .8 : 0}" stroke="#2b3a4a" stroke-width="${round(fs * 0.12, 4)}" stroke-dasharray="${round(fs * .5, 3)} ${round(fs * .3, 3)}"/>`;
+    if (hi) continue;
+    s += `<text x="${round(o.x + o.w / 2, 3)}" y="${round(o.y + o.h / 2, 3)}" font-size="${round(fs * 2.2, 3)}" text-anchor="middle" dominant-baseline="central" font-family="system-ui,sans-serif" font-weight="800" fill="${tl.blank ? '#8a95a3' : '#1f3a5f'}" paint-order="stroke" stroke="#fff" stroke-width="${round(fs * 0.5, 3)}">${tl.id.split('-')[1]}</text>`;
+    if (tl.blank) s += `<text x="${round(o.x + o.w / 2, 3)}" y="${round(o.y + o.h / 2 + fs * 2.2, 3)}" font-size="${round(fs * 1.1, 3)}" text-anchor="middle" font-family="system-ui,sans-serif" fill="#5a6672">not printed</text>`;
+  }
+  return s + '</svg>';
+}
+const scaleBarSvg = () => `<svg class="scale-bar" width="1.1in" height="0.32in" viewBox="0 0 1.1 0.32"><path d="M0.05,0.06v0.12h1v-0.12M0.55,0.12v0.06" fill="none" stroke="#2b3a4a" stroke-width="0.012"/><text x="0.55" y="0.29" font-size="0.085" text-anchor="middle" font-family="system-ui,sans-serif" fill="#2b3a4a">check: 1 inch</text></svg>`;
 
 // Tessellation assembly map: every shape labelled with its piece code (blocks with #n), rows
 // numbered, and a legend. When the labels would be too small to read on one page, the map is
@@ -381,17 +417,36 @@ function renderPatternDoc() {
 
   /* --- templates (true scale) --- */
   if (tplList.length) {
-    const maxW = page.w - 0.2, maxH = page.h - 1.4;
-    const singles = [], multi = [];
+    const maxW = page.w - 0.2, maxH = page.h - 1.8;
+    const singles = [], tiled = [];
     for (const t of tplList) {
       const ts = templateSvg(t, maxW, maxH);
       const app = t.r.recipe.applique ? (doc.cutting.appMethod === 'fusible' ? ' · fusible appliqué — printed reversed, trace on the line, no allowance' : ' · appliqué (3/16" turn-under)') : '';
       const head = `<div class="tpl-head"><b>${t.id}</b> · ${esc(t.r.recipe.makes)} · fabric ${fabricLetter(t.fab)} · cut ${t.units}${app}</div>`;
       if (ts.tiles.length === 1) singles.push(`<div class="tpl">${head}${ts.tiles[0].svg}</div>`);
-      else for (const tile of ts.tiles) multi.push(`<div class="tpl">${head}<div class="tile-note">Part ${tile.ty * ts.tilesX + tile.tx + 1} of ${ts.tiles.length} (row ${tile.ty + 1}, column ${tile.tx + 1}) — trim and tape the parts together</div>${tile.svg}</div>`);
+      else tiled.push({ t, ts, head });
     }
-    P('', `<h2>Templates</h2><div class="note warn"><b>Print at 100% / "Actual size".</b> Check the 1-inch square before tracing. Solid line = sewing line, dashed line = cutting line (includes seam allowance). Arrow = straight grain.</div><div class="cal">${calibrationSvg()}</div><div class="tpls">${singles.join('')}</div>`);
-    for (const m of multi) P('', m);
+    P('', `<h2>Templates</h2><div class="note warn"><b>Print at 100% / "Actual size".</b> Check the 1-inch square before tracing. Solid line = sewing line, dashed line = cutting line (includes seam allowance). Arrow = straight grain.</div><div class="cal">${calibrationSvg()}</div>${tiled.length ? `<p class="small">${plural(tiled.length, 'template')} ${tiled.length === 1 ? 'is' : 'are'} bigger than a page and ${tiled.length === 1 ? 'is' : 'are'} printed over several sheets — see the sheet atlas after ${singles.length ? 'these' : 'this page'}.</p>` : ''}<div class="tpls">${singles.join('')}</div>`);
+    if (tiled.length) {
+      // atlas: how each template's sheets fit together, four templates to a page
+      const items = tiled.map(({ t, ts }) => {
+        const printed = ts.tiles.filter(x => !x.blank).length;
+        return `<div class="atlas-item"><div class="tpl-head"><b>${t.id}</b> · ${esc(t.r.recipe.makes)} · fabric ${fabricLetter(t.fab)} · ${plural(printed, 'sheet')}${printed < ts.tiles.length ? ` (${ts.tiles.length - printed} blank, not printed)` : ''}</div>${templateAtlasSvg(t, ts, page.w / 2 - 0.25, page.h / 2 - 1.1)}</div>`;
+      });
+      for (let i = 0; i < items.length; i += 4) {
+        P('', `<h2>Template sheet atlas${items.length > 4 ? ` (${i / 4 + 1} of ${Math.ceil(items.length / 4)})` : ''}</h2>
+          <p>Each large template prints over several sheets, named by row letter and column number (${tiled[0].ts.tiles[0].id} is the top-left sheet of ${tiled[0].t.id}). Lay the sheets out like the pictures below, then for each sheet: trim along its red border lines (top and left), lay it over the shaded glue strips of the sheets above and to its left so the lines meet, and tape. Grey squares are blank and aren't printed.</p>
+          <div class="atlas">${items.slice(i, i + 4).join('')}</div>`);
+      }
+      for (const { t, ts, head } of tiled) {
+        const printed = ts.tiles.filter(x => !x.blank);
+        const at = (tx, ty) => ts.tiles.find(x => x.tx === tx && x.ty === ty && !x.blank);
+        printed.forEach((tl, n) => {
+          const nb = [['above', at(tl.tx, tl.ty - 1)], ['left', at(tl.tx - 1, tl.ty)], ['right', at(tl.tx + 1, tl.ty)], ['below', at(tl.tx, tl.ty + 1)]].filter(([, x]) => x);
+          P('', `<div class="tpl">${head}<div class="sheet-bar">${templateAtlasSvg(t, ts, 0.9, 0.9, tl.id)}<div class="sheet-txt"><div class="sheet-id">${tl.id}</div><div class="tile-note">Sheet ${n + 1} of ${printed.length} for template ${t.id}${nb.length ? ` · ${nb.map(([w, x]) => `${w}: <b>${x.id}</b>`).join(' · ')}` : ''}</div></div>${scaleBarSvg()}</div>${tl.svg}</div>`);
+        });
+      }
+    }
   }
 
   /* --- blocks --- */

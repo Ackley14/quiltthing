@@ -352,6 +352,11 @@ table.t .fabcell { display: flex; align-items: center; gap: 8px; }
 .page .tpls { display: flex; flex-wrap: wrap; gap: 12px; }
 .page .tpl { break-inside: avoid; }
 .page .tpl-head { font-size: 9pt; margin-bottom: 3px; }
+.page .atlas { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; margin-top: 8px; }
+.page .atlas-item { break-inside: avoid; }
+.page .sheet-bar { display: flex; align-items: center; gap: 12px; margin: 2px 0 6px; }
+.page .sheet-bar .sheet-txt { flex: 1; }
+.page .sheet-id { font-size: 20pt; font-weight: 800; color: #1f3a5f; line-height: 1.1; }
 .page .tile-note { font-size: 8.5pt; color: #a33326; margin-bottom: 4px; }
 .page .cal { margin: 4px 0 10px; }
 .page .qsw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
