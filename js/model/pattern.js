@@ -187,7 +187,8 @@ function renderPatternDoc() {
   const pages = [];
   const P = (cls, html) => pages.push({ cls, html });
   const fit = (w, h, maxW, maxH) => { const k = Math.min(maxW / w, maxH / h); return [round(w * k, 3) + 'in', round(h * k, 3) + 'in']; };
-  const blockIds = uniq(Q.cells.filter(c => c.b).map(c => c.b));
+  // one page per block per size (an inset panel can hold a bigger copy of a block)
+  const blockJobs = uniq(Q.cells.filter(c => c.b).map(c => `${c.b}|${c.size}`)).map(k => { const [id, s] = k.split('|'); return { id, size: +s }; });
 
   /* --- cover --- */
   const heroSize = fit(Q.W, Q.H, page.w, page.h * 0.62);
@@ -246,15 +247,16 @@ function renderPatternDoc() {
   }
 
   /* --- blocks --- */
-  for (const id of blockIds) {
+  for (const { id, size: BSZ } of blockJobs) {
     const b = doc.blocks[id];
-    const n = Q.cells.filter(c => c.b === id).length;
-    const steps = blockStepsHtml(b, Q.BS, sa, n);
-    const fabs = uniq(blockPieces(b, Q.BS, Q.BS).map(p => resolveFab(p.fab))).sort((a, c) => fabricIndex(a) - fabricIndex(c));
-    let h = `<h2>${esc(b.name)}</h2>
-      <div class="block-head"><div>${blockDiagramSvg(b, Q.BS, 2.2)}</div><div>
+    const inPanel = Q.cells.some(c => c.b === id && c.size === BSZ && c.row === 'panel');
+    const n = Q.cells.filter(c => c.b === id && c.size === BSZ).length;
+    const steps = blockStepsHtml(b, BSZ, sa, n);
+    const fabs = uniq(blockPieces(b, BSZ, BSZ).map(p => resolveFab(p.fab))).sort((a, c) => fabricIndex(a) - fabricIndex(c));
+    let h = `<h2>${esc(b.name)}${inPanel ? ' <span class="muted" style="font-weight:400;font-size:12pt">(centre panel)</span>' : ''}</h2>
+      <div class="block-head"><div>${blockDiagramSvg(b, BSZ, 2.2)}</div><div>
         <div class="callout">Make <b>${n}</b> block${n === 1 ? '' : 's'}</div>
-        <p>Finished ${fmtSize(Q.BS, Q.BS)} · unfinished ${fmtSize(Q.BS + 2 * sa, Q.BS + 2 * sa)}</p>
+        <p>Finished ${fmtSize(BSZ, BSZ)} · unfinished ${fmtSize(BSZ + 2 * sa, BSZ + 2 * sa)}</p>
         <div class="fab-key">${fabs.map(f => `<span>${swatchHtml(f, 16)}<b>${fabricLetter(f)}</b> ${esc(fabricLabel(f))}</span>`).join('')}</div>
       </div></div><ol class="steps">`;
     for (const s of steps) h += `<li><div class="step-text">${s.text}</div>${s.diag ? `<div class="step-diag">${s.diag}</div>` : ''}</li>`;
@@ -349,7 +351,7 @@ function assemblyText(Q, sa) {
       <li>Join the diagonal rows, matching seams. Add the four corner triangles last.</li>
       <li>Trim the edges straight, leaving ${fmtLen(sa)} beyond the block points for seam allowance.</li></ol>`;
   } else {
-    const t = L.tess, name = tessShape(t.shape).label.toLowerCase();
+    const t = L.tess, name = tessShape(t.shape).label.replace(/ \(.*\)$/, '').toLowerCase();
     const edge = t.edge === 'fill' ? `Partial shapes at the edges are cut from fabric ${fabricLetter(t.fill)} so the quilt finishes with straight edges.` : 'Shapes at the edges are trimmed straight after the top is assembled — cut them as whole shapes and trim later, or use the edge templates.';
     const how = {
       hex: 'Hexagons need set-in (Y) seams. English paper piecing (EPP) is the easiest route: baste each hexagon over a paper template and whip-stitch neighbours together. By machine, sew hexagons into rows, stopping ¼" from each end, then set rows together.',
@@ -360,7 +362,16 @@ function assemblyText(Q, sa) {
       diamond: 'Sew the diamonds into diagonal rows, then join the rows, matching points.',
       square: t.orient === 1 ? 'Sew the on-point squares into diagonal rows, then join the rows.' : 'Sew the squares into rows, then join the rows, nesting seams.',
     }[t.shape];
-    h += `<p>${Q.tiles.filter(x => x.whole).length} whole ${name} make up the top.</p><ol><li>${how}</li><li>${edge}</li></ol>`;
+    const nWhole = Q.tiles.filter(x => x.whole).length;
+    h += `<p>${t.shape === 'tumbling' ? `${nWhole} whole diamonds (about ${Math.round(nWhole / 3)} cubes)` : `${nWhole} whole ${name}`} make up the top.</p><ol><li>${how}</li><li>${edge}</li>`;
+    for (const p of t.panels || []) {
+      const pg = panelGeom(p, ...tessSize(t));
+      const content = p.b && doc.blocks[p.b] ? `the ${esc(doc.blocks[p.b].name)} block` : p.fab ? `a ${fmtSize(p.size, p.size)} square of fabric ${fabricLetter(p.fab)}` : 'the centre square';
+      const frames = (p.frames || []).filter(f => f.width > 0);
+      h += `<li><b>Panel:</b> ${frames.length ? `frame ${content} with ${frames.map((f, k) => `${fmtLen(f.width)} strips of fabric ${fabricLetter(f.fabric)}${k === 0 ? ' (innermost)' : ''}`).join(', then ')} — sides first, then top and bottom — so it measures ${fmtSize(pg.outer + 2 * sa, pg.outer + 2 * sa)} unfinished.` : `${content} measures ${fmtSize(pg.outer + 2 * sa, pg.outer + 2 * sa)} unfinished.`}</li>
+        <li><b>Setting the panel in:</b> piece the ${name} in sections — the full-width rows above and below the panel, and the shorter rows to its left and right. Trim each section's edge that meets the panel straight, ${fmtLen(sa)} beyond the panel line. Sew the left and right sections to the panel, then add the top and bottom sections, matching the shape points along each seam.</li>`;
+    }
+    h += '</ol>';
   }
   const bs = L.borders.filter(b => b.width > 0);
   if (bs.length) {

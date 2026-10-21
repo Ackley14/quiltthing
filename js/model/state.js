@@ -49,7 +49,7 @@ function newDoc() {
         sashing: { width: 0, fabric: cream, cornerstones: false, cornerFabric: mustard, outer: false } },
       onpoint: { rows: 3, cols: 3, cells: {}, fill: cream },
       tess: { shape: 'hex', size: 3, ratio: 0.5, lean: 0.5, orient: 0, width: 48, height: 60,
-        edge: 'trim', fill: cream, base: sage, colors: {}, seed: 1, snap: true },
+        edge: 'trim', fill: cream, base: sage, colors: {}, seed: 1, snap: true, panels: [], faces: null },
       borders: [],
       binding: { width: 2.25, fabric: navy },
     },

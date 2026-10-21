@@ -27,6 +27,29 @@ function loadSampleProject() {
   resetHistory(); saveNow(); render();
 }
 
+function loadCubesSample() {
+  doc = newDoc();
+  const F = {};
+  doc.fabrics = [makeFabric('#f1e6d2', 'Cream'), makeFabric('#c49a6c', 'Tan'), makeFabric('#3a3a3c', 'Charcoal'), makeFabric('#b3202a', 'Red')];
+  [F.cream, F.tan, F.dark, F.red] = doc.fabrics.map(f => f.id);
+  doc.layout.background = F.cream;
+  // centre block: a bold red flag shape appliquéd on cream
+  const logo = newDrawnBlock('Centre panel', 8);
+  logo.regions = [{ pts: [[1.5, 1.5], [6, 1.5], [7.2, 4], [5, 7], [3, 4.6], [3.4, 3.9], [2.6, 3.4]], fab: F.red, app: true }];
+  addBlockToDoc(logo, false);
+  const t = doc.layout.tess;
+  Object.assign(t, { shape: 'tumbling', size: 5, orient: 0, width: 52, height: 60, edge: 'trim', base: F.tan, colors: {}, snap: true,
+    faces: { top: F.cream, left: F.tan, right: F.dark },
+    panels: [{ id: uid('p'), size: 18, dx: 0, dy: 0, b: logo.id, fab: null, frames: [{ width: 0.75, fabric: F.red }, { width: 1, fabric: F.dark }] }] });
+  doc.layout.mode = 'tess';
+  doc.layout.borders = [{ width: 1, fabric: F.red }, { width: 2, fabric: F.dark }];
+  doc.layout.binding.fabric = F.dark;
+  doc.quilting.layers = [{ ...newQuiltLayer('diamonds'), spacing: 1.5, color: '#2471a3' }];
+  doc.meta = { title: 'Cube Medallion', designer: '', description: 'Tumbling-block cubes in cream, tan and charcoal around a framed centre panel.', skill: 'auto' };
+  ui.activeBlock = logo.id; ui.fabric = F.red; ui.view = 'layout'; ui.layoutTool = 'select'; ui.selCell = null;
+  resetHistory(); saveNow(); render();
+}
+
 function welcome() {
   openModal(`<h2>Welcome to Quilt Designer</h2>
     <p>Design a quilt from first block to printed pattern. Everything is saved in this browser as you go.</p>

@@ -7,15 +7,16 @@ const LAYOUT_TOOLS = [
   { key: 'select', label: 'Select', kb: 'S', icon: '⬚' },
 ];
 const lay = { drag: null };
+const tessHasPanels = () => doc.layout.mode === 'tess' && (doc.layout.tess.panels || []).length > 0;
 function layoutTool() {
-  if (doc.layout.mode === 'tess' && ui.layoutTool === 'place') return 'paintcell';
+  if (doc.layout.mode === 'tess' && ui.layoutTool === 'place' && !tessHasPanels()) return 'paintcell';
   return ui.layoutTool || (doc.layout.mode === 'tess' ? 'paintcell' : 'place');
 }
 
 Views.layout = {
   main() {
     const Q = Qnow(), tool = layoutTool();
-    const tools = LAYOUT_TOOLS.filter(t => !(doc.layout.mode === 'tess' && t.key === 'place'))
+    const tools = LAYOUT_TOOLS.filter(t => !(doc.layout.mode === 'tess' && t.key === 'place' && !tessHasPanels()))
       .map(t => `<button class="tool" data-act="layoutTool" data-arg="${t.key}" aria-pressed="${tool === t.key}" title="${t.label} (${t.kb})">${t.icon} ${t.label} <kbd>${t.kb}</kbd></button>`).join('');
     const b = activeBlock();
     const placing = tool === 'place'
@@ -43,7 +44,7 @@ Views.layout = {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key.toLowerCase();
     const t = LAYOUT_TOOLS.find(x => x.kb.toLowerCase() === k);
-    if (t && !(k === 'b' && doc.layout.mode === 'tess')) { Actions.layoutTool(t.key); return; }
+    if (t && !(k === 'b' && doc.layout.mode === 'tess' && !tessHasPanels())) { Actions.layoutTool(t.key); return; }
     if (e.key === 'Escape') { ui.selCell = null; renderView(); return; }
     const key = ui.selCell || lay.hoverKey;
     if (!key) return;
@@ -81,7 +82,7 @@ function layoutHint(tool) {
 
 /* ---------- cell operations ---------- */
 function isBlockKey(key) {
-  if (key[0] === 'g') return true;
+  if (key[0] === 'g' || key[0] === 'p') return true;
   if (key[0] === 'o') return Qnow().cells.some(c => c.key === key);
   return false;
 }
@@ -126,6 +127,14 @@ function applyTool(key, first, e) {
 }
 function layDown(e) {
   const key = layTarget(e);
+  if (key?.[0] === 'p' && layoutTool() === 'select' && e.button === 0) {
+    const p = doc.layout.tess.panels.find(x => x.id === key.slice(1));
+    const svg = e.currentTarget;
+    svg.setPointerCapture(e.pointerId);
+    lay.drag = { panel: p, start: svgPoint(svg, e), dx: p.dx || 0, dy: p.dy || 0, moved: false, keys: new Set(), changed: false };
+    ui.selCell = key;
+    return;
+  }
   if (!key) { if (ui.selCell) { ui.selCell = null; renderView(); } return; }
   if (e.button === 2) { clearCell(key); commit(); return; }
   e.currentTarget.setPointerCapture(e.pointerId);
@@ -136,6 +145,12 @@ function layDown(e) {
   if (r) { lay.drag.changed = true; refreshLayoutCanvas(); }
 }
 function layMove(e) {
+  if (lay.drag?.panel) {
+    const d = lay.drag, [x, y] = svgPoint(e.currentTarget, e);
+    const nx = Math.round((d.dx + x - d.start[0]) * 2) / 2, ny = Math.round((d.dy + y - d.start[1]) * 2) / 2;
+    if (nx !== d.panel.dx || ny !== d.panel.dy) { d.panel.dx = nx; d.panel.dy = ny; d.moved = true; refreshLayoutCanvas(); }
+    return;
+  }
   const key = layTarget(e);
   lay.shift = e.shiftKey;
   if (lay.drag) {
@@ -150,6 +165,7 @@ function layMove(e) {
 }
 function layUp() {
   const d = lay.drag; lay.drag = null;
+  if (d?.panel) { if (d.moved) commit(); else renderView(); return; }
   if (d?.changed) commit();
 }
 function hoverCell(key) {
@@ -245,6 +261,46 @@ Actions.tessShape = v => {
 Actions.tessEdge = v => { doc.layout.tess.edge = v; commit(); };
 Actions.tessFill = id => { doc.layout.tess.fill = id; commit(); };
 Actions.tessBase = id => { doc.layout.tess.base = id; commit(); };
+/* 3D cube shading for tumbling blocks */
+Actions.cubeFace = arg => {
+  const [face, id] = arg.split('|'), t = doc.layout.tess;
+  const F = doc.fabrics.map(f => f.id);
+  t.faces = t.faces || { top: F[0], left: F[2] || F[1], right: F[1] };
+  t.faces[face] = id;
+  commit();
+};
+Actions.cubeShade = () => {
+  const t = doc.layout.tess, F = doc.fabrics.slice().sort((a, b) => hexToLab(b.color)[0] - hexToLab(a.color)[0]).map(f => f.id);
+  // lightest on top, middle value on the left, darkest on the right — reads as light from the upper left
+  t.faces = t.faces || { top: F[0], left: F[Math.floor(F.length / 2)], right: F[F.length - 1] };
+  t.colors = {};
+  commit();
+  toast('Cubes shaded — click any diamond with Paint fabric to change it');
+};
+Actions.cubeOff = () => { doc.layout.tess.faces = null; commit(); };
+/* inset panels */
+const panelById = id => (doc.layout.tess.panels || []).find(p => p.id === id);
+Actions.addPanel = () => {
+  const t = doc.layout.tess;
+  t.panels = t.panels || [];
+  const [cw, ch] = tessSize(t);
+  const size = Math.max(6, Math.round(Math.min(cw, ch) * 0.4 / 2) * 2);
+  const F = doc.fabrics.map(f => f.id);
+  t.panels.push({ id: uid('p'), size, dx: 0, dy: t.panels.length * 4, b: ui.activeBlock && doc.blocks[ui.activeBlock] ? ui.activeBlock : null, fab: ui.activeBlock ? null : F[0],
+    frames: [{ width: 1, fabric: F[F.length > 2 ? F.length - 1 : 1] }, { width: 1, fabric: F[3] || F[1] }, { width: 1, fabric: F[F.length > 2 ? F.length - 1 : 1] }] });
+  ui.layoutTool = 'select';
+  commit();
+};
+Actions.removePanel = id => { const t = doc.layout.tess; t.panels = t.panels.filter(p => p.id !== id); if (ui.selCell === 'p' + id) ui.selCell = null; commit(); };
+Actions.panelCentre = id => { const p = panelById(id); p.dx = 0; p.dy = 0; commit(); };
+Actions.panelContent = (v, el) => {
+  const p = panelById(el.dataset.arg);
+  if (v.startsWith('fab:')) { p.fab = v.slice(4); p.b = null; } else { p.b = v || null; p.fab = null; }
+  commit();
+};
+Actions.panelFrameAdd = id => { const p = panelById(id); p.frames = p.frames || []; p.frames.push({ width: 1, fabric: doc.fabrics[1].id }); commit(); };
+Actions.panelFrameRemove = arg => { const [id, k] = arg.split('|'); panelById(id).frames.splice(+k, 1); commit(); };
+Actions.panelFrameFab = arg => { const [id, k, fab] = arg.split('|'); panelById(id).frames[+k].fabric = fab; commit(); };
 Actions.onpointFill = id => { const op = doc.layout.onpoint; op.fill = id; for (const k of Object.keys(op.cells)) if (op.cells[k]?.fab && !Qnow().cells.some(c => c.key === 'o' + k)) delete op.cells[k]; commit(); };
 Actions.tessToggleSet = id => {
   const set = paintSet();
@@ -328,6 +384,27 @@ function layoutInspector() {
       ${t.edge === 'fill' ? fabricPicker(t.fill, 'tessFill') : ''}
       <div class="hint">Base fabric (unpainted shapes)</div>${fabricPicker(t.base, 'tessBase')}`, { key: 'shape' });
     const set = paintSet();
+    if (t.shape === 'tumbling') {
+      const fc = t.faces;
+      h += section('3D cubes', fc ? `<p class="hint" style="margin-top:0">Every diamond is shaded by the face it forms. Paint any diamond to override it.</p>
+        ${[['top', 'Top faces'], ['left', 'Left faces'], ['right', 'Right faces']].map(([k, l]) => `<div class="hint">${l}</div>${fabricPicker(fc[k], 'cubeFace').replace(/data-arg="([^"]+)"/g, `data-arg="${k}|$1"`)}`).join('')}
+        <div class="btn-row"><button class="btn small" data-act="cubeShade" title="Clear hand-painted diamonds and re-shade every cube">Re-shade all</button><button class="btn small" data-act="cubeOff">Turn off</button></div>`
+        : `<p class="hint" style="margin-top:0">Shade every cube automatically with a light top, medium left and dark right face — the classic 3D illusion.</p><div class="btn-row"><button class="btn small primary" data-act="cubeShade">Shade as 3D cubes</button></div>`, { key: 'cubes' });
+    }
+    const panels = t.panels || [];
+    const contentOpts = cur => ['<option value="">— empty —</option>', ...doc.blockOrder.map(id => `<option value="${id}" ${cur.b === id ? 'selected' : ''}>${esc(doc.blocks[id].name)}</option>`), ...doc.fabrics.map(f => `<option value="fab:${f.id}" ${cur.fab === f.id ? 'selected' : ''}>Plain ${esc(f.name)}</option>`)].join('');
+    h += section('Inset panels', `<p class="hint" style="margin-top:0">A framed square set into the ${esc(tessShape(t.shape).label.replace(/ \(.*\)$/, '').toLowerCase())} — for a centre medallion, label or logo. The shapes are trimmed around it. Drag it with <b>Select</b> to move it.</p>
+      ${panels.map((p, i) => {
+        const pi = doc.layout.tess.panels.indexOf(p);
+        return `<div class="list-item"><div class="li-h"><b>Panel ${i + 1}</b><button class="btn small ghost" data-act="panelCentre" data-arg="${p.id}" title="Centre it">⌖</button><button class="btn small ghost" data-act="removePanel" data-arg="${p.id}" aria-label="Remove panel">✕</button></div>
+        <label class="f">Contents<select data-change="panelContent" data-arg="${p.id}">${contentOpts(p)}</select></label>
+        <div class="f-row three">${lenField('Size', `layout.tess.panels.${pi}.size`, { min: 2, max: 120 })}${lenField('Across', `layout.tess.panels.${pi}.dx`, { min: -200, max: 200 })}${lenField('Down', `layout.tess.panels.${pi}.dy`, { min: -200, max: 200 })}</div>
+        <div class="hint">Frames (inside → out)</div>
+        ${(p.frames || []).map((fr, k) => `<div style="display:flex;gap:6px;align-items:center;margin-top:4px"><input type="text" inputmode="decimal" style="width:62px" data-bind="layout.tess.panels.${pi}.frames.${k}.width" data-type="len" data-min="0" data-max="24" value="${esc(inputLen(fr.width))}" aria-label="Frame width">
+          ${fabricPicker(fr.fabric, 'panelFrameFab').replace(/data-arg="([^"]+)"/g, `data-arg="${p.id}|${k}|$1"`)}<button class="btn small ghost" data-act="panelFrameRemove" data-arg="${p.id}|${k}" aria-label="Remove frame">✕</button></div>`).join('')}
+        <div class="btn-row"><button class="btn small" data-act="panelFrameAdd" data-arg="${p.id}">+ Frame</button></div></div>`;
+      }).join('')}
+      <div class="btn-row"><button class="btn small" data-act="addPanel">+ Add panel</button></div>`, { key: 'panels' });
     h += section('Fill patterns', `<p class="hint" style="margin-top:0">Choose the fabrics to use, then a pattern:</p>
       <div class="fabpick">${doc.fabrics.map(f => `<button aria-pressed="${set.includes(f.id)}" data-act="tessToggleSet" data-arg="${f.id}" title="${esc(f.name)}">${swatchHtml(f.id, 20)}</button>`).join('')}</div>
       <div class="btn-row">${[['random', 'Random'], ['rows', 'Rows'], ['cols', 'Columns'], ['diag', 'Diagonals'], ['rings', 'Rings'], ['gradient', 'Gradient'], ['orient', 'By direction']].map(([k, l]) => `<button class="btn small" data-act="tessPattern" data-arg="${k}">${l}</button>`).join('')}</div>

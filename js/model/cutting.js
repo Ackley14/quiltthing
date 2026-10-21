@@ -96,16 +96,17 @@ function collectCutItems(Q) {
   // blocks: group identical placements
   const groups = new Map();
   for (const c of Q.cells) {
-    if (c.b) { const k = c.b + (c.flip ? '|f' : ''); groups.set(k, (groups.get(k) || 0) + 1); }
+    if (c.b) { const k = `${c.b}|${c.flip ? 'f' : ''}|${c.size}`; groups.set(k, (groups.get(k) || 0) + 1); }
     else if (c.fab) add(c.fab, recipeFor({ shape: 'rect', w: c.size, h: c.size }, sa, { directional: isDir(c.fab) }), 1, 'Plain squares', { kind: 'plain' });
   }
   for (const [k, n] of groups) {
-    const [bid, flip] = k.split('|');
+    const [bid, flipFlag, sizeStr] = k.split('|');
+    const flip = flipFlag === 'f', size = +sizeStr;
     const block = doc.blocks[bid];
-    const an = analyzeBlock(block, Q.BS);
+    const an = analyzeBlock(block, size);
     const name = block.name;
     const handled = new Set();
-    const all = blockPieces(block, Q.BS, Q.BS);
+    const all = blockPieces(block, size, size);
     const use = p => ({ b: bid, i: all.indexOf(p) });
     for (const u of an.units) {
       if (u.unit.type === 'snowball') {
@@ -119,7 +120,7 @@ function collectCutItems(Q) {
       // mirrored placements only matter for pieces that have a left and right hand
       let cls = p.cls;
       if (flip && ['rtri', 'para', 'tri', 'quad', 'poly', 'curved', 'holed'].includes(cls.shape)) {
-        cls = classifyPiece(mirrorPolyX(p.pts, Q.BS / 2), { curved: p.curved });
+        cls = classifyPiece(mirrorPolyX(p.pts, size / 2), { curved: p.curved });
         if (p.cls.shape === 'holed') cls.shape = 'holed';
       }
       add(p.fab, recipeFor(cls, sa, { directional: isDir(p.fab), applique: p.app }), n, name, use(p));
@@ -137,8 +138,8 @@ function collectCutItems(Q) {
   for (const p of Q.patches) {
     const bb = bounds(p.pts);
     const long = Math.max(bb.w, bb.h), short = Math.min(bb.w, bb.h);
-    const src = p.role === 'border' ? `Border ${p.ring + 1}` : p.role === 'corner' ? 'Cornerstones' : 'Sashing';
-    if ((p.role === 'border' || p.role === 'sashLong') && long + 2 * sa > doc.cutting.wof) {
+    const src = p.role === 'border' ? `Border ${p.ring + 1}` : p.role === 'frame' ? `Panel frame ${p.ring + 1}` : p.role === 'corner' ? 'Cornerstones' : 'Sashing';
+    if ((p.role === 'border' || p.role === 'sashLong' || p.role === 'frame') && long + 2 * sa > doc.cutting.wof) {
       const w = ceilEighth(short + 2 * sa);
       const key = `${resolveFab(p.fab)}|${w}|${src}`;
       if (!joined.has(key)) joined.set(key, { fab: resolveFab(p.fab), w, lengths: [], src, join: 'straight' });

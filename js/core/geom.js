@@ -59,7 +59,7 @@ function polyToPath(p, prec = 3) {
 function cleanPoly(p, keep) {
   if (p.length < 3) return p;
   const b = bounds(p);
-  const tol = Math.max(b.w, b.h) * 1e-6 + 1e-9;
+  const tol = Math.max(b.w, b.h) * 1e-5 + 1e-6;   // clipping can leave near-duplicate corners ~1e-5 apart
   let pts = [];
   for (const q of p) {
     const last = pts[pts.length - 1];

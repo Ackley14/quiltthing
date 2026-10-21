@@ -9,7 +9,7 @@ const TESS_SHAPES = [
   { key: 'square', label: 'Squares', ratio: 1, lean: 0, orientLabels: ['Straight', 'On point'] },
   { key: 'hex', label: 'Hexagons', ratio: 1, lean: 0, orientLabels: ['Pointy top', 'Flat top'] },
   { key: 'triangle', label: 'Triangles', ratio: 1, lean: 0, orientLabels: ['Rows', 'Columns'] },
-  { key: 'tumbling', label: 'Tumbling blocks', ratio: 1, lean: 0, orientLabels: ['Upright', 'Sideways'] },
+  { key: 'tumbling', label: 'Tumbling blocks (3D cubes)', ratio: 1, lean: 0, orientLabels: ['Upright', 'Sideways'] },
   { key: 'zigzag', label: 'Lightning / zigzag', ratio: 0.5, lean: 0.5, orientLabels: ['Vertical bolts', 'Horizontal chevrons'] },
   { key: 'brick', label: 'Bricks', ratio: 0.5, lean: 0, orientLabels: ['Horizontal', 'Vertical'] },
   { key: 'diamond', label: 'Diamonds (argyle)', ratio: 1.6, lean: 0, orientLabels: ['Tall', 'Wide'] },
@@ -131,7 +131,16 @@ function mergeSmallFills(fills, tileArea) {
   }
   return list;
 }
+// Where an inset panel sits in a tessellation: centred, offset by (dx, dy), its frames around it.
+function panelGeom(p, cw, ch) {
+  const fw = sum(p.frames || [], f => f.width > 0 ? f.width : 0);
+  const outer = p.size + 2 * fw;
+  const cx = cw / 2 + (p.dx || 0), cy = ch / 2 + (p.dy || 0);
+  return { p, fw, outer, cx, cy, x0: cx - outer / 2, y0: cy - outer / 2 };
+}
 function clipToRect(pts, W, H) {
+  const bb = bounds(pts);
+  if (bb.minX >= -1e-9 && bb.minY >= -1e-9 && bb.maxX <= W + 1e-9 && bb.maxY <= H + 1e-9) return pts;   // already inside
   let p = pts;
   p = clipHalfplane(p, [1, 0], 0, true); if (p.length < 3) return null;
   p = clipHalfplane(p, [1, 0], W, false); if (p.length < 3) return null;
@@ -194,16 +203,50 @@ function buildQuilt() {
     const t = L.tess;
     [cw, ch] = tessSize(t);
     const fills = [];
+    // inset panels: framed squares set into the tile field; tiles are trimmed around them
+    const panels = (t.panels || []).map(p => panelGeom(p, cw, ch));
+    const holes = panels.map(pg => rectPts(pg.x0, pg.y0, pg.outer, pg.outer));
+    // 3D cubes: unpainted tumbling-block diamonds take the face fabric for their direction
+    const faceFab = o => t.shape === 'tumbling' && t.faces ? [t.faces.top, t.faces.right, t.faces.left][o] : null;
     for (const tile of latticeTiles(t.shape, t.size, t.ratio, t.lean, t.orient, cw, ch)) {
       const bb = bounds(tile.pts);
       if (bb.maxX <= 1e-9 || bb.maxY <= 1e-9 || bb.minX >= cw - 1e-9 || bb.minY >= ch - 1e-9) continue;
       const clipped = clipToRect(tile.pts, cw, ch);
       if (!clipped) continue;
-      const whole = Math.abs(polyArea(clipped) - polyArea(tile.pts)) < 1e-6;
-      const tileRec = { key: `t${tile.key}`, tkey: tile.key, role: whole ? 'tile' : (t.edge === 'fill' ? 'fill' : 'trim'),
-        fab: !whole && t.edge === 'fill' ? t.fill : (t.colors[tile.key] || t.base), whole,
-        pts: translatePoly(clipped, off, off), full: translatePoly(tile.pts, off, off), row: tile.row, col: tile.col, orient: tile.orient };
-      if (tileRec.role === 'fill') fills.push(tileRec); else Q.tiles.push(tileRec);
+      let parts = [clipped];
+      const hits = holes.filter(hp => { const hb = bounds(hp); return bb.maxX > hb.minX + 1e-9 && bb.minX < hb.maxX - 1e-9 && bb.maxY > hb.minY + 1e-9 && bb.minY < hb.maxY - 1e-9; });
+      if (hits.length) {
+        const mp = pcSafe('difference', toPC(clipped), ...hits.map(toPC));
+        parts = mp ? fromPC(mp).map(x => cleanPoly(x.outer)).filter(pp => pp.length >= 3 && polyArea(pp) > 1e-3) : [clipped];
+        if (!parts.length) continue;
+      }
+      const fullArea = polyArea(tile.pts);
+      for (let pts of parts) {
+        const whole = Math.abs(polyArea(pts) - fullArea) < 1e-4;
+        // a panel edge that only touches a tile leaves it whole: keep its exact outline
+        if (whole) pts = clipped;
+        const byPanel = hits.length > 0;
+        const role = whole ? 'tile' : (t.edge === 'fill' && !byPanel ? 'fill' : 'trim');
+        const tileRec = { key: `t${tile.key}`, tkey: tile.key, role,
+          fab: role === 'fill' ? t.fill : (t.colors[tile.key] || faceFab(tile.orient) || t.base), whole,
+          pts: translatePoly(pts, off, off), full: translatePoly(tile.pts, off, off), row: tile.row, col: tile.col, orient: tile.orient };
+        if (role === 'fill') fills.push(tileRec); else Q.tiles.push(tileRec);
+      }
+    }
+    for (const pg of panels) {
+      const p = pg.p;
+      // frames from the inside out: sides first, then top & bottom (the sewing order)
+      let x = off + pg.x0 + pg.fw, y = off + pg.y0 + pg.fw, s = p.size;
+      (p.frames || []).forEach((fr, k) => {
+        const w = fr.width; if (!(w > 0)) return;
+        Q.patches.push({ role: 'frame', panel: p.id, ring: k, side: 'left', fab: fr.fabric, pts: rectPts(x - w, y, w, s) });
+        Q.patches.push({ role: 'frame', panel: p.id, ring: k, side: 'right', fab: fr.fabric, pts: rectPts(x + s, y, w, s) });
+        Q.patches.push({ role: 'frame', panel: p.id, ring: k, side: 'top', fab: fr.fabric, pts: rectPts(x - w, y - w, s + 2 * w, w) });
+        Q.patches.push({ role: 'frame', panel: p.id, ring: k, side: 'bottom', fab: fr.fabric, pts: rectPts(x - w, y + s, s + 2 * w, w) });
+        x -= w; y -= w; s += 2 * w;
+      });
+      Q.cells.push(makeCell(`p${p.id}`, p.b ? { b: p.b, r: p.r || 0, f: !!p.f } : p.fab ? { fab: p.fab } : null,
+        off + pg.cx, off + pg.cy, 0, p.size, 'panel', p.id));
     }
     const oneTile = latticeTiles(t.shape, t.size, t.ratio, t.lean, t.orient, t.size * 4, t.size * 4)[0];
     Q.tiles.push(...mergeSmallFills(fills, polyArea(oneTile.pts)));
@@ -250,6 +293,10 @@ function cellContent(key) {
   if (key[0] === 'g') return L.grid.cells[+key.slice(1)] || null;
   if (key[0] === 'o') return L.onpoint.cells[key.slice(1)] || null;
   if (key[0] === 't') { const f = L.tess.colors[key.slice(1)]; return f ? { fab: f } : null; }
+  if (key[0] === 'p') {
+    const p = (L.tess.panels || []).find(x => x.id === key.slice(1));
+    return p?.b ? { b: p.b, r: p.r || 0, f: !!p.f } : p?.fab ? { fab: p.fab } : null;
+  }
   return null;
 }
 function setCellContent(key, content) {
@@ -257,6 +304,11 @@ function setCellContent(key, content) {
   if (key[0] === 'g') L.grid.cells[+key.slice(1)] = content;
   else if (key[0] === 'o') { if (content) L.onpoint.cells[key.slice(1)] = content; else delete L.onpoint.cells[key.slice(1)]; }
   else if (key[0] === 't') { if (content?.fab) L.tess.colors[key.slice(1)] = content.fab; else delete L.tess.colors[key.slice(1)]; }
+  else if (key[0] === 'p') {
+    const p = (L.tess.panels || []).find(x => x.id === key.slice(1));
+    if (!p) return;
+    p.b = content?.b || null; p.r = content?.r || 0; p.f = !!content?.f; p.fab = content?.fab || null;
+  }
 }
 function resizeGrid(rows, cols) {
   const g = doc.layout.grid;
@@ -271,10 +323,14 @@ function quiltSvg(Q, opts = {}) {
   const idp = opts.idp || 'q';
   const pad = opts.labels ? Math.max(2, Math.min(Q.W, Q.H) * 0.06) : 0;
   const vb = `${-pad} ${-pad} ${round(Q.W + pad * (opts.labels ? 1.2 : 0), 3)} ${round(Q.H + pad * (opts.labels ? 1.2 : 0), 3)}`;
-  const used = uniq(Q.cells.filter(c => c.b).map(c => c.b));
+  const symId = c => `${idp}-${c.b}-${String(round(c.size, 3)).replace('.', '_')}`;
+  const used = uniq(Q.cells.filter(c => c.b).map(c => `${c.b}|${round(c.size, 3)}`));
   const hair = Math.max(Q.W, Q.H) * 0.0012;
   let defs = opts.defs ? fabricDefs() : '';
-  for (const id of used) defs += `<g id="${idp}-${id}">${blockSvg(doc.blocks[id], Q.BS, Q.BS, { seams: false })}${opts.seams ? blockSeamLines(doc.blocks[id], Q.BS, hair) : ''}</g>`;
+  for (const u of used) {
+    const [id, size] = u.split('|'), S = +size;
+    defs += `<g id="${symId({ b: id, size: S })}">${blockSvg(doc.blocks[id], S, S, { seams: false })}${opts.seams ? blockSeamLines(doc.blocks[id], S, hair) : ''}</g>`;
+  }
   let s = `<svg class="${opts.cls || 'quilt-svg'}" viewBox="${vb}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"${opts.size ? ` width="${opts.size[0]}" height="${opts.size[1]}"` : ''}>`;
   s += `<defs>${defs}</defs>`;
   s += `<g${opts.faded ? ' opacity=".35"' : ''}>`;
@@ -285,7 +341,7 @@ function quiltSvg(Q, opts = {}) {
   }
   for (const c of Q.cells) {
     const attr = opts.interactive ? ` data-cell="${c.key}"` : '';
-    if (c.b) s += `<use href="#${idp}-${c.b}" xlink:href="#${idp}-${c.b}" transform="${cellTransform(c, DRAW_BLEED)}"${attr}/>`;
+    if (c.b) s += `<use href="#${symId(c)}" xlink:href="#${symId(c)}" transform="${cellTransform(c, DRAW_BLEED)}"${attr}/>`;
     else if (c.fab) s += `<path d="${polyToPath(c.pts)}" fill="${fabricFill(c.fab)}" stroke="${fabricFill(c.fab)}" stroke-width="${DRAW_BLEED}"${attr}/>`;
     else s += `<path d="${polyToPath(c.pts)}" fill="#f4f1ea" stroke="#c9c2b3" stroke-width="${hair}" stroke-dasharray="${hair * 4} ${hair * 3}"${attr}/>`;
   }
