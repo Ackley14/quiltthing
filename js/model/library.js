@@ -4,7 +4,7 @@
 
 const LIB_CATEGORIES = [
   ['all', 'All'], ['classic', 'Classic'], ['star', 'Stars'], ['tri', 'Geese & triangles'],
-  ['strip', 'Strips & logs'], ['curve', 'Curves'], ['modern', 'Modern & pictures'], ['app', 'Appliqué'],
+  ['strip', 'Strips & logs'], ['curve', 'Curves'], ['modern', 'Modern & pictures'], ['app', 'Appliqué'], ['hex', 'Hexagon blocks'],
 ];
 
 const LIBRARY = (() => {
@@ -239,6 +239,53 @@ const LIBRARY = (() => {
     const hex = P(Array.from({ length: 6 }, (_, k) => polar([2, 2], 1.5, -90 + k * 60).map(v => round(v, 6))), 4); hex.app = true;
     add('hexagon', 'Hexagon', 'app', 4, [R(0, 0, 4, 4, 0), hex]);
   }
+
+  /* ===== Curves: quarter circles ===== */
+  add('quarter-circle', 'Quarter Circle', 'curve', 4, [R(0, 0, 4, 4, 0), PIE(0, 0, 4, 'tl', 4, 1)]);
+  add('double-arc', 'Double Arc', 'curve', 4, [R(0, 0, 4, 4, 0), PIE(0, 0, 4, 'tl', 4, 1), PIE(0, 0, 4, 'tl', 2, 2)]);
+  add('corner-blooms', 'Corner Blooms', 'curve', 8, [
+    R(0, 0, 8, 8, 0), PIE(0, 0, 4, 'tl', 3, 1), PIE(4, 0, 4, 'tr', 3, 2), PIE(4, 4, 4, 'br', 3, 1), PIE(0, 4, 4, 'bl', 3, 2)],
+  { seams: [[[4, 0], [4, 8]], [[0, 4], [8, 4]]] });
+  add('mill-wheel', 'Mill Wheel', 'curve', 8, [
+    R(0, 0, 4, 4, 2), PIE(0, 0, 4, 'br', 3, 1), R(4, 0, 8, 4, 1), PIE(4, 0, 4, 'bl', 3, 2),
+    R(4, 4, 8, 8, 2), PIE(4, 4, 4, 'tl', 3, 1), R(0, 4, 4, 8, 1), PIE(0, 4, 4, 'tr', 3, 2)]);
+  add('snake-trail', 'Snake Trail', 'curve', 8, [
+    R(0, 0, 8, 8, 0), PIE(0, 0, 4, 'tl', 3, 1), PIE(4, 0, 4, 'br', 3, 1), PIE(4, 4, 4, 'tr', 3, 1), PIE(0, 4, 4, 'bl', 3, 1)],
+  { seams: [[[4, 0], [4, 8]], [[0, 4], [8, 4]]] });
+
+  /* ===== Appliqué: curved shapes ===== */
+  {
+    const tip = [2, 3.5], left = [0.5, 1.7], dip = [2, 1.25], right = [3.5, 1.7];
+    const heart = P([tip, left, dip, right], 3, [away(tip, left, right, 0.12), away(left, dip, tip, 0.85), away(dip, right, tip, 0.85), away(right, tip, left, 0.12)]); heart.app = true;
+    add('heart-app', 'Heart', 'app', 4, [R(0, 0, 4, 4, 0), heart]);
+    const leaf = P([[0.8, 3.2], [3.2, 0.8]], 2, [0.5, 0.5]); leaf.app = true;
+    add('leaf', 'Leaf', 'app', 4, [R(0, 0, 4, 4, 0), leaf]);
+    const petal = to => { const p = P([[2, 2], to], 4, [0.6, 0.6]); p.app = true; return p; };
+    const eye = P([[1.6, 2], [2.4, 2]], 3, [1, 1]); eye.app = true;
+    add('four-petal', 'Four-Petal Flower', 'app', 4, [R(0, 0, 4, 4, 0), petal([2, 0.4]), petal([3.6, 2]), petal([2, 3.6]), petal([0.4, 2]), eye]);
+    const sun = P([[1, 2], [3, 2]], 2, [1, 1]); sun.app = true;
+    const rays = [0, 1, 2, 3, 4, 5, 6, 7].map(k => { const a = k * Math.PI / 4, c = [2, 2], q = r => [round(c[0] + r * Math.cos(a), 4), round(c[1] + r * Math.sin(a), 4)], s = r => [round(c[0] + r * Math.cos(a + 0.28), 4), round(c[1] + r * Math.sin(a + 0.28), 4)], t = r => [round(c[0] + r * Math.cos(a - 0.28), 4), round(c[1] + r * Math.sin(a - 0.28), 4)]; const ray = P([s(0.9), q(1.85), t(0.9)], 3); ray.app = true; return ray; });
+    add('sunburst', 'Sunburst', 'app', 4, [R(0, 0, 4, 4, 0), ...rays, sun]);
+  }
+
+  /* ===== Hexagon blocks (for hexagon tessellations) ===== */
+  {
+    const H = 6, V = hexFrame(H), C = [3, 3], h = TRI_H;
+    const hx = r => [0, 1, 2, 3, 4, 5].map(k => [round(3 + r * Math.cos(k * Math.PI / 3), 6), round(3 - r * Math.sin(k * Math.PI / 3), 6)]);
+    const opts = { shape: 'hex', lattice: 'tri', autoSeams: true };
+    const apex = [[3, 3 - 2 * h], [4.5, 3 - h], [4.5, 3 + h], [3, 3 + 2 * h], [1.5, 3 + h], [1.5, 3 - h]].map(q => q.map(v => round(v, 6)));
+    // the centre hexagon's corners, in order around from its right-hand corner
+    const c6 = [[2, 3], [2.5, 3 - h], [3.5, 3 - h], [4, 3], [3.5, 3 + h], [2.5, 3 + h]].map(q => q.map(v => round(v, 6)));
+    add('hex-star', 'Hexie Star', 'hex', H, [P(c6, 1), ...apex.map((a, i) => P([c6[(i + 1) % 6], a, c6[(i + 2) % 6]], 2))], opts);
+    add('hex-cube', 'Hexie Cube', 'hex', H, [P([C, V[0], V[1], V[2]], 1), P([C, V[2], V[3], V[4]], 2), P([C, V[4], V[5], V[0]], 3)], opts);
+    add('hex-pinwheel', 'Hexie Pinwheel', 'hex', H, V.map((v, i) => P([C, v, V[(i + 1) % 6]], i % 2 ? 2 : 1)), opts);
+    add('hex-rings', 'Hexie Rings', 'hex', H, [P(hx(2), 1), P(hx(1), 2)], opts);
+    const hexAt = (cx, cy) => [0, 1, 2, 3, 4, 5].map(k => [round(cx + Math.cos(k * Math.PI / 3), 6), round(cy - Math.sin(k * Math.PI / 3), 6)]);
+    const ring = [0, 1, 2, 3, 4, 5].map(k => { const a = Math.PI / 6 + k * Math.PI / 3; return P(hexAt(3 + Math.sqrt(3) * Math.cos(a), 3 - Math.sqrt(3) * Math.sin(a)), 2); });
+    add('hex-flower', 'Grandmother\'s Flower', 'hex', H, [P(hx(1), 1), ...ring], opts);
+    add('hex-star-david', 'Six-Point Star', 'hex', H, [P([V[1], V[3], V[5]], 1), P([V[0], V[2], V[4]], 1)], opts);
+    add('hex-tumble', 'Tumbling Hexie', 'hex', H, [P([C, V[5], V[0], V[1]], 1), P([C, V[1], V[2], V[3]], 3), P([C, V[3], V[4], V[5]], 2)], opts);
+  }
   return L;
 })();
 
@@ -250,7 +297,7 @@ function slotFabric(slot) {
   return others[(slot - 1) % others.length].id;
 }
 function instantiatePreset(p) {
-  const block = newDrawnBlock(p.name, p.n);
+  const block = newDrawnBlock(p.name, p.n, p.shape);
   block.regions = p.regions.map(r => {
     const reg = { pts: r.pts.map(q => [q[0], q[1]]), fab: slotFabric(r.s) };
     if (r.b) reg.b = r.b.slice();
@@ -258,6 +305,7 @@ function instantiatePreset(p) {
     return reg;
   });
   block.seams = (p.seams || []).map(s => s.map(q => q.slice()));
+  if (p.autoSeams) { const sg = seamSuggestions(block); block.seams.push(...sg.required, ...sg.optional); }
   block.src = p.id;
   return block;
 }

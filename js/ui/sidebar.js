@@ -190,12 +190,12 @@ function myBlocksSection() {
     grid += `<button class="blk${target ? ' target' : ''}" draggable="${ui.view === 'layout'}" aria-pressed="${(ui.view === 'layout' ? placeBlock()?.id : ui.activeBlock) === id}" data-act="pickBlock" data-arg="${id}" title="${esc(b.name)}${n ? ` · used ${n}×` : ''}">
       ${blockThumb(b, 72)}<div class="nm">${esc(b.name)}</div></button>`;
   }
-  const right = `<button class="btn small" data-act="addBlockMenu" aria-haspopup="menu">${icon('plus', 14)} Add</button>`;
+  const right = `<button class="btn small quiet" data-act="libraryPicker">Library</button><button class="btn small" data-act="addBlockMenu" aria-haspopup="menu">${icon('plus', 14)} Add</button>`;
   const hint = fillingSlot ? `<p class="hint">Pick a block for slot ${ui.activeSlot + 1}.</p>` : '';
   return section('My blocks', `${hint}${grid ? `<div class="blocks">${grid}</div>` : `<div class="empty-state"><p>No blocks yet.</p><button class="btn primary" data-act="libraryPicker">Browse classic blocks</button></div>`}`, { key: 'myblocks', right });
 }
 Actions.addBlockMenu = (a, el) => openMenu(el, [
-  { label: 'Classic block from the library…', act: 'libraryPicker' },
+  { label: 'From the library…', act: 'libraryPicker' },
   { label: 'Draw a new block', act: 'newBlock' },
   { label: 'Hexagon block', act: 'newHexBlock' },
   { label: 'Combination of blocks', act: 'newCompound' },
@@ -299,28 +299,36 @@ Actions.newHexBlock = () => {
 Actions.newCompound = () => { addBlockToDoc(newCompoundBlock(`Combo ${doc.blockOrder.length + 1}`)); ui.view = 'block'; ui.activeSlot = 0; commit(); };
 
 /* ---------- library picker ---------- */
+// Folders by style, plus the block's format (square, or hexagon for hexagon tessellations).
 function libraryGrid() {
-  const q = ui.libSearch.trim().toLowerCase();
-  const list = LIBRARY.filter(p => (ui.libCat === 'all' || p.cat === ui.libCat) && (!q || p.name.toLowerCase().includes(q)));
+  const q = ui.libSearch.trim().toLowerCase(), fmt = ui.libFormat || 'all';
+  const list = LIBRARY.filter(p => (ui.libCat === 'all' || p.cat === ui.libCat) && (fmt === 'all' || (fmt === 'hex') === (p.shape === 'hex')) && (!q || p.name.toLowerCase().includes(q)));
   return list.length ? list.map(p => `<button class="blk" data-act="useLibrary" data-arg="${p.id}" title="${esc(p.name)}">${blockThumb(presetPreviewBlock(p), 84)}<div class="nm">${esc(p.name)}</div></button>`).join('') : '<p class="empty">No blocks match.</p>';
 }
+function libraryFolders() {
+  const fmt = ui.libFormat || 'all';
+  return `<div class="lib-folders">${LIB_CATEGORIES.map(([k, l]) => `<button class="chip" data-act="libCat" data-arg="${k}" aria-pressed="${ui.libCat === k}">${l}</button>`).join('')}</div>
+    <div class="seg lib-format" role="group" aria-label="Format">${[['all', 'All shapes'], ['square', 'Square'], ['hex', 'Hexagon']].map(([k, l]) => `<button data-act="libFormat" data-arg="${k}" aria-pressed="${fmt === k}">${l}</button>`).join('')}</div>`;
+}
 Actions.libraryPicker = () => {
-  openModal(`<h2>Classic blocks</h2>
-    <div class="lib-tools"><input type="text" placeholder="Search" value="${esc(ui.libSearch)}" data-input="libSearch" aria-label="Search blocks">
-      <select data-change="libCat" aria-label="Category">${LIB_CATEGORIES.map(([k, l]) => `<option value="${k}" ${ui.libCat === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+  openModal(`<h2>Block library</h2>
+    <div class="lib-tools"><input type="text" placeholder="Search" value="${esc(ui.libSearch)}" data-input="libSearch" aria-label="Search blocks"></div>
+    <div id="lib-folders">${libraryFolders()}</div>
     <div class="blocks lib-grid" id="lib-grid">${libraryGrid()}</div>
-    <p class="hint">Added blocks use your fabrics and can be edited.</p>`);
+    <p class="hint">Added blocks use your fabrics and can be edited. Hexagon blocks go in hexagon tessellations.</p>`);
   $('#modal-root .modal').classList.add('wide');
 };
+const refreshLibrary = () => { $('#lib-grid') && ($('#lib-grid').innerHTML = libraryGrid()); $('#lib-folders') && ($('#lib-folders').innerHTML = libraryFolders()); };
 Actions.libSearch = v => { ui.libSearch = v; const g = $('#lib-grid'); if (g) g.innerHTML = libraryGrid(); };
-Actions.libCat = v => { ui.libCat = v; saveUi(); const g = $('#lib-grid'); if (g) g.innerHTML = libraryGrid(); };
+Actions.libCat = v => { ui.libCat = v; if (v === 'hex') ui.libFormat = 'all'; saveUi(); refreshLibrary(); };
+Actions.libFormat = v => { ui.libFormat = v; saveUi(); refreshLibrary(); };
 Actions.useLibrary = pid => {
   const p = LIBRARY.find(x => x.id === pid);
   if (!p) return;
   const host = activeBlock();
   const b = instantiatePreset(p);
   addBlockToDoc(b, false);
-  if (ui.view === 'block' && host?.kind === 'compound' && ui.activeSlot != null) {
+  if (ui.view === 'block' && host?.kind === 'compound' && ui.activeSlot != null && p.shape !== 'hex') {
     host.slots[ui.activeSlot] = { b: b.id, r: 0, f: false };
     ui.activeSlot = nextEmptySlot(host, ui.activeSlot);
   } else {

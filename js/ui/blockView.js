@@ -104,6 +104,51 @@ function snapDot(b, p, fine, skip) {
   return best ? [best[0], best[1]] : best;
 }
 const samePt = (a, b) => a && b && Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6;
+// Seam lines run from line to line: each end lands on a piece's edge, the block's edge or another
+// seam. The lines a seam can start or end on (grid units):
+function seamTargets(b) {
+  const lines = [];
+  const ring = pts => pts.forEach((a, i) => lines.push([a, pts[(i + 1) % pts.length]]));
+  ring(blockOutline(b, b.n));
+  for (const r of b.regions) if (!r.app) ring(r.b?.some(x => x) ? regionRing(r, 1, 1) : r.pts);
+  for (const s of b.seams || []) lines.push(s);
+  return lines;
+}
+// The point on a line nearest the pointer (preferring grid points on it), or null when no line is close.
+function seamSnap(b, p, fine) {
+  const pxPerUnit = ($('#ed-c')?.getScreenCTM()?.a || 40) * gridScale(b), tol = 14 / pxPerUnit;
+  const lines = seamTargets(b);
+  const near = (q, [A, B]) => {
+    const dx = B[0] - A[0], dy = B[1] - A[1], L2 = dx * dx + dy * dy || 1e-12;
+    const t = clamp(((q[0] - A[0]) * dx + (q[1] - A[1]) * dy) / L2, 0, 1), x = A[0] + t * dx, y = A[1] + t * dy;
+    return { pt: [x, y], d: Math.hypot(q[0] - x, q[1] - y) };
+  };
+  // grid points and corners that sit on a line
+  let best = null, bd = tol;
+  const cands = [...latticeDots(b, fine), ...b.regions.filter(r => !r.app).flatMap(r => r.pts)];
+  for (const c of cands) {
+    const dp = Math.hypot(c[0] - p[0], c[1] - p[1]);
+    if (dp < bd && lines.some(l => near(c, l).d < 1e-4)) { bd = dp; best = [c[0], c[1]]; }
+  }
+  if (best) return best;
+  // otherwise anywhere along the nearest line; from the seam's first end, an almost straight or
+  // 45° seam is made exactly so
+  let line = null;
+  for (const l of lines) { const n = near(p, l); if (n.d < bd) { bd = n.d; best = n.pt; line = l; } }
+  const from = ui.drawing[0];
+  if (best && from) {
+    const ang = Math.atan2(best[1] - from[1], best[0] - from[0]), snap = Math.round(ang / (Math.PI / 4)) * (Math.PI / 4);
+    if (Math.abs(ang - snap) < 8 * Math.PI / 180) {
+      const [A, B] = line, ux = Math.cos(snap), uy = Math.sin(snap), ex = B[0] - A[0], ey = B[1] - A[1];
+      const den = ux * ey - uy * ex;
+      if (Math.abs(den) > 1e-9) {
+        const t = ((A[0] - from[0]) * ey - (A[1] - from[1]) * ex) / den, u = ((A[0] - from[0]) * uy - (A[1] - from[1]) * ux) / den;
+        if (t > 0 && u >= -1e-9 && u <= 1 + 1e-9) best = [from[0] + t * ux, from[1] + t * uy];
+      }
+    }
+  }
+  return best && best.map(v => round(v, 4));
+}
 function evtGrid(e, b) { const [x, y] = svgPoint($('#ed-c'), e); const k = gridScale(b); return [x / k, y / k]; }
 // The tracing picture isn't turned with the block, so it moves in screen-aligned (view) units.
 function evtView(e, b) { const [x, y] = svgPoint($('#editor'), e); const k = gridScale(b); return [x / k, y / k]; }
@@ -231,7 +276,7 @@ function blockStatus(b) {
     case 'text': return loadedFont(textOpts().font) ? '<b>Text</b>: click where the words go. Type them on the right.' : 'Loading the font…';
     case 'arc': return isHexBlock(b) || b.lattice === 'tri' ? 'Quarter circles need a square grid.' : '<b>Quarter circle</b>: click a square, or drag from a corner for a bigger one.';
     case 'tri': return b.lattice === 'tri' || isHexBlock(b) ? '<b>Triangle</b>: click inside a lattice triangle. Shift for half size.' : '<b>Triangle</b>: click near a corner of a square. Shift for half size.';
-    case 'seam': return ui.drawing.length ? 'Click the other end of the seam line.' : '<b>Seam line</b>: click two grid points. Click a seam to remove it.';
+    case 'seam': return ui.drawing.length ? 'Now click a point on another line.' : '<b>Seam line</b>: click a point on a line or the block edge, then a point on another line. Click a seam to remove it.';
   }
   return '';
 }
@@ -376,11 +421,12 @@ function edDown(e) {
   if (tool === 'seam') {
     const sl = e.target.closest('[data-seam]');
     if (sl && !ui.drawing.length) { b.seams.splice(+sl.dataset.seam, 1); commit(); toast('Seam removed', 1200); return; }
-    const d = snapDot(b, p, fine);
+    const d = seamSnap(b, p, fine);
+    if (!d) { toast(ui.drawing.length ? 'End the seam on a line or the block edge' : 'Start the seam on a line or the block edge', 1600); return; }
     if (!ui.drawing.length) { ui.drawing = [d]; refreshEditor(); return; }
     const a = ui.drawing[0];
     ui.drawing = [];
-    if (samePt(a, d)) { refreshEditor(); return; }
+    if (samePt(a, d) || seamTargets(b).some(([A, B]) => [a, d].every(q => Math.abs((B[0] - A[0]) * (q[1] - A[1]) - (B[1] - A[1]) * (q[0] - A[0])) < 1e-6 * (1 + dist(A, B))))) { refreshEditor(); return; }   // nothing, or along an existing line
     b.seams = b.seams || [];
     b.seams.push([a, d]);
     commit();
@@ -449,7 +495,7 @@ function edMove(e) {
   // hover feedback
   if (ui.tool === 'text') { ed.hover = ui.snapOff ? p : snapDot(b, p, fine); drawOverlay(); return; }
   if (['polygon', 'rect', 'seam'].includes(ui.tool)) {
-    const d = snapDot(b, p, fine);
+    const d = ui.tool === 'seam' ? seamSnap(b, p, fine) : snapDot(b, p, fine);
     if (!samePt(d, ed.hover)) { ed.hover = d; drawOverlay(); }
   } else if (ui.tool === 'tri') {
     ed.triPreview = triangleAt(b, p, fine);

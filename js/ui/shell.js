@@ -213,10 +213,19 @@ function applyBinding(el) {
   commit();
 }
 // Field helpers used by every inspector
+// A length box. opts.step adds − and + buttons that change it by that much.
 function lenField(label, path, opts = {}) {
   const v = getPath(doc, path);
-  return `<label class="f">${label}${opts.suffix ? ` <span class="muted">${opts.suffix}</span>` : ''}<input type="text" inputmode="decimal" data-bind="${path}" data-type="len" value="${esc(inputLen(v))}"${opts.min !== undefined ? ` data-min="${opts.min}"` : ''}${opts.max !== undefined ? ` data-max="${opts.max}"` : ''} title="Accepts 4.5, 4 1/2, 4½ or 11.4cm"></label>`;
+  const input = `<input type="text" inputmode="decimal" data-bind="${path}" data-type="len" value="${esc(inputLen(v))}"${opts.min !== undefined ? ` data-min="${opts.min}"` : ''}${opts.max !== undefined ? ` data-max="${opts.max}"` : ''} title="Accepts 4.5, 4 1/2, 4½ or 11.4cm">`;
+  if (!opts.step) return `<label class="f">${label}${opts.suffix ? ` <span class="muted">${opts.suffix}</span>` : ''}${input}</label>`;
+  const arg = d => `${path}|${d}|${opts.min ?? 0}|${opts.max ?? 1e9}`;
+  return `<div class="f">${label}<span class="stepper"><button class="btn small" data-act="lenStep" data-arg="${arg(-opts.step)}" aria-label="Less">−</button>${input}<button class="btn small" data-act="lenStep" data-arg="${arg(opts.step)}" aria-label="More">+</button></span></div>`;
 }
+Actions.lenStep = arg => {
+  const [path, d, lo, hi] = arg.split('|'), v = +getPath(doc, path) || 0;
+  setPath(doc, path, clamp(Math.round((v + +d) * 8) / 8, +lo, +hi));
+  commit();
+};
 function numField(label, path, opts = {}) {
   const v = getPath(doc, path);
   return `<label class="f">${label}<input type="number" data-bind="${path}" data-type="${opts.int ? 'int' : 'num'}" value="${esc(v)}"${opts.min !== undefined ? ` data-min="${opts.min}" min="${opts.min}"` : ''}${opts.max !== undefined ? ` data-max="${opts.max}" max="${opts.max}"` : ''} step="${opts.step || 1}"></label>`;
@@ -424,6 +433,10 @@ function preparePrint() {
   let html;
   try { html = renderPatternDoc(); } finally { flatFills = false; }
   $('#print-root').innerHTML = html.replace(/class="page /g, `class="page ${cls} `);
+  // lay it out off screen for a moment so long sections can be split into sheets
+  const root = $('#print-root');
+  root.style.cssText = `display:block;position:absolute;left:-20000px;top:0;width:${ui.patternPage === 'a4' ? 7.27 : 7.5}in`;
+  try { paginatePattern(root); } finally { root.style.cssText = ''; }
   $('#page-size').textContent = `@page { size: ${ui.patternPage === 'a4' ? 'A4' : 'letter'} portrait; margin: 0.5in; }`;
 }
 Actions.printPattern = () => { preparePrint(); setTimeout(() => window.print(), 50); };

@@ -21,7 +21,7 @@ Views.fabric = {
   },
   afterMain(el) { if (ui.fabPane === 'cut') cuttingAfterMain(el); },
   inspector() {
-    let h = section('Backing &amp; batting', backingPanelHtml(), { key: 'backing' });
+    let h = section('Backing', backingPanelHtml(), { key: 'backing' });
     let rows = doc.stash.filter(s => !s.backing).map(s => `<div class="list-item"><div class="stash-row">
         <input type="text" value="${esc(s.label)}" data-change="stashLabel" data-arg="${s.id}" aria-label="Name">
         <input type="text" inputmode="decimal" value="${esc(inputLen(s.w))}" data-change="stashW" data-arg="${s.id}" aria-label="Width" title="Width">
@@ -39,6 +39,7 @@ Views.fabric = {
       <div class="f-row">${numField('Extra %', 'cutting.extra', { min: 0, max: 50 })}
       ${selectField('Round up to', 'cutting.roundTo', [['eighth', '⅛ yard'], ['quarter', '¼ yard'], ['half', '½ yard'], ['none', "Don't round"]])}</div>
       ${selectField('Appliqué', 'cutting.appMethod', [['turned', 'Turned edge, 3/16"'], ['fusible', 'Fusible web']])}
+      ${lenField('Backing extra all round', 'cutting.overhang', { min: 0, max: 12 })}
       ${doc.layout.mode === 'tess' && doc.layout.tess.edge === 'trim' ? `<label class="check"><input type="checkbox" data-bind="layout.tess.cutEdges" data-type="bool" ${doc.layout.tess.cutEdges ? 'checked' : ''}> Cut edge pieces to shape</label>` : ''}
       ${doc.layout.mode !== 'tess' && Qnow().cells.some(cl => cl.b && cl.clip) ? partialToggle() : ''}
       ${ui.fabPane === 'cut' ? `<label class="check"><input type="checkbox" ${ui.cutDiagrams !== false ? 'checked' : ''} data-change="cutDiagrams"> Show cutting maps</label>` : ''}

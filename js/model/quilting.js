@@ -99,7 +99,7 @@ function polylineVsPolys(pl, polys, keep) {
 // Seams inside each block (and around its appliqué), placed where the block sits in the quilt.
 // The block's own outline is left out: it's already among the seams between blocks.
 function blockDitchSegments(Q) {
-  const segs = [];
+  const segs = [], around = [];
   const near = (p, a, b) => {
     const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy || 1e-12;
     const t = clamp(((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2, 0, 1);
@@ -113,16 +113,16 @@ function blockDitchSegments(Q) {
     for (const p of blockPieces(block, S, S)) for (const ring of [p.pts, ...p.holes]) for (let i = 0; i < ring.length; i++) {
       const a = ring[i], b = ring[(i + 1) % ring.length];
       if (!p.app && onOutline(a, b)) continue;
-      const A = map(a), B = map(b);
-      if (!c.clip) { segs.push([A, B]); continue; }
+      const A = map(a), B = map(b), out = p.app ? around : segs;
+      if (!c.clip) { out.push([A, B]); continue; }
       // a block cut off by an edge or panel: keep only the part inside the quilt
       for (const part of c.clip) for (const [t0, t1] of lineChords(part, c.clipHoles || [], A, B).chords) {
         const u0 = Math.max(0, t0), u1 = Math.min(1, t1);
-        if (u1 - u0 > 1e-6) segs.push([[A[0] + (B[0] - A[0]) * u0, A[1] + (B[1] - A[1]) * u0], [A[0] + (B[0] - A[0]) * u1, A[1] + (B[1] - A[1]) * u1]]);
+        if (u1 - u0 > 1e-6) out.push([[A[0] + (B[0] - A[0]) * u0, A[1] + (B[1] - A[1]) * u0], [A[0] + (B[0] - A[0]) * u1, A[1] + (B[1] - A[1]) * u1]]);
       }
     }
   }
-  return segs;
+  return { seams: segs, around };   // seams between pieces, and the outlines of appliqué
 }
 
 // Raw (unclipped) polylines covering a rect, rotated by `angle` about its centre.
@@ -153,12 +153,16 @@ function parallelLines(R, spacing, angle, shape = 'line', amp = 0, wave = 4) {
 }
 
 // Stitching paths for a layer, trimmed to its areas and kept off appliqué. Cached per quilt build.
+// Paths are kept until the design changes, so redrawing the screen doesn't recompute them.
+const _qpCache = { snap: null, map: new Map() };
 function quiltLayerPaths(Q, layer) {
   const { color, visible, ...shape } = layer, key = JSON.stringify(shape);
-  const cache = Q._qpaths || (Q._qpaths = new Map());
+  const snap = snapshot();
+  if (_qpCache.snap !== snap) { _qpCache.snap = snap; _qpCache.map.clear(); }
+  const cache = _qpCache.map;
   if (cache.has(key)) return cache.get(key);
   const areas = quiltAreaRects(Q, layer.area);
-  const avoid = layer.type !== 'ditch' && layer.skipApp !== false ? appliquePolys(Q) : [];
+  const avoid = layer.type !== 'ditch' && layer.skipApp !== false ? appliquePolys(Q) : [];   // the ditch handles appliqué itself
   let out;
   if (GLOBAL_QUILT_TYPES.includes(layer.type)) {
     const raw = globalQuiltRaw(Q, layer);
@@ -239,11 +243,15 @@ function globalQuiltRaw(Q, layer) {
         if (onEdge(a) && onEdge(b) && (Math.abs(a[0] - b[0]) < 1e-6 || Math.abs(a[1] - b[1]) < 1e-6)) continue;
         segs.push([a, b]);
       }
-      for (const [a, b] of blockDitchSegments(Q)) {
+      const { seams, around } = blockDitchSegments(Q);
+      for (const [a, b] of seams) {
         const k = [ptKey(a), ptKey(b)].sort().join('|');
         if (!seen.has(k)) { seen.add(k); segs.push([a, b]); }
       }
-      raw = segs;
+      // seams under appliqué are covered by it, so by default the stitching stops at its edge
+      const app = layer.skipApp !== false ? appliquePolys(Q) : [];
+      raw = app.length ? segs.flatMap(sg => polylineVsPolys(sg, app, false)) : segs;
+      if (layer.outlineApp !== false) raw.push(...around);
       break;
     }
     case 'faces': {
@@ -279,8 +287,8 @@ function globalQuiltRaw(Q, layer) {
       const shapes = [...Q.cells.flatMap(c => !c.clip ? [c.pts] : c.clipHoles?.length ? [] : c.clip), ...Q.tiles.filter(t => t.whole).map(t => t.pts)];
       for (const s of shapes) {
         for (let k = 0; k < Math.max(1, layer.echoes || 1); k++) {
-          const ins = inflate(s, -(sp / 2 + k * sp));
-          if (polyArea(ins) < sp * sp * 0.1 || signedArea(ins) * signedArea(s) <= 0) break;
+          const d = sp / 2 + k * sp, ins = inflate(s, -d);
+          if (polyArea(ins) < sp * sp * 0.1 || signedArea(ins) * signedArea(s) <= 0 || !insetClean(s, ins, d)) break;
           raw.push([...ins, ins[0]]);
         }
       }
@@ -369,7 +377,7 @@ function grownOutline(rings, d) {
 function grownParts(rings, d) {
   const parts = [];
   for (const raw of rings) {
-    const ring = simplifyRing(raw, Math.min(0.04, d / 6));
+    const ring = simplifyRing(raw, clamp(d / 5, 0.03, 0.1));
     if (ring.length < 3) continue;
     parts.push(ring);
     for (let i = 0; i < ring.length; i++) {
@@ -377,7 +385,7 @@ function grownParts(rings, d) {
       if (L < 1e-6) continue;
       const nx = -(b[1] - a[1]) / L * d, ny = (b[0] - a[0]) / L * d;
       parts.push([[a[0] + nx, a[1] + ny], [b[0] + nx, b[1] + ny], [b[0] - nx, b[1] - ny], [a[0] - nx, a[1] - ny]]);
-      parts.push(Array.from({ length: 12 }, (_, k) => [a[0] + d * Math.cos(k * Math.PI / 6), a[1] + d * Math.sin(k * Math.PI / 6)]));
+      parts.push(Array.from({ length: 10 }, (_, k) => [a[0] + d * Math.cos(k * Math.PI / 5), a[1] + d * Math.sin(k * Math.PI / 5)]));
     }
   }
   return parts;
@@ -413,40 +421,58 @@ function chaikinClosed(pts, iterations) {
   return pts;
 }
 
-// Echo each piece: a line ¼" inside every piece's seams, more inward at the spacing, and echoes
-// outward around appliqué (kept inside its block).
-function outlineRaw(Q, sp, n) {
-  const raw = [], first = 0.25;
+// An inset outline is only stitchable if it stayed inside the shape and kept its distance from every
+// edge; past half the shape's width the offset folds over itself (and squares flip inside out).
+function insetClean(ring, ins, d) {
   const segDist = (p, a, b) => {
     const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy || 1e-12;
     const t = clamp(((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2, 0, 1);
     return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
   };
-  // an inset that folded over itself (narrow piece) isn't stitchable
-  const clean = (ring, ins, d) => ins.every(v => pointInPoly(v, ring) && ring.every((a, i) => segDist(v, a, ring[(i + 1) % ring.length]) > d * 0.8));
-  const echoIn = (ring, clipTo) => {
+  return ins.every(v => pointInPoly(v, ring) && ring.every((a, i) => segDist(v, a, ring[(i + 1) % ring.length]) > d * 0.8));
+}
+// Echo each piece: a line ¼" inside every piece's seams, more inward at the spacing, and echoes
+// outward around appliqué (kept inside its block). Each block design is worked out once, in the
+// block's own coordinates, and placed for every copy.
+const _outlineDesigns = new Map();
+function outlineRaw(Q, sp, n) {
+  const raw = [], first = 0.25;
+  const echoesIn = ring => {
+    const out = [];
+    if (ring.length > 300) ring = simplifyRing(ring, 0.02);   // long curves: fewer points, same shape
     for (let k = 0; k < n; k++) {
       const d = first + k * sp, ins = inflate(ring, -d);
-      if (polyArea(ins) < 0.05 || signedArea(ins) * signedArea(ring) <= 0 || !clean(ring, ins, d)) break;
-      const pl = [...ins, ins[0]];
-      raw.push(...(clipTo ? polylineVsPolys(pl, clipTo, true) : [pl]));
+      if (polyArea(ins) < 0.05 || signedArea(ins) * signedArea(ring) <= 0 || !insetClean(ring, ins, d)) break;
+      out.push([...ins, ins[0]]);
     }
+    return out;
   };
+  const emit = (lines, clipTo) => { for (const pl of lines) raw.push(...(clipTo ? polylineVsPolys(pl, clipTo, true) : [pl])); };
   for (const c of Q.cells) {
     const block = c.b && doc.blocks[c.b];
     const clipTo = c.clip ? c.clip.map(pp => polyArea2(pp, c.clipHoles || [])) : null;
-    if (!block) { echoIn(c.pts, clipTo); continue; }
-    const map = cellPointMapper(c), cellPoly = clipTo || [polyArea2(c.pts)], app = [];
-    for (const p of blockPieces(block, c.size, c.size)) {
-      const pts = p.pts.map(map);
-      if (p.app) app.push(pts); else echoIn(pts, clipTo);
+    if (!block) { emit(echoesIn(c.pts), clipTo); continue; }
+    const key = `${blockKey(block)}|${c.size}|${sp}|${n}`;
+    let lines = _outlineDesigns.get(key);
+    if (!lines) {
+      lines = [];
+      const app = [], frame = [polyArea2(blockOutline(block, c.size))];
+      // an awkward piece is skipped rather than losing the whole layer
+      for (const p of blockPieces(block, c.size, c.size)) { try { if (p.app) app.push(p.pts); else lines.push(...echoesIn(p.pts)); } catch (e) { console.warn('echo skipped a piece', e); } }
+      // around the appliqué as one group (a word is echoed as a whole); each echo grows from the last
+      let rings = app;
+      for (let k = 0; k < n && rings.length; k++) {
+        const grown = grownOutline(rings, k ? sp : first);
+        for (const g of grown) for (const ring of [g.outer, ...g.holes]) lines.push(...polylineVsPolys([...ring, ring[0]], frame, true));
+        rings = grown.map(g => g.outer);
+      }
+      if (_outlineDesigns.size > 200) _outlineDesigns.clear();
+      _outlineDesigns.set(key, lines);
     }
-    // around the appliqué as one group (a word is echoed as a whole), kept inside the block
-    if (app.length) for (let k = 0; k < n; k++) {
-      for (const g of grownOutline(app, first + k * sp)) for (const ring of [g.outer, ...g.holes]) raw.push(...polylineVsPolys([...ring, ring[0]], cellPoly, true));
-    }
+    const map = cellPointMapper(c);
+    emit(lines.map(pl => pl.map(map)), clipTo);
   }
-  for (const t of [...Q.tiles, ...Q.patches]) echoIn(t.pts, null);
+  for (const t of [...Q.tiles, ...Q.patches]) emit(echoesIn(t.pts), null);
   return raw;
 }
 

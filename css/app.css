@@ -361,7 +361,7 @@ table.t .fabcell { display: flex; align-items: center; gap: 8px; }
 .page table.grid-key td, .page table.grid-key th { text-align: center; }
 .page .note { background: #f6f2ea; border-left: 4px solid var(--accent); padding: 7px 10px; margin: 10px 0; font-size: 9.5pt; }
 .page .note.warn { border-left-color: var(--danger); background: #fdf1ec; }
-.page .cut-fab { margin-bottom: 10px; break-inside: avoid; }
+.page .cut-fab { margin-bottom: 10px; }
 .page h2, .page h3, .page h4 { break-after: avoid; page-break-after: avoid; }
 .page .cut-cols { display: flex; gap: 14px; align-items: flex-start; }
 .page .cut-list { margin: 0; padding: 0; list-style: none; flex: 1; }
@@ -470,3 +470,16 @@ label.f { font-weight: 500; }
 .btn-row > .btn.block { flex: 1 1 100%; }
 label.check.opt { align-items: flex-start; }
 label.check.opt input { margin-top: 2px; }
+.stepper { display: flex; gap: 4px; margin-top: 3px; }
+.stepper input { flex: 1; margin-top: 0 !important; text-align: center; }
+.stepper .btn { min-width: 30px; font-size: 14px; }
+div.f { display: block; margin-top: 9px; font-size: 12px; color: var(--ink-2); font-weight: 500; }
+details.more { margin-top: 6px; font-size: 12px; color: var(--ink-2); }
+details.more summary { cursor: pointer; color: var(--navy); font-weight: 600; }
+details.more ol { margin: 6px 0 0; padding-left: 18px; }
+.back-plan svg { max-width: 200px; }
+.lib-folders { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 8px; }
+.chip { border: 1px solid var(--line-2); background: #fff; border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; color: var(--ink-2); }
+.chip:hover { border-color: var(--ink-3); }
+.chip[aria-pressed="true"] { background: var(--navy-soft); border-color: var(--navy-soft); color: var(--navy); font-weight: 600; }
+.lib-format { display: inline-flex; margin-bottom: 10px; }
