@@ -20,7 +20,7 @@ Views.block = {
   toolbar() {
     const b = activeBlock();
     if (!b || b.kind === 'compound') return '';
-    const tools = BLOCK_TOOLS.map(t => `<button class="tool icon-only" data-act="blockTool" data-arg="${t.key}" aria-pressed="${ui.tool === t.key}" title="${t.label} (${t.kb})" aria-label="${t.label}">${icon(t.icon)}</button>`).join('');
+    const tools = BLOCK_TOOLS.map(t => `<button class="tool icon-only" data-act="blockTool" data-arg="${t.key}" aria-pressed="${ui.tool === t.key}" title="${t.label} (${t.kb})" aria-label="${t.label}">${icon(t.icon)}${t.key === 'seam' ? seamBadge(b) : ''}</button>`).join('');
     // options for the current tool, or for the selection
     const sel = selList(), fabBtn = (act, f, mixed) => `<button class="tool fab-drop" data-act="${act}" aria-haspopup="menu" title="Fabric">${f ? swatchHtml(f === BG ? doc.layout.background : f, 16) : '<span class="sw mixed"></span>'} ${mixed ? 'Mixed' : esc(f === BG ? 'Background' : fabricLabel(f))} ${icon('down', 12)}</button>`;
     let opts = '';
@@ -229,7 +229,8 @@ function editorGuides(b) {
   if (ui.showPieces) {
     for (const p of blockPieces(b, S, S)) s += `<path d="${polyToPath(p.pts)}" fill="none" stroke="rgba(20,30,40,.75)" stroke-width="${hair * 1.4}" stroke-dasharray="${hair * 5} ${hair * 3}" pointer-events="none"/>`;
   }
-  for (const pr of pieceProblems(b, S)) if (pr.kind !== 'tiny') s += `<path class="problem" d="${polyToPath(pr.piece.pts)}${pr.piece.holes.map(h => polyToPath(h)).join('')}" fill-rule="evenodd" stroke-width="${hair * 1.5}"/>`;
+  // problem pieces are shown only with the Seam tool, so a block in progress isn't covered in red
+  if (ui.tool === 'seam') for (const pr of pieceProblems(b, S)) if (pr.kind !== 'tiny') s += `<path class="problem" d="${polyToPath(pr.piece.pts)}${pr.piece.holes.map(h => polyToPath(h)).join('')}" fill-rule="evenodd" stroke-width="${hair * 1.5}"/>`;
   // selection: outline every selected shape; corner/edge handles when exactly one is selected
   const sel = selList();
   if (ui.tool === 'select') for (const i of sel) s += `<path class="sel-outline" d="${regionPathD(b.regions[i], k)}" stroke-width="${hair * 3}"/>`;
@@ -781,14 +782,27 @@ function scheduleSeamCheck() {
     showSeamCard();
   }, _seamState.key === blockKey(b) ? 0 : 250);
 }
+// how many pieces the seam suggestion would change, shown on the Seam tool instead of a popup
+function seamBadge(b) {
+  const sg = _seamState.block === b.id && _seamState.key === blockKey(b) ? _seamState.s : null;
+  const n = sg ? sg.reqPieces + sg.optPieces : 0;
+  return n ? `<span class="badge${sg.required.length ? '' : ' soft'}">${n}</span>` : '';
+}
 function seamDismissed(b) { return (ui.seamDismiss || {})[b.id] === blockKey(b); }
 function showSeamCard() {
   const card = $('#seam-card'), slot = $('#seam-tool-slot'), b = activeBlock();
   if (!card || !b) return;
   const sg = _seamState.s;
-  const has = sg && (sg.required.length || sg.optional.length);
-  if (slot) slot.innerHTML = has && seamDismissed(b) ? `<button class="tool" data-act="undismissSeams" title="Show the seam suggestion again">Seam suggestion</button>` : '';
-  if (!has || seamDismissed(b)) { card.hidden = true; drawOverlay(); return; }
+  const has = sg && (sg.required.length || sg.optional.length), seamTool = ui.tool === 'seam';
+  const tb = $('#tooltools .tool[data-arg="seam"]');
+  if (tb) {
+    tb.querySelector('.badge')?.remove();
+    tb.insertAdjacentHTML('beforeend', seamBadge(b));
+    const n = has ? sg.reqPieces + sg.optPieces : 0;
+    tb.setAttribute('aria-label', n ? `Seam line, ${plural(n, 'piece')} could use seams` : 'Seam line');
+  }
+  if (slot) slot.innerHTML = has && seamTool && seamDismissed(b) ? `<button class="tool" data-act="undismissSeams" title="Show the seam suggestion again">Seam suggestion</button>` : '';
+  if (!has || !seamTool || seamDismissed(b)) { card.hidden = true; drawOverlay(); return; }
   const lines = [];
   if (sg.required.length) lines.push(`${plural(sg.reqPieces, 'piece')} need${sg.reqPieces === 1 ? 's' : ''} set-in seams as drawn. ${plural(sg.required.length, 'seam line')} fix${sg.required.length === 1 ? 'es' : ''} that.`);
   if (sg.optional.length) lines.push(`${plural(sg.optPieces, 'piece')} need${sg.optPieces === 1 ? 's' : ''} a template. ${plural(sg.optional.length, 'more seam')} make${sg.optional.length === 1 ? 's' : ''} ${sg.optPieces === 1 ? 'it' : 'them'} rotary-cut.`);

@@ -511,7 +511,7 @@ Actions.shortcuts = () => openModal(`<h2>Keyboard shortcuts</h2>
     <div>Click or drag to place · right-click to clear</div>
     <div>Click a placed block again to turn it</div>
     <div><kbd>Shift</kbd> places it mirrored</div>
-    <div>Drag a block from My blocks onto the quilt</div>
+    <div>Drag a block from Quilt blocks onto the quilt</div>
   </div>
   <div class="actions"><button class="btn primary" data-act="closeModal">Close</button></div>`);
 Actions.about = () => openModal(`<h2>Quilt Designer ${APP_VERSION}</h2>

@@ -238,6 +238,13 @@ function pieceProblems(block, size) {
   return out;
 }
 
+// Blocks in the quilt with pieces that can't be sewn as drawn. The block editor stays quiet about
+// these while you draw; Layout, Fabric & cutting and Pattern mention them.
+function seamWarnings() {
+  return doc.blockOrder.map(id => doc.blocks[id]).filter(b => b?.kind === 'drawn' && blockUseCount(b.id) && pieceProblems(b, blockFrameSize(b)).some(p => p.kind !== 'tiny'))
+    .map(b => `${b.name} needs set-in seams as drawn. The Seam tool in Blocks can fix that.`);
+}
+
 /* ---------- seam suggestions ----------
    A small search: for each piece, try seams that start at a corner (edge continuations and
    grain lines), score the resulting pieces by how easy they are to cut and sew, and keep the

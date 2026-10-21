@@ -42,7 +42,7 @@ Views.fabric = {
     let h = `<div class="docview wide">
 `;
     if (!plan.fabrics.length) return h + `<div class="empty-state"><p>Nothing to cut yet. Place some blocks in the layout first.</p><button class="btn" data-act="view" data-arg="layout">Go to Layout</button></div></div>`;
-    for (const w of [...Q.warnings, ...plan.problems]) h += `<div class="callout bad" style="margin-bottom:10px">${esc(w)}</div>`;
+    for (const w of [...Q.warnings, ...seamWarnings(), ...plan.problems]) h += `<div class="callout bad" style="margin-bottom:10px">${esc(w)}</div>`;
     return h + (cut ? cuttingPlanHtml(plan) : shoppingListHtml(plan)) + '</div>';
   },
   afterMain(el) { if (ui.fabPane === 'cut') cuttingAfterMain(el); },

@@ -45,7 +45,7 @@ Views.layout = {
   main() {
     const Q = Qnow(), tool = layoutTool();
     return `<div class="stage"><div class="canvas-wrap">${layoutCanvasSvg(Q)}</div>
-      <div class="status-bar">${Q.warnings.length ? `<span class="sb-warn">${esc(Q.warnings.join(' '))}</span>` : ''}<span class="sb-hint">${layoutHint(tool)}</span></div></div>`;
+      <div class="status-bar">${(lw => lw.length ? `<span class="sb-warn">${esc(lw.join(' '))}</span>` : '')([...Q.warnings, ...seamWarnings()])}<span class="sb-hint">${layoutHint(tool)}</span></div></div>`;
   },
   afterMain(el) {
     const svg = el.querySelector('svg.quilt-svg');
@@ -347,7 +347,7 @@ Actions.rotPattern = kind => {
   });
   commit();
 };
-Actions.clearLayout = () => confirmModal('Clear the layout?', 'Removes every block and painted square from the layout (your blocks stay in My blocks).', 'Clear layout', () => {
+Actions.clearLayout = () => confirmModal('Clear the layout?', 'Removes every block and painted square from the layout (your blocks stay in Quilt blocks).', 'Clear layout', () => {
   const L = doc.layout;
   L.grid.cells = L.grid.cells.map(() => null); delete L.grid.hidden;
   L.onpoint.cells = {};

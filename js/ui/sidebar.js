@@ -1,4 +1,4 @@
-/* Left column (Blocks and Layout only): the fabric swatches and My blocks. A fabric is edited in
+/* Left column (Blocks and Layout only): the fabric swatches and the quilt's blocks. A fabric is edited in
    a popover from its swatch; the block library opens as a picker. */
 
 function renderSidebar() {
@@ -20,7 +20,7 @@ function fabricsSection() {
   chips += `<button class="fab-chip add" data-act="addFabric" title="Add a fabric" aria-label="Add a fabric">${icon('plus', 18)}</button>`;
   // painting with "Background" lets pieces follow whatever the quilt background is
   if (ui.view === 'block') chips += `<button class="fab-chip bgpaint" aria-pressed="${ui.fabric === BG}" data-act="pickFabric" data-arg="${BG}" title="Background: pieces follow the quilt's background fabric">BG</button>`;
-  return section('Fabrics', `<div class="fabrics">${chips}</div>`, { key: 'fabrics' });
+  return section('Fabrics', `<div class="fabrics">${chips}</div>`, { key: 'fabrics', right: '<button class="btn small" data-act="palettes">Palettes</button>' });
 }
 
 // How this fabric comes (its own width, precuts, or pieces of a set size); default = the shared setting.
@@ -179,7 +179,7 @@ function blockUseCount(id) {
   for (const b of Object.values(doc.blocks)) if (b.kind === 'compound') n += b.slots.filter(s => s?.b === id).length;
   return n;
 }
-let dragBlockId = null;   // a My blocks thumbnail being dragged onto the layout
+let dragBlockId = null;   // a Quilt blocks thumbnail being dragged onto the layout
 document.addEventListener('dragstart', e => {
   const el = e.target.closest?.('.blk[data-act="pickBlock"]');
   dragBlockId = el?.dataset.arg || null;
@@ -191,7 +191,7 @@ let dragFabricId = null;
 document.addEventListener('dragstart', e => {
   const el = e.target.closest?.('.fab-chip[data-act="pickFabric"]');
   dragFabricId = el?.dataset.arg || null;
-  if (dragFabricId) { e.dataTransfer.setData('text/plain', fabricLabel(dragFabricId)); e.dataTransfer.effectAllowed = 'copy'; }
+  if (dragFabricId) { e.dataTransfer.setData('text/plain', fabricLabel(dragFabricId)); e.dataTransfer.effectAllowed = 'copyMove'; }   // copy onto pieces, move onto another swatch (a swap)
 });
 function myBlocksSection() {
   const fillingSlot = ui.view === 'block' && activeBlock()?.kind === 'compound' && ui.activeSlot != null;
@@ -206,10 +206,11 @@ function myBlocksSection() {
   }
   const right = `<button class="btn small" data-act="addBlockMenu" aria-haspopup="menu">${icon('plus', 14)} Add ${icon('down', 12)}</button>`;
   const hint = fillingSlot ? `<p class="hint">Pick a block for slot ${ui.activeSlot + 1}.</p>` : '';
-  return section('My blocks', `${hint}${grid ? `<div class="blocks">${grid}</div>` : `<div class="empty-state"><p>No blocks yet.</p><button class="btn primary" data-act="libraryPicker">Browse classic blocks</button></div>`}`, { key: 'myblocks', right });
+  return section('Quilt blocks', `${hint}${grid ? `<div class="blocks">${grid}</div>` : `<div class="empty-state"><p>No blocks yet.</p><button class="btn primary" data-act="libraryPicker">Browse classic blocks</button></div>`}`, { key: 'myblocks', right });
 }
 Actions.addBlockMenu = (a, el) => openMenu(el, [
   { label: 'From the library…', act: 'libraryPicker' },
+  { label: 'From my saved quilts…', act: 'libraryPickerMine' },
   { label: 'New block', act: 'newBlock' },
   { label: 'Hexagon block', act: 'newHexBlock' },
   { label: 'Combination of blocks', act: 'newCompound' },
@@ -312,16 +313,18 @@ Actions.newCompound = () => { addBlockToDoc(newCompoundBlock(`Combo ${doc.blockO
 // Folders by style, plus the block's format (square, or hexagon for hexagon tessellations).
 function libraryGrid() {
   const q = ui.libSearch.trim().toLowerCase(), fmt = ui.libFormat || 'all';
+  if (ui.libCat === 'mine') return savedBlocksGrid(q, fmt);
   const list = LIBRARY.filter(p => (ui.libCat === 'all' || p.cat === ui.libCat) && (fmt === 'all' || (fmt === 'hex') === (p.shape === 'hex')) && (!q || p.name.toLowerCase().includes(q)));
   return list.length ? list.map(p => `<button class="blk" data-act="useLibrary" data-arg="${p.id}" title="${esc(p.name)}">${blockThumb(presetPreviewBlock(p), 84)}<div class="nm">${esc(p.name)}</div></button>`).join('') : '<p class="empty">No blocks match.</p>';
 }
 function libraryFolders() {
   const fmt = ui.libFormat || 'all';
-  return `<div class="lib-folders">${LIB_CATEGORIES.map(([k, l]) => `<button class="chip" data-act="libCat" data-arg="${k}" aria-pressed="${ui.libCat === k}">${l}</button>`).join('')}</div>
+  return `<div class="lib-folders">${[...LIB_CATEGORIES, ['mine', 'My blocks']].map(([k, l]) => `<button class="chip" data-act="libCat" data-arg="${k}" aria-pressed="${ui.libCat === k}">${l}</button>`).join('')}</div>
     <div class="seg lib-format" role="group" aria-label="Format">${[['all', 'All shapes'], ['square', 'Square'], ['hex', 'Hexagon']].map(([k, l]) => `<button data-act="libFormat" data-arg="${k}" aria-pressed="${fmt === k}">${l}</button>`).join('')}</div>`;
 }
-Actions.libraryPicker = () => {
-  if (!LIB_CATEGORIES.some(([k]) => k === ui.libCat)) ui.libCat = 'all';
+Actions.libraryPicker = async () => {
+  if (ui.libCat !== 'mine' && !LIB_CATEGORIES.some(([k]) => k === ui.libCat)) ui.libCat = 'all';
+  await loadSavedBlocks();
   openModal(`<h2>Block library</h2>
     <div class="lib-tools"><input type="text" placeholder="Search" value="${esc(ui.libSearch)}" data-input="libSearch" aria-label="Search blocks"></div>
     <div id="lib-folders">${libraryFolders()}</div>
@@ -329,6 +332,72 @@ Actions.libraryPicker = () => {
     <p class="hint">Added blocks use your fabrics and can be edited. Hexagon blocks go in hexagon tessellations.</p>`);
   $('#modal-root .modal').classList.add('wide');
 };
+/* ---------- My blocks: the blocks in your saved quilts ----------
+   Read from the quilts saved in this browser, newest first, leaving out the quilt you have open.
+   A block takes this quilt's fabrics by position, the same way library blocks do: the source
+   quilt's background stays background, its 2nd fabric becomes this quilt's 2nd, and so on. */
+let _savedLib = [];
+async function loadSavedBlocks() {
+  const list = await listProjects().catch(() => []);
+  _savedLib = list.filter(p => p.id !== ui.projectId && p.doc?.blockOrder?.length);
+}
+function savedFabMap(src) {
+  const bg = src.layout.background, others = src.fabrics.filter(f => f.id !== bg).map(f => f.id);
+  return id => id === BG || id === bg ? BG : others.includes(id) ? slotFabric(others.indexOf(id) + 1) : BG;
+}
+// copies of a saved block (and the blocks a combination block holds), with fresh ids and this quilt's fabrics
+function savedBlockCopies(rec, id) {
+  const src = rec.doc, fab = savedFabMap(src), ids = [];
+  const visit = bid => { const b = src.blocks[bid]; if (!b || ids.includes(bid)) return; if (b.kind === 'compound') b.slots.forEach(s => s?.b && visit(s.b)); ids.push(bid); };
+  visit(id);
+  const idMap = new Map(ids.map(b => [b, uid('b')]));
+  return ids.map(bid => {
+    const c = JSON.parse(JSON.stringify(src.blocks[bid]));
+    c.id = idMap.get(bid);
+    if (c.kind === 'drawn') for (const r of c.regions) r.fab = fab(r.fab);
+    else if (c.kind === 'compound') c.slots = c.slots.map(s => s && idMap.has(s.b) ? { ...s, b: idMap.get(s.b) } : null);
+    return { block: c, from: bid };
+  });
+}
+const _savedThumbs = new Map();
+function savedBlockThumb(rec, id) {
+  const key = `${rec.id}|${rec.savedAt}|${id}|${doc.fabrics.map(f => f.id + f.color).join(',')}|${doc.layout.background}`;
+  if (!_savedThumbs.has(key)) {
+    const copies = savedBlockCopies(rec, id);
+    // a combination block draws its parts from doc.blocks, so lend them for the picture
+    copies.forEach(c => { doc.blocks[c.block.id] = c.block; });
+    try { _savedThumbs.set(key, blockThumb(copies[copies.length - 1].block, 84)); } finally { copies.forEach(c => delete doc.blocks[c.block.id]); }
+  }
+  return _savedThumbs.get(key);
+}
+function savedBlocksGrid(q, fmt) {
+  if (!_savedLib.length) return '<p class="empty">Blocks from the quilts you save in this browser (File, Save) show up here.</p>';
+  let h = '';
+  for (const rec of _savedLib) {
+    const ids = rec.doc.blockOrder.filter(id => { const b = rec.doc.blocks[id]; return b && (fmt === 'all' || (fmt === 'hex') === isHexBlock(b)) && (!q || b.name.toLowerCase().includes(q)); });
+    if (!ids.length) continue;
+    h += `<h3 class="lib-group">${esc(rec.name)}</h3>` + ids.map(id => `<button class="blk" data-act="useSavedBlock" data-arg="${rec.id}|${id}" title="${esc(rec.doc.blocks[id].name)}">${savedBlockThumb(rec, id)}<div class="nm">${esc(rec.doc.blocks[id].name)}</div></button>`).join('');
+  }
+  return h || '<p class="empty">No blocks match.</p>';
+}
+Actions.useSavedBlock = arg => {
+  const [pid, id] = arg.split('|'), rec = _savedLib.find(p => p.id === pid);
+  if (!rec?.doc.blocks[id]) return;
+  const copies = savedBlockCopies(rec, id), b = copies[copies.length - 1].block, host = activeBlock();
+  for (const c of copies) { addBlockToDoc(c.block, false); if (rec.refs?.[c.from]) refImgs[c.block.id] = rec.refs[c.from]; }
+  if (copies.some(c => rec.refs?.[c.from])) saveRefs();
+  if (ui.view === 'block' && host?.kind === 'compound' && ui.activeSlot != null && !isHexBlock(b)) {
+    host.slots[ui.activeSlot] = { b: b.id, r: 0, f: false };
+    ui.activeSlot = nextEmptySlot(host, ui.activeSlot);
+  } else {
+    ui.placeBlock = b.id;
+    if (ui.view !== 'layout') { ui.activeBlock = b.id; ui.selRegion = null; ui.drawing = []; ui.view = 'block'; }
+  }
+  closeModal();
+  commit();
+  toast(`${b.name} added`);
+};
+Actions.libraryPickerMine = () => { ui.libCat = 'mine'; Actions.libraryPicker(); };
 const refreshLibrary = () => { $('#lib-grid') && ($('#lib-grid').innerHTML = libraryGrid()); $('#lib-folders') && ($('#lib-folders').innerHTML = libraryFolders()); };
 Actions.libSearch = v => { ui.libSearch = v; const g = $('#lib-grid'); if (g) g.innerHTML = libraryGrid(); };
 Actions.libCat = v => { ui.libCat = v; saveUi(); refreshLibrary(); };

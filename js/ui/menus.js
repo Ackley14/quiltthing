@@ -180,12 +180,13 @@ const CONTEXT_MENUS = [
       { label: 'Paint with it', act: 'pickFabric', arg: id },
       ...(isBg ? [] : [{ label: 'Use as background', act: 'setBackground', arg: id }]),
       { label: 'Duplicate', act: 'dupFabric', arg: id },
+      { label: 'Swap with…', act: 'swapFabricMenu', arg: id },
       '-',
       { label: 'Delete…', act: 'deleteFabric', arg: id, danger: true },
     ];
   }],
   ['#modal-root .blk[data-act="useLibrary"]', el => [
-    { label: 'Add to My blocks', act: 'useLibrary', arg: el.dataset.arg },
+    { label: 'Add to this quilt', act: 'useLibrary', arg: el.dataset.arg },
     { label: 'Add and place in the layout', act: 'useLibraryPlace', arg: el.dataset.arg },
   ]],
   ['#inspector .sec.layer .sec-h', el => {

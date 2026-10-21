@@ -577,3 +577,32 @@ details.more[open] summary::before { transform: rotate(45deg); }
 
 .menu { max-height: calc(100vh - 70px); overflow-y: auto; }
 .menu .menu-h:first-child { padding-top: 2px; }
+
+/* 3.24: the Seam tool's count of pieces that could use seams */
+.tool { position: relative; }
+.tool .badge { position: absolute; top: -3px; right: -4px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; background: #b5482f; color: #fff; font: 600 10px/15px system-ui, sans-serif; text-align: center; pointer-events: none; }
+.tool .badge.soft { background: var(--ink-3, #7a8591); }
+
+/* 3.24: palettes */
+.pal-quilt { display: flex; align-items: center; gap: 10px; margin: 2px 0 12px; }
+.pal-quilt .pal-strip { flex: 1; }
+.pal-tabs { margin-bottom: 10px; }
+.pal-body { max-height: min(52vh, 460px); overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
+.pal-row { display: grid; grid-template-columns: 150px 1fr auto; gap: 12px; align-items: center; padding: 8px 6px; border-radius: 8px; }
+.pal-row + .pal-row { border-top: 1px solid var(--line); }
+.pal-row.current { background: var(--navy-soft); }
+.pal-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pal-meta b { font-weight: 600; font-size: 13px; }
+.pal-meta .muted { font-size: 11.5px; }
+.pal-acts { display: flex; gap: 4px; }
+.pal-strip { display: flex; height: 26px; border-radius: 6px; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
+.pal-strip span { flex: 1; display: flex; align-items: center; justify-content: center; }
+.pal-strip i { font: 600 10px/1 system-ui, sans-serif; font-style: normal; opacity: .85; }
+.pal-gen .pal-strip { height: 54px; }
+.pal-schemes { margin: 4px 0 12px; flex-wrap: wrap; }
+.btn-row .grow { flex: 1; }
+@media (max-width: 640px) { .pal-row { grid-template-columns: 1fr auto; } .pal-row .pal-strip { grid-column: 1 / -1; grid-row: 2; } }
+
+/* 3.24: My blocks in the library, grouped by saved quilt */
+.lib-grid .lib-group { grid-column: 1 / -1; margin: 10px 0 2px; font-size: 12px; font-weight: 600; color: var(--ink-2); text-transform: none; }
+.lib-grid .lib-group:first-child { margin-top: 0; }
