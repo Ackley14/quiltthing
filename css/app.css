@@ -606,3 +606,9 @@ details.more[open] summary::before { transform: rotate(45deg); }
 /* 3.24: My blocks in the library, grouped by saved quilt */
 .lib-grid .lib-group { grid-column: 1 / -1; margin: 10px 0 2px; font-size: 12px; font-weight: 600; color: var(--ink-2); text-transform: none; }
 .lib-grid .lib-group:first-child { margin-top: 0; }
+
+/* 3.25: warning triangle in the block editor when pieces need seam lines */
+/* sticky like the status bar, so it stays in view just above it; the negative margin takes it out of the flow */
+.seam-flag { position: sticky; bottom: 42px; align-self: flex-start; margin: -34px 0 0 14px; flex: none; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 8px; border: 1px solid #e3c98f; background: #fdf6e7; color: #b5482f; cursor: pointer; box-shadow: var(--shadow); z-index: 2; }
+.seam-flag:hover { background: #fbecc9; }
+.seam-flag[hidden] { display: none; }

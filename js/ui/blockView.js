@@ -45,6 +45,7 @@ Views.block = {
     }
     return `<div class="stage"><div class="canvas-wrap"><svg id="editor" class="editor tool-${ui.refAdjust && refImgs[b.id] ? 'ref' : ui.tool}" viewBox="${edViewBox(S).map(v => round(v, 4)).join(' ')}" aria-label="Block editor"><g ${edTurn(b, S)}><g id="ed-c">${editorShapes(b)}</g></g><g id="ed-ref" pointer-events="none">${refImageSvg(b, S)}</g><g ${edTurn(b, S)}><g id="ed-g">${editorGuides(b)}</g><g id="ed-ov" pointer-events="none"></g></g></svg>
         <div id="seam-card" class="seam-card" hidden></div></div>
+      <button id="seam-flag" class="seam-flag" data-act="blockTool" data-arg="seam" hidden>${icon('warn', 18)}</button>
       <div class="status-bar" id="ed-status">${blockStatus(b)}</div></div>`;
   },
   afterMain(el) {
@@ -800,6 +801,11 @@ function showSeamCard() {
     tb.insertAdjacentHTML('beforeend', seamBadge(b));
     const n = has ? sg.reqPieces + sg.optPieces : 0;
     tb.setAttribute('aria-label', n ? `Seam line, ${plural(n, 'piece')} could use seams` : 'Seam line');
+  }
+  const flag = $('#seam-flag');
+  if (flag) {
+    flag.hidden = !(sg?.required.length && !seamTool);
+    if (!flag.hidden) { const t = `${plural(sg.reqPieces, 'piece')} need${sg.reqPieces === 1 ? 's' : ''} seam lines. Click to see.`; flag.title = t; flag.setAttribute('aria-label', t); }
   }
   if (slot) slot.innerHTML = has && seamTool && seamDismissed(b) ? `<button class="tool" data-act="undismissSeams" title="Show the seam suggestion again">Seam suggestion</button>` : '';
   if (!has || !seamTool || seamDismissed(b)) { card.hidden = true; drawOverlay(); return; }

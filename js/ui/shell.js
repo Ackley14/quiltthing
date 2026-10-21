@@ -48,6 +48,7 @@ const ICON_PATHS = {
   menu: '<path d="M2.5 4h11M2.5 8h11M2.5 12h11"/>',
   sliders: '<path d="M2.5 4.5h11M2.5 11.5h11"/><circle cx="5.5" cy="4.5" r="1.6" fill="#fff"/><circle cx="10.5" cy="11.5" r="1.6" fill="#fff"/>',
   check: '<path d="M3 8.5l3 3 7-7"/>',
+  warn: '<path d="M8 2.3l6.2 11H1.8z"/><path d="M8 6.6v3M8 11.6v.1"/>',
   eyeoff: '<path d="M2 2l12 12"/><path d="M6.4 3.8A6.6 6.6 0 0 1 8 3.5c4 0 6.5 4.5 6.5 4.5a11 11 0 0 1-1.9 2.4M10.3 11.6A6.5 6.5 0 0 1 8 12.5c-4 0-6.5-4.5-6.5-4.5a11 11 0 0 1 2.4-2.9"/>',
   flipv: '<path d="M1.5 8h13" stroke-dasharray="1.5 1.5"/><path d="M4 6L12 2.5V6zM4 10l8 3.5V10z"/>',
 };
