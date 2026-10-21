@@ -540,7 +540,6 @@ details.more[open] summary::before { transform: rotate(45deg); }
 .tool.rot[aria-pressed="true"] { box-shadow: 0 0 0 1px var(--sel) inset; background: #fff; }
 .tb-label { font-size: 12.5px; color: var(--ink-2); margin: 0 4px; white-space: nowrap; }
 .tb-warn { font-size: 12px; color: var(--danger); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 360px; }
-.next-btn { color: var(--navy); font-weight: 600; }
 .btn.small { min-height: 26px; }
 .modal .x { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 6px; }
 .modal .x:hover { background: var(--panel-2); }

@@ -261,10 +261,9 @@ function renderToolbar() {
     $('#tooltools').innerHTML = undoRedo + (V.toolbar?.() || '');
   });
 }
-// The view bar along the top of the work area: how the canvas is shown, zoom, and the next step.
+// The view bar along the top of the work area: how the canvas is shown, and zoom.
 function viewBarHtml() {
-  const next = VIEW_LIST[VIEW_LIST.findIndex(v => v.key === tabOf(ui.view)) + 1];
-  const html = viewToggles() + (next ? `${viewToggles() ? '<span class="sep"></span>' : ''}<button class="tool next-btn" data-act="view" data-arg="${next.key}">Next: ${next.label} ${icon('right', 14)}</button>` : '');
+  const html = viewToggles();
   return html ? `<div class="viewbar" role="toolbar" aria-label="View">${html}</div>` : '';
 }
 // View switches shared by the canvas steps, at the right end of the tool row.
