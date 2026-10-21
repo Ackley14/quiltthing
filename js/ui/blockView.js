@@ -34,7 +34,7 @@ Views.block = {
         <span class="zoom-ctl"><button class="tool" data-act="edZoomBy" data-arg="out" title="Zoom out (−)" aria-label="Zoom out">−</button><button class="tool" id="ed-zoom" data-act="edZoomBy" data-arg="fit" title="Show the whole block (0)">${Math.round(edZoom() * 100)}%</button><button class="tool" data-act="edZoomBy" data-arg="in" title="Zoom in (+). Ctrl + scroll zooms where you point; when zoomed in, scroll or Space-drag to move around." aria-label="Zoom in">+</button></span>
         <button class="tool" data-act="toggleSnap" aria-pressed="${!ui.snapOff}" title="Snap points to the grid. Turn off to place points anywhere — corners of other shapes still pull points in so pieces meet.">Snap</button>
         ${refImgs[b.id] ? `<button class="tool" data-act="refAdjustToggle" aria-pressed="${!!ui.refAdjust}" title="Drag to move the tracing picture, scroll to resize it">✥ Picture</button>` : ''}
-        <div class="spacer"></div><span id="seam-tool-slot"></span>
+        <div class="spacer"></div><span id="seam-tool-slot"></span><span class="ed-name" title="The block you're editing — pick another in My blocks">Editing <b>${esc(b.name)}</b></span>
       </div>
       <div class="canvas-wrap"><svg id="editor" class="editor tool-${ui.refAdjust && refImgs[b.id] ? 'ref' : ui.tool}" viewBox="${edViewBox(S).map(v => round(v, 4)).join(' ')}" aria-label="Block editor"><g id="ed-c">${editorShapes(b)}</g><g id="ed-ref" pointer-events="none">${refImageSvg(b, S)}</g><g id="ed-g">${editorGuides(b)}</g><g id="ed-ov" pointer-events="none"></g></svg>
         <div id="sel-bar" class="sel-bar" hidden></div><div id="seam-card" class="seam-card" hidden></div></div>
@@ -580,6 +580,7 @@ function blockViewKey(e) {
   const ctrl = e.ctrlKey || e.metaKey;
   const sel = selList();
   if (e.key === 'Escape' && ui.refAdjust) { Actions.refAdjustToggle(); return; }
+  if (e.key === 'Escape' && ui.tool === 'text') { Actions.blockTool('select'); return; }
   if (e.key === 'Escape') { ui.drawing = []; setSel([]); ed.triPreview = null; refreshEditor(); renderInspector(); return; }
   if (e.key === 'Enter' && ui.tool === 'polygon') { e.preventDefault(); finishPolygon(); return; }
   if (e.key === 'Backspace' && ui.drawing.length) { e.preventDefault(); ui.drawing.pop(); refreshEditor(); return; }
@@ -695,6 +696,7 @@ Actions.blockDelete = () => {
     doc.blockOrder = doc.blockOrder.filter(x => x !== id);
     const L = doc.layout;
     L.grid.cells = L.grid.cells.map(c => c?.b === id ? null : c);
+    for (const k of Object.keys(L.grid.hidden || {})) if (L.grid.hidden[k]?.b === id) delete L.grid.hidden[k];
     for (const k of Object.keys(L.onpoint.cells)) if (L.onpoint.cells[k]?.b === id) delete L.onpoint.cells[k];
     for (const k of Object.keys(L.tess.blocks || {})) if (L.tess.blocks[k]?.b === id) delete L.tess.blocks[k];
     for (const p of L.panels || []) if (p.b === id) p.b = null;
@@ -1149,7 +1151,7 @@ function constructionSection(b, S) {
   if (Object.keys(units).length) body += `<dl class="kv" style="margin-top:8px">${Object.entries(units).map(([k, v]) => `<dt>${esc(UNIT_NAMES[k] || k)}</dt><dd>${v}</dd>`).join('')}</dl>`;
   body += an.setIn
     ? `<div class="callout bad">Some pieces meet in set-in (Y) seams. That's fine for English paper piecing or careful machine piecing — the pattern explains how. Add seam lines if you'd rather sew straight seams.</div>`
-    : pieces.length > 1 ? `<div class="callout ok">Sews together with straight seams in ${plural(an.height, 'step')}.</div>` : '';
+    : pieces.length > 1 ? `<div class="callout ok">${an.height ? `Sews together in ${plural(an.height, 'step')}${an.units.some(u => u.unit.type === 'curved') ? ', including curved seams' : ' with straight seams'}.` : 'Sews together as one unit — the pattern shows how.'}</div>` : '';
   for (const p of probs) body += `<div class="callout${p.kind === 'tiny' ? '' : ' bad'}" style="margin-top:6px">${esc(p.msg)}</div>`;
   return section('Construction', body, { key: 'construct' });
 }

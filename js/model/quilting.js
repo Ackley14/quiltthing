@@ -186,7 +186,8 @@ function quiltAreaPaths(Q, layer, A) {
       break;
     }
     case 'echo': {
-      const shapes = [...Q.cells.filter(c => !c.clip).map(c => c.pts), ...Q.tiles.filter(t => t.whole).map(t => t.pts)];
+      // cells cut by an inset panel or the quilt edge echo their visible part
+      const shapes = [...Q.cells.flatMap(c => !c.clip ? [c.pts] : c.clipHoles?.length ? [] : c.clip), ...Q.tiles.filter(t => t.whole).map(t => t.pts)];
       for (const s of shapes) {
         for (let k = 0; k < Math.max(1, layer.echoes || 1); k++) {
           const ins = inflate(s, -(sp / 2 + k * sp));

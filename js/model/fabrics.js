@@ -2,9 +2,12 @@
    Patterns use inches as user units, so a 1" polka dot looks the same in every view. */
 
 function fabricHex(id) { return fabricById(id).color; }
+// Printed copies draw fabrics as flat colour: PDF output re-embeds a pattern fill every time it's
+// used, which made printed patterns tens of megabytes. (The colour key still shows each print.)
+let flatFills = false;
 function fabricFill(id) {
   const f = fabricById(id);
-  return f.print && f.print.kind !== 'solid' ? `url(#fp-${f.id})` : f.color;
+  return f.print && f.print.kind !== 'solid' && !flatFills ? `url(#fp-${f.id})` : f.color;
 }
 function fabricLabel(id) { return fabricById(id).name; }
 

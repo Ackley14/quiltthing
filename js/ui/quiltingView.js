@@ -53,10 +53,11 @@ function backingPanelHtml() {
   const auto = !doc.layout.backing?.method || !bk.options.some(o => o.id === doc.layout.backing.method);
   const cost = o => o.from === 'stash' ? 'nothing to buy' : `buy ${fmtYards(o.buyIn)}`;
   return `<div class="hint" style="margin-top:0">Backing fabric</div>${fabricPicker(bf, 'backingFab')}
-    <div class="btn-row"><button class="btn small" data-act="backingFab" data-arg="" ${bf ? '' : 'disabled'}>None chosen</button>${ui.qSide === 'back' ? '' : '<button class="btn small" data-act="qSide" data-arg="back">See the back</button>'}</div>
+    <div class="btn-row"><button class="btn small" data-act="backingFab" data-arg="" ${bf ? '' : 'disabled'}>No backing fabric</button>${ui.qSide === 'back' ? '' : '<button class="btn small" data-act="qSide" data-arg="back">See the back</button>'}</div>
     <div class="f-row">${lenField('Width it\'s sold in', 'cutting.backingWidth', { min: 10, max: 140 })}${lenField('Extra all round', 'cutting.overhang', { min: 0, max: 12 })}</div>
     <div class="btn-row">${[42, 44, 60, 90, 108].map(w => `<button class="btn small" data-act="backingWidth" data-arg="${w}" aria-pressed="${(doc.cutting.backingWidth || 42) === w}">${w}"</button>`).join('')}</div>
     <h4>Pieces I have for the backing</h4>
+    ${mine.length ? `<div class="stash-row back-piece hdr"><span>Name</span><span>Width (${ui.units === 'cm' ? 'cm' : 'in'})</span><span>Length</span><span></span></div>` : ''}
     ${mine.map(p => `<div class="stash-row back-piece"><input type="text" value="${esc(p.label)}" data-change="stashLabel" data-arg="${p.id}" aria-label="Name">
       <input type="text" inputmode="decimal" value="${esc(inputLen(p.w))}" data-change="stashW" data-arg="${p.id}" aria-label="Width" title="Width">
       <input type="text" inputmode="decimal" value="${esc(inputLen(p.h))}" data-change="stashH" data-arg="${p.id}" aria-label="Length" title="Length">
@@ -96,6 +97,7 @@ Actions.addQuiltLayer = (type, el) => {
   el.value = '';
   ui.showQuilting = true;
   commit();
+  $(`#inspector [data-arg="ql-${L.id}"]`)?.closest('.sec')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 };
 Actions.qAngleLive = (v, el) => { const L = doc.quilting.layers[+el.dataset.arg]; if (L) { L.angle = +v; renderMainOnly(); } };
 Actions.qAngle = (v, el) => { const L = doc.quilting.layers[+el.dataset.arg]; if (L) { L.angle = +v; commit(); } };

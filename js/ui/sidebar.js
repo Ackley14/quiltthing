@@ -12,12 +12,13 @@ const PRINT_LABELS = { solid: 'Solid', dots: 'Polka dot', speckle: 'Speckle', st
 function fabricsSection() {
   const bgId = doc.layout.background;
   let chips = '';
-  if (ui.view === 'block') chips += `<button class="fab-chip bgpaint" aria-pressed="${ui.fabric === BG}" data-act="pickFabric" data-arg="${BG}" title="Quilt background — follows whatever fabric is set as the background">Quilt<br>BG</button>`;
   doc.fabrics.forEach((f, i) => {
     chips += `<button class="fab-chip" aria-pressed="${ui.fabric === f.id}" data-act="pickFabric" data-arg="${f.id}" title="${esc(f.name)} (${letterFor(i)}) · ${valueClass(f.color)} value">
       ${swatchHtml(f.id, 40)}<span class="lt" style="color:${inkOn(f.color)};text-shadow:0 0 2px ${inkOn(f.color) === "#ffffff" ? "rgba(0,0,0,.6)" : "rgba(255,255,255,.9)"}">${letterFor(i)}</span><span class="val">${valueLetter(f.color)}</span>${f.id === bgId ? '<span class="bgtag">BG</span>' : ''}</button>`;
   });
   chips += `<button class="fab-chip add" data-act="addFabric" title="Add a fabric" aria-label="Add a fabric">+</button>`;
+  // last, so the fabric swatches sit in the same place on every tab
+  if (ui.view === 'block') chips += `<button class="fab-chip bgpaint" aria-pressed="${ui.fabric === BG}" data-act="pickFabric" data-arg="${BG}" title="Quilt background — follows whatever fabric is set as the background">Quilt<br>BG</button>`;
   const sorted = doc.fabrics.slice().sort((a, b) => hexToLab(b.color)[0] - hexToLab(a.color)[0]);
   const valueBar = `<div class="valuebar" title="Your fabrics from lightest to darkest — good quilts usually have a spread of values">${sorted.map(f => `<span style="background:${f.color}" title="${esc(f.name)}"></span>`).join('')}</div>`;
   const body = `<div class="fabrics">${chips}</div>${valueBar}${fabricEditor()}`;
@@ -27,9 +28,11 @@ function fabricsSection() {
 // How this fabric comes (its own width, precuts, or pieces of a set size); default = the shared setting.
 function fabricFormatFields(f) {
   const i = doc.fabrics.indexOf(f), fm = f.format;
+  // the extra fields share one fixed-height slot so the panels below don't jump
   return `<label class="f">Comes as<select data-change="fabFormat">${formatOptionsHtml(fm, true)}</select></label>
-    ${fm?.kind === 'yardage' ? lenField('Usable width', `fabrics.${i}.format.width`, { min: 5, max: 140 }) : ''}
-    ${fm?.kind === 'piece' ? `<div class="f-row">${lenField('Piece width', `fabrics.${i}.format.w`, { min: 1, max: 140 })}${lenField('Piece length', `fabrics.${i}.format.h`, { min: 1, max: 400 })}</div>` : ''}`;
+    <div class="fmt-extra">${fm?.kind === 'yardage' ? lenField('Usable width', `fabrics.${i}.format.width`, { min: 5, max: 140 }) : ''}
+    ${fm?.kind === 'piece' ? `<div class="f-row">${lenField('Piece width', `fabrics.${i}.format.w`, { min: 1, max: 140 })}${lenField('Piece length', `fabrics.${i}.format.h`, { min: 1, max: 400 })}</div>` : ''}
+    ${!fm ? '<p class="hint" style="margin:6px 0 0">How you buy this fabric. The default is set in Fabric → Cutting settings; fabric you already own goes in Your stash.</p>' : fm.kind === 'precut' ? '<p class="hint" style="margin:6px 0 0">Bought as precut pieces — cuts too big for them come from yardage.</p>' : ''}</div>`;
 }
 Actions.fabFormat = v => {
   const f = doc.fabrics.find(x => x.id === ui.fabric); if (!f) return;
@@ -41,7 +44,7 @@ Actions.fabFormat = v => {
 function fabricEditor() {
   const f = doc.fabrics.find(x => x.id === ui.fabric);
   if (!f) {
-    if (ui.fabric === BG) return `<p class="hint">Painting with <b>Quilt background</b>: pieces follow the quilt's background fabric (<b>${esc(fabricLabel(BG))}</b>), so you can change it for every block at once.</p>`;
+    if (ui.fabric === BG) return `<p class="hint fab-edit">Painting with <b>Quilt background</b>: pieces follow the quilt's background fabric (<b>${esc(fabricLabel(BG))}</b>), so you can change it for every block at once.</p>`;
     return '';
   }
   const p = f.print || { kind: 'solid' };
@@ -54,10 +57,10 @@ function fabricEditor() {
       <label class="f">Hex<input type="text" value="${f.color}" data-change="fabHex" maxlength="7" spellcheck="false"></label>
       <label class="f">Print<select data-change="fabPrint">${PRINT_KINDS.map(k => `<option value="${k}" ${p.kind === k ? 'selected' : ''}>${PRINT_LABELS[k]}</option>`).join('')}</select></label>
     </div>
-    ${p.kind !== 'solid' ? `<div class="f-row">
-      <label class="f">Print colour<input type="color" value="${p.color2 || '#ffffff'}" data-input="fabColor2Live" data-change="fabColor2"></label>
-      <label class="f">Print scale<input type="range" min="0.3" max="3" step="0.1" value="${p.scale || 1}" data-input="fabScaleLive" data-change="fabScale"></label>
-    </div>` : ''}
+    <div class="f-row${p.kind === 'solid' ? ' off' : ''}" ${p.kind === 'solid' ? 'title="Choose a print above to set these"' : ''}>
+      <label class="f">Print colour<input type="color" value="${p.color2 || '#ffffff'}" data-input="fabColor2Live" data-change="fabColor2" ${p.kind === 'solid' ? 'disabled' : ''}></label>
+      <label class="f">Print scale<input type="range" min="0.3" max="3" step="0.1" value="${p.scale || 1}" data-input="fabScaleLive" data-change="fabScale" ${p.kind === 'solid' ? 'disabled' : ''}></label>
+    </div>
     <label class="check"><input type="checkbox" ${f.directional ? 'checked' : ''} data-change="fabDir"> Directional print (don't rotate when cutting)</label>
     ${fabricFormatFields(f)}
     <p class="hint">${esc(colorName(f.color))} · <b>${valueClass(f.color)}</b> value${isBg ? ' · <b>quilt background</b>' : ` · contrast with background ${contrast.toFixed(1)}:1${contrast < 1.6 ? ' — <b>low</b>, may blend in' : ''}`}</p>
@@ -124,6 +127,7 @@ function replaceFabric(oldId, newId) {
   for (const b of L.borders) b.fabric = swap(b.fabric);
   for (const k of Object.keys(L.tess.colors)) L.tess.colors[k] = swap(L.tess.colors[k]);
   L.grid.cells = L.grid.cells.map(c => c?.fab === oldId ? { fab: newId } : c);
+  for (const k of Object.keys(L.grid.hidden || {})) if (L.grid.hidden[k]?.fab === oldId) L.grid.hidden[k] = { fab: newId };
   for (const k of Object.keys(L.onpoint.cells)) if (L.onpoint.cells[k]?.fab === oldId) L.onpoint.cells[k] = { fab: newId };
   for (const s of doc.stash) s.fabric = swap(s.fabric);
   if (L.backing) L.backing.fabric = swap(L.backing.fabric);
@@ -280,6 +284,8 @@ function librarySection() {
 Actions.libSearch = v => {
   ui.libSearch = v; saveUi();
   const sec = $('#lib-grid')?.closest('.sec') || $$('#sidebar .sec').pop();
+  // hold the section's height while filtering so the column (and the box being typed in) doesn't move
+  sec.style.minHeight = v.trim() ? `${Math.max(sec.offsetHeight, parseFloat(sec.style.minHeight) || 0)}px` : '';
   const tmp = document.createElement('div');
   tmp.innerHTML = librarySection();
   preserveFocus(sec, () => { sec.innerHTML = tmp.firstElementChild.innerHTML; });

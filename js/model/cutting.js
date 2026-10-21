@@ -131,12 +131,24 @@ function tileCutShape(t) {
   return t.role === 'trim' && t.full && !doc.layout.tess.cutEdges ? t.full : t.pts;
 }
 
+// Pieces of units the block steps make from whole squares (two-at-a-time HSTs, no-waste geese,
+// two-fabric hourglasses): the cutting list must keep those squares whole.
+function speedPieces(an) {
+  const out = new Set();
+  for (const u of an.units) {
+    const t = u.unit.type;
+    if (t === 'hst' || t === 'goose' || (t === 'qst' && (u.unit.fabs || []).length === 2)) for (const p of u.pieces) out.add(p);
+  }
+  return out;
+}
+
 /* ---------- collect every piece in the quilt ---------- */
 function collectCutItems(Q) {
   const sa = doc.cutting.seam;
   const items = [];   // { fab, recipe, count, src, use }
   // `use` says where the cut ends up: { b: blockId, i: piece index } or { kind } for tiles/patches
-  const add = (fab, recipe, count, src, use) => items.push({ fab: resolveFab(fab), recipe, count, src, use });
+  // speed = how many of these pieces belong to units sewn from whole squares (see `speedPieces`)
+  const add = (fab, recipe, count, src, use, speed = 0) => items.push({ fab: resolveFab(fab), recipe, count, src, use, speed });
   const ro = (fab, o = {}) => ({ ...o, wof: fabricRun(resolveFab(fab)) });   // recipe options for this fabric
   const isDir = fab => !!fabricById(fab).directional;
 
@@ -154,6 +166,7 @@ function collectCutItems(Q) {
     const name = block.name;
     const handled = new Set();
     const all = blockPieces(block, size, size);
+    const speed = speedPieces(an);
     const use = p => ({ b: bid, i: all.indexOf(p) });
     for (const u of an.units) {
       if (u.unit.type === 'snowball') {
@@ -171,7 +184,7 @@ function collectCutItems(Q) {
         holes = holes.map(h => mirrorPolyX(h, size / 2));
         if (p.cls.shape === 'holed') cls.shape = 'holed';
       }
-      add(p.fab, recipeFor(cls, sa, ro(p.fab, { directional: isDir(p.fab), applique: p.app, holes })), n, name, use(p));
+      add(p.fab, recipeFor(cls, sa, ro(p.fab, { directional: isDir(p.fab), applique: p.app, holes })), n, name, use(p), speed.has(p) ? n : 0);
     }
   }
   // tiles & setting triangles
@@ -311,7 +324,7 @@ function computePlan(Q) {
     f.sources.add(it.src);
     if (!f.recipes.has(it.recipe.key)) f.recipes.set(it.recipe.key, { recipe: it.recipe, pieces: 0, srcs: new Set(), uses: new Map() });
     const r = f.recipes.get(it.recipe.key);
-    r.pieces += it.count; r.srcs.add(it.src);
+    r.pieces += it.count; r.srcs.add(it.src); r.speed = (r.speed || 0) + (it.speed || 0);
     if (it.use) {
       const k = it.use.b || it.use.kind;
       if (!r.uses.has(k)) r.uses.set(k, { b: it.use.b, kind: it.use.kind, idx: new Set() });
@@ -323,7 +336,7 @@ function computePlan(Q) {
   const fabrics = [];
   for (const f of byFab.values()) {
     const fmt = fabricFormat(f.fab), wof = fmt.yardage ? fmt.width : doc.cutting.wof;   // yardage width for this fabric
-    const recs = [...f.recipes.values()].map(r => ({ ...r, units: Math.ceil(r.pieces / r.recipe.yield - 1e-9) }));
+    const recs = [...f.recipes.values()].map(r => ({ ...r, units: Math.ceil(r.pieces / r.recipe.yield - 1e-9), speedUnits: Math.ceil((r.speed || 0) / r.recipe.yield - 1e-9) }));
     // rotary strips grouped by strip width
     const groupsW = new Map();
     for (const r of recs.filter(r => r.recipe.method === 'strip')) {
@@ -569,6 +582,13 @@ function buyText(f) {
   return parts.length ? parts.join(' + ') : f.stashOwned ? 'nothing (stash)' : fmtYards(0);
 }
 
+// Needed column: the yardage cut, or the precut pieces (plus any yardage for cuts too big for them).
+function neededText(f) {
+  if (f.format.yardage) return fmtYards(f.lengthIn);
+  const parts = [f.buyPieces ? plural2(f.buyPieces, f.format.name) : '', f.lengthIn > 1e-6 ? fmtYards(f.lengthIn) : ''].filter(Boolean);
+  return parts.join(' + ') || '—';
+}
+
 // <option>s for a "comes as" setting; value is 'default' | 'yardage' | precut key | 'piece'.
 function formatOptionsHtml(cur, withDefault) {
   const k = !cur ? 'default' : cur.kind === 'precut' ? cur.key : cur.kind;
@@ -670,8 +690,15 @@ function sheetFromLayout(f, L, W, H, buyIn) {
 }
 
 /* ---------- human-readable cutting instructions ---------- */
-function cutVerb(recipe, units) {
+function cutVerb(recipe, units, speedUnits = 0) {
   const yieldText = n => `${n} ${recipe.makes}${n === 1 ? '' : 's'}`;
+  // squares for two-at-a-time HSTs, no-waste geese and two-fabric hourglasses are sewn whole first
+  if (speedUnits && ['diag', 'diagR', 'diagL', 'cross'].includes(recipe.cut)) {
+    const keep = Math.min(units, speedUnits);
+    if (keep === units) return `don't cut them yet — they're sewn first, then cut apart (see the block steps)`;
+    const rest = units - keep, per = recipe.cut === 'cross' ? 4 : 2;
+    return `keep ${keep} whole to sew first (see the block steps); cut the other ${rest} ${recipe.cut === 'cross' ? 'twice on the diagonal' : 'once on the diagonal'} → ${yieldText(rest * per)}`;
+  }
   switch (recipe.cut) {
     case 'diag': return `cut once on the diagonal → ${yieldText(units * 2)}`;
     case 'diagR': case 'diagL': return `cut each on the diagonal (${recipe.cut === 'diagR' ? 'top-left to bottom-right' : 'top-right to bottom-left'}) → ${yieldText(units * 2)}`;
@@ -697,7 +724,7 @@ function fabricInstructions(f) {
   };
   for (const g of f.stripGroups) {
     const parts = g.recipes.map(r => {
-      const v = cutVerb(r.recipe, r.units);
+      const v = cutVerb(r.recipe, r.units, r.speedUnits);
       return `${r.units} × ${r.recipe.unitLabel}${v ? ` — ${v}` : ''}`;
     });
     const leftoverLines = list => fromLeftovers(list, xs => `cut ${xs.map(x => `a ${fmtLen(g.w, 'up')} × ${fmtLen(x.w, 'up')} ${x.w < g.w * 1.5 ? 'piece' : 'strip'}`).join(', ')}.`);
@@ -752,7 +779,7 @@ function fabricInstructions(f) {
       ...(inLeft.length ? [(() => {
         const n = inLeft.length, st = uniq(inLeft.map(p => stepOf(p.from))).sort((a, b) => a - b);
         return `${n === r.units ? (n === 1 ? 'It fits' : 'All of them fit') : `${n} of them ${n === 1 ? 'fits' : 'fit'}`} in the leftover${st.length > 1 ? 's' : ''} from step${st.length > 1 ? 's' : ''} ${st.join(', ')} — see the map.`;
-      })()] : []),r.recipe.applique ? (doc.cutting.appMethod === 'fusible' ? 'Fusible appliqué: trace the reversed template onto fusible web, fuse it to the wrong side of the fabric and cut on the line.' : 'Appliqué piece: add a scant ¼" turn-under allowance as you cut.') : 'Trace the template, cut on the dashed (seam allowance) line.'], r });
+      })()] : []),r.recipe.applique ? (doc.cutting.appMethod === 'fusible' ? 'Fusible appliqué: trace the reversed template onto fusible web, fuse it to the wrong side of the fabric and cut on the line.' : 'Appliqué piece: cut on the dashed line — it includes a 3/16" turn-under allowance.') : 'Trace the template, cut on the dashed (seam allowance) line.'], r });
   }
   return rows;
 }

@@ -113,6 +113,7 @@ function commit() {
   undoStack.future = [];
   undoStack.current = s;
   scheduleSave();
+  saveUi();   // e.g. the block just added and opened, so a reload reopens it
   onDocChanged(true);
 }
 function undo() {
@@ -159,7 +160,7 @@ function saveNow() {
   }
 }
 const saveUi = debounce(() => {
-  try { localStorage.setItem(STORE_UI, JSON.stringify({ ...ui, drawing: [] })); } catch {}
+  try { localStorage.setItem(STORE_UI, JSON.stringify({ ...ui, drawing: [], grayscale: false, libSearch: '' })); } catch {}
 }, 300);
 
 /* ---------- reference pictures ----------

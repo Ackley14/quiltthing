@@ -401,11 +401,18 @@ function setCellContent(key, content) {
     p.b = content?.b || null; p.r = content?.r || 0; p.f = !!content?.f; p.fab = content?.fab || null;
   }
 }
+// Blocks in rows/columns that are taken away are kept in g.hidden ("r,c" → cell) and come back
+// if the grid grows again.
 function resizeGrid(rows, cols) {
-  const g = doc.layout.grid;
+  const g = doc.layout.grid, hidden = { ...(g.hidden || {}) };
+  for (let r = 0; r < g.rows; r++) for (let c = 0; c < g.cols; c++) {
+    const cell = g.cells[r * g.cols + c];
+    if (cell) hidden[`${r},${c}`] = cell; else delete hidden[`${r},${c}`];
+  }
   const cells = [];
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) cells.push(r < g.rows && c < g.cols ? g.cells[r * g.cols + c] : null);
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { cells.push(hidden[`${r},${c}`] || null); delete hidden[`${r},${c}`]; }
   g.rows = rows; g.cols = cols; g.cells = cells;
+  if (Object.keys(hidden).length) g.hidden = hidden; else delete g.hidden;
 }
 
 /* ---------- rendering ---------- */

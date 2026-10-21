@@ -11,8 +11,9 @@ function autoSkill(Q, plan) {
     const an = analyzeBlock(b, blockFrameSize(b));
     if (an.setIn) score += 2;
     if (an.units.some(u => u.unit.type === 'curved')) score += 2;
-    if (an.applique.length) score++;
+    if (an.applique.length) score += doc.cutting.appMethod === 'fusible' ? 1 : 2;   // needle-turn takes practice
   }
+  if ((doc.layout.panels || []).length) score++;
   if (plan.fabrics.some(f => f.templates.length)) score++;
   if (Q.mode === 'onpoint') score++;
   if (Q.mode === 'tess' && ['hex', 'tumbling', 'triangle'].includes(doc.layout.tess.shape)) score += 2;
@@ -23,7 +24,7 @@ function patternFabricKeyTable(plan, compact) {
   let h = `<table class="pt"><thead><tr><th></th><th>Fabric</th><th>Used for</th>${compact ? '' : '<th>Cut length</th>'}<th>Buy</th></tr></thead><tbody>`;
   for (const f of plan.fabrics) {
     h += `<tr><td class="key">${swatchHtml(f.fab, 22)}<b>${fabricLetter(f.fab)}</b></td><td>${esc(fabricLabel(f.fab))}${fabricById(f.fab).directional ? ' <i>(directional)</i>' : ''}</td>
-      <td>${esc(f.sources.join(', '))}</td>${compact ? '' : `<td>${fmtYards(f.lengthIn)}</td>`}<td>${stashUseText(f) && !f.buyIn ? `<small>all from ${esc(stashUseText(f))}</small>` : `<b>${buyText(f)}</b>${stashUseText(f) ? `<br><small>plus ${esc(stashUseText(f))}</small>` : f.fq ? '<br><small>or 1 fat quarter</small>' : ''}`}</td></tr>`;
+      <td>${esc(f.sources.join(', '))}</td>${compact ? '' : `<td>${neededText(f)}</td>`}<td>${stashUseText(f) && !f.buyIn && !f.buyPieces ? `<small>all from ${esc(stashUseText(f))}</small>` : `<b>${buyText(f)}</b>${stashUseText(f) ? `<br><small>plus ${esc(stashUseText(f))}</small>` : f.fq ? '<br><small>or 1 fat quarter</small>' : ''}`}</td></tr>`;
   }
   return h + '</tbody></table>';
 }
@@ -134,8 +135,8 @@ function unitMethodText(type, sample, n, sa) {
       return `Make <b>${n}</b> HST units (${fabs.map(L).join(' + ')}). Pair a ${sq} square of each fabric right sides together, draw a diagonal line on the lighter one, sew ¼" on both sides of the line and cut on it. Each pair makes 2 units. Press toward the darker fabric and trim to ${unf}.`;
     }
     case 'qst': {
-      const sq = fmtLen(ceilEighth(r.w * Math.SQRT2 + 2 * sa * (1 + Math.SQRT2)), 'up');
-      return `Make <b>${n}</b> quarter-square triangle units (${fabs.map(L).join(' + ')}). For two-fabric hourglasses: make HSTs from ${sq} squares, pair two HSTs with contrasting fabrics facing, draw a diagonal across the seam, sew ¼" each side and cut. Otherwise sew the triangles in pairs, then join the pairs. Trim to ${unf}.`;
+      const sq = fmtLen(ceilEighth(r.w + 2 * sa * (1 + Math.SQRT2)), 'up');   // finished + 1¼" (for ¼" seams)
+      return `Make <b>${n}</b> quarter-square triangle units (${fabs.map(L).join(' + ')}). ${fabs.length === 2 ? `Make HSTs from the ${sq} squares (two at a time), pair two HSTs with contrasting fabrics facing, draw a diagonal across the seam, sew ¼" each side and cut. Each pair makes 2 units.` : 'Sew the triangles in pairs, then join the pairs, matching the centre.'} Trim to ${unf}.`;
     }
     case 'goose': {
       const big = fmtLen(ceilEighth(Math.max(r.w, r.h) + 2 * sa * (1 + Math.SQRT2)), 'up');
@@ -414,7 +415,7 @@ function renderPatternDoc() {
       });
       const st = stashUseText(f);
       const maps = fabricSheets(f).map((sh, i) => `${sh.src.kind === 'stash' ? `<div class="map-cap">Your ${esc(sh.src.name.toLowerCase())}</div>` : sh.src.kind === 'precut' ? `<div class="map-cap">${esc(sh.src.name)}</div>` : sh.src.fallback ? '<div class="map-cap">Yardage for the larger cuts</div>' : st ? '<div class="map-cap">Yardage for the rest</div>' : ''}${fabricSheetSvg(sh, f.fab, { width: 2.4, unit: 'in', idp: 'pc' + i, title: sh.title })}`).join('');
-      return `<div class="cut-fab"><h3>${swatchHtml(f.fab, 20)} Fabric ${fabricLetter(f.fab)} — ${esc(fabricLabel(f.fab))} <span class="muted" style="font-weight:400">· ${st && !f.buyIn ? `all from ${esc(st)}` : `buy ${buyText(f)}${st ? `, plus ${esc(st)}` : ''}`}</span></h3>
+      return `<div class="cut-fab"><h3>${swatchHtml(f.fab, 20)} Fabric ${fabricLetter(f.fab)} — ${esc(fabricLabel(f.fab))} <span class="muted" style="font-weight:400">· ${st && !f.buyIn && !f.buyPieces ? `all from ${esc(st)}` : `buy ${buyText(f)}${st ? `, plus ${esc(st)}` : ''}`}</span></h3>
         <div class="cut-cols"><ol class="cut-list">${list}</ol><div class="cut-map">${maps}</div></div></div>`;
     }).join(''));
 

@@ -294,7 +294,7 @@ Actions.rotPattern = kind => {
 };
 Actions.clearLayout = () => confirmModal('Clear the layout?', 'Removes every block and painted square from the layout (your blocks stay in My blocks).', 'Clear layout', () => {
   const L = doc.layout;
-  L.grid.cells = L.grid.cells.map(() => null);
+  L.grid.cells = L.grid.cells.map(() => null); delete L.grid.hidden;
   L.onpoint.cells = {};
   L.tess.colors = {};
   L.tess.blocks = {};

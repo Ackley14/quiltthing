@@ -23,6 +23,7 @@ function render() {
   renderTopbar();
   renderSidebar();
   renderView();
+  restorePendingFocus();
 }
 function renderView() {
   const V = Views[ui.view] || Views.block;
@@ -31,6 +32,7 @@ function renderView() {
   V.afterMain?.(main);
   preserveFocus(insp, () => { insp.innerHTML = V.inspector(); });
   document.body.classList.toggle('grayscale', !!ui.grayscale);
+  if (ui.grayscale) main.insertAdjacentHTML('afterbegin', `<button class="gs-banner" data-act="toggleUi" data-arg="grayscale" title="Turn the value check off (G)">Value check on — showing greys · turn off</button>`);
 }
 // Main canvas only — for live previews while a control in a side panel is being dragged.
 function renderMainOnly() {
@@ -42,6 +44,34 @@ function renderMainOnly() {
 function renderInspector() {
   const V = Views[ui.view] || Views.block;
   preserveFocus($('#inspector'), () => { $('#inspector').innerHTML = V.inspector(); });
+  restorePendingFocus();
+}
+// A field commits when it loses focus — usually because the user clicked or tabbed into the next
+// field. The re-render then replaces that next field before it gets focus, so we remember where
+// focus was heading and put it on the replacement (otherwise typing falls through to shortcuts).
+let _focusTarget = null, _lastFieldBlur = 0;
+const isField = el => el?.matches?.('input, select, textarea');
+document.addEventListener('pointerdown', e => {
+  const t = e.target.closest?.('input, select, textarea');
+  _focusTarget = t ? { sig: focusSig(t), at: Date.now() } : null;
+}, true);
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Tab' || !isField(e.target)) return;
+  const all = [...document.querySelectorAll('input, select, textarea, button, a[href]')].filter(x => !x.disabled && x.offsetParent && x.tabIndex >= 0);
+  const next = all[all.indexOf(e.target) + (e.shiftKey ? -1 : 1)];
+  _focusTarget = next && focusSig(next) ? { sig: focusSig(next), at: Date.now(), select: true } : null;   // Tab selects the next field's text
+}, true);
+document.addEventListener('focusout', e => { if (isField(e.target)) _lastFieldBlur = Date.now(); }, true);
+function restorePendingFocus() {
+  const t = _focusTarget;
+  if (!t?.sig || Date.now() - t.at > 1500) return;
+  const a = document.activeElement;
+  if (a && a !== document.body && document.contains(a)) return;
+  const el = document.querySelector(t.sig);
+  if (!el) return;
+  _focusTarget = null;
+  el.focus({ preventScroll: true });
+  try { if (t.select) el.select?.(); else if (el.type === 'text' || el.tagName === 'TEXTAREA') el.setSelectionRange(el.value.length, el.value.length); } catch {}
 }
 let _defsKey = '';
 function updateFabricDefs() {
@@ -85,7 +115,7 @@ function renderTopbar() {
     <button class="icon-btn" data-act="undo" ${undoStack.past.length ? '' : 'disabled'} aria-label="Undo" title="Undo (Ctrl+Z)">↶</button>
     <button class="icon-btn" data-act="redo" ${undoStack.future.length ? '' : 'disabled'} aria-label="Redo" title="Redo (Ctrl+Shift+Z)">↷</button>
     <button class="icon-btn" data-act="fileMenu" aria-haspopup="menu" title="Project, save, open, export">File ▾</button>
-    <button class="icon-btn hide-sm" data-act="toggleUnits" title="Switch inches / centimetres">${ui.units === 'cm' ? 'cm' : 'in'}</button>
+    <button class="icon-btn hide-sm" data-act="toggleUnits" title="Measurements in inches or centimetres — click to switch">Units: ${ui.units === 'cm' ? 'cm' : 'in'}</button>
     <button class="icon-btn hide-sm" data-act="help" aria-label="Help and shortcuts" title="Help & shortcuts">?</button>
     <button class="icon-btn hide-sm" data-act="about" aria-label="About" title="About">i</button>`;
 }
@@ -347,7 +377,10 @@ Actions.exportPng = () => {
 /* ---------- print ---------- */
 function preparePrint() {
   const cls = ui.patternPage === 'a4' ? 'a4' : '';
-  $('#print-root').innerHTML = renderPatternDoc().replace(/class="page /g, `class="page ${cls} `);
+  flatFills = true;
+  let html;
+  try { html = renderPatternDoc(); } finally { flatFills = false; }
+  $('#print-root').innerHTML = html.replace(/class="page /g, `class="page ${cls} `);
   $('#page-size').textContent = `@page { size: ${ui.patternPage === 'a4' ? 'A4' : 'letter'} portrait; margin: 0.5in; }`;
 }
 Actions.printPattern = () => { preparePrint(); setTimeout(() => window.print(), 50); };
@@ -409,7 +442,11 @@ document.addEventListener('keydown', e => {
   if (ctrl && (e.key === 's' || e.key === 'S')) { e.preventDefault(); Actions.saveProject(); return; }
   if (ctrl && (e.key === 'o' || e.key === 'O')) { e.preventDefault(); Actions.openProject(); return; }
   if (ctrl && (e.key === 'p' || e.key === 'P')) { e.preventDefault(); Actions.printPattern(); return; }
-  if (inField) return;
+  // a dropdown has no undo of its own, so Ctrl+Z still undoes there
+  if (inField && !(ctrl && t.tagName === 'SELECT')) return;
+  // single-key shortcuts are ignored for a moment after leaving a field, in case the next click
+  // didn't land in a field (keys meant for typing shouldn't switch tabs or tools)
+  if (!ctrl && !e.altKey && e.key.length === 1 && Date.now() - _lastFieldBlur < 600) return;
   if (ctrl && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); e.shiftKey ? Actions.redo() : Actions.undo(); return; }
   if (ctrl && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); Actions.redo(); return; }
   if ($('#modal-root').innerHTML) return;

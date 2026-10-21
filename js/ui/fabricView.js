@@ -30,7 +30,7 @@ Views.fabric = {
           : `<span class="pill ok" title="${sum(used, x => x.pieces)} of ${f.pieces} pieces are cut from your stash">uses ${esc(stashUseText(f) || 'none of it')}</span>${unused ? ` <span class="muted">(${unused} not needed)</span>` : ''}`) + ' ' + stash;
       }
       h += `<tr><td><div class="fabcell">${swatchHtml(f.fab, 26)}<div><b>${fabricLetter(f.fab)}</b> · ${esc(fabricLabel(f.fab))}${fabricById(f.fab).directional ? ' <span class="pill">directional</span>' : ''}</div></div></td>
-        <td class="muted">${esc(f.sources.join(', '))}</td><td class="num">${f.pieces}</td><td class="num">${fmtYards(f.lengthIn)}</td>
+        <td class="muted">${esc(f.sources.join(', '))}</td><td class="num">${f.pieces}</td><td class="num">${neededText(f)}</td>
         <td class="num"><b>${buyText(f)}</b>${!f.format.yardage || f.format.width !== defaultFormat().width ? `<br><span class="muted">${esc(formatLabel(f.format))}</span>` : ''}${(() => { const o = f.stashOwned ? [] : formatOptions(f); return o.length ? `<br><span class="muted">or ${o.map(x => `<a href="#" data-act="useFormat" data-arg="${f.fab}|${x.key}">${esc(x.label)}</a>`).join(' · ')}</span>` : ''; })()}${f.fq && !f.stashOwned ? '<br><span class="pill info" title="Everything for this fabric fits in an 18 × 21 in fat quarter">fits a fat quarter</span>' : ''}</td><td>${stash}</td></tr>`;
     }
     const bk = plan.backing;
