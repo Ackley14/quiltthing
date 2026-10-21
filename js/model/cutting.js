@@ -220,33 +220,40 @@ function packRects(items, binW, binH) {
     free = next.filter((a, i) => a.w > 0.05 && a.h > 0.05 && !next.some((b, j) => j !== i &&
       a.x >= b.x - 1e-6 && a.y >= b.y - 1e-6 && a.x + a.w <= b.x + b.w + 1e-6 && a.y + a.h <= b.y + b.h + 1e-6 && (j < i || a.w * a.h < b.w * b.h - 1e-9)));
   }
-  return { placed, unplaced, usedH: placed.length ? Math.max(...placed.map(p => p.y + p.h)) : 0 };
+  return { placed, unplaced, free, usedH: placed.length ? Math.max(...placed.map(p => p.y + p.h)) : 0 };
 }
 
-// N cut hexagons of side s nested honeycomb-style across a WOF-wide band; picks the
-// orientation (flat-top columns or pointy-top rows) that uses the least length.
-function honeycombPack(N, s, wof) {
+// Up to N cut hexagons of side s nested honeycomb-style in a binW-wide bin (binH tall at most);
+// picks the orientation (flat-top columns or pointy-top rows) that places the most, then uses
+// the least length.
+function honeycombPack(N, s, wof, binH = Infinity) {
   const F = Math.sqrt(3) * s;
   const hex = (cx, cy, pointy) => Array.from({ length: 6 }, (_, k) => {
     const a = (pointy ? -90 : 0) + 60 * k;
     return [cx + s * Math.cos(a * Math.PI / 180), cy + s * Math.sin(a * Math.PI / 180)];
   });
   const opts = [];
+  const fits = (bottom) => bottom <= binH + 1e-6;
   const nc = Math.max(1, Math.floor((wof - 2 * s) / (1.5 * s)) + 1);        // flat-top columns
   if (2 * s <= wof) {
     const placed = [];
-    for (let i = 0; i < N; i++) { const c = i % nc, r = Math.floor(i / nc); placed.push([s + 1.5 * s * c, F / 2 + r * F + (c % 2 ? F / 2 : 0), false]); }
-    const rows = Math.ceil(N / nc);
-    opts.push({ placed, usedH: rows * F + (nc > 1 && N > 1 ? F / 2 : 0) });
+    for (let i = 0; placed.length < N && i < N * 2 + nc; i++) {
+      const c = i % nc, r = Math.floor(i / nc), y = F / 2 + r * F + (c % 2 ? F / 2 : 0);
+      if (fits(y + F / 2)) placed.push([s + 1.5 * s * c, y, false]); else if (c === 0) break;
+    }
+    opts.push({ placed, usedH: placed.length ? Math.max(...placed.map(q => q[1])) + F / 2 : 0 });
   }
   const nr = Math.max(1, Math.floor((wof - F / 2) / F));                     // pointy-top rows
   if (F <= wof) {
     const placed = [];
-    for (let i = 0; i < N; i++) { const r = Math.floor(i / nr), c = i % nr; placed.push([F / 2 + c * F + (r % 2 ? F / 2 : 0), s + r * 1.5 * s, true]); }
-    const rows = Math.ceil(N / nr);
-    opts.push({ placed, usedH: 2 * s + (rows - 1) * 1.5 * s });
+    for (let i = 0; placed.length < N; i++) {
+      const r = Math.floor(i / nr), c = i % nr, y = s + r * 1.5 * s;
+      if (!fits(y + s)) break;
+      placed.push([F / 2 + c * F + (r % 2 ? F / 2 : 0), y, true]);
+    }
+    opts.push({ placed, usedH: placed.length ? Math.max(...placed.map(q => q[1])) + s : 0 });
   }
-  const best = opts.sort((a, b) => a.usedH - b.usedH)[0] || { placed: [], usedH: 0 };
+  const best = opts.sort((a, b) => b.placed.length - a.placed.length || a.usedH - b.usedH)[0] || { placed: [], usedH: 0 };
   return { usedH: best.usedH, placed: best.placed.map(([x, y, pointy]) => {
     const poly = hex(x, y, pointy), bb = bounds(poly);
     return { x: bb.x, y: bb.y, w: bb.w, h: bb.h, rot: false, poly };
@@ -295,8 +302,7 @@ function computePlan(Q) {
     }
     const stripGroups = [...groupsW.entries()].sort((a, b) => b[0] - a[0]).map(([w, rs]) => {
       const units = rs.flatMap(r => Array.from({ length: r.units }, () => ({ len: r.recipe.sub, r })));
-      const strips = packStrips(units, wof);
-      return { w, recipes: rs, strips, count: strips.length, oversize: rs.some(r => r.recipe.oversize) };
+      return { w, recipes: rs, units, strips: [], partials: [], count: 0, oversize: rs.some(r => r.recipe.oversize) };
     });
     const angled = recs.filter(r => r.recipe.method === 'angled' || r.recipe.method === 'trap').map(r => {
       const per = Math.max(1, Math.floor((wof - r.recipe.trim) / r.recipe.step));
@@ -311,24 +317,19 @@ function computePlan(Q) {
       return { ...j, total, count: joinedStripCount(total, j.w, j.join) };
     });
     const templates = recs.filter(r => r.recipe.method === 'template');
-    const tplItems = templates.filter(r => !r.recipe.hexSide).flatMap(r => Array.from({ length: r.units }, () => ({ w: r.recipe.w, h: r.recipe.h, r, rot: !fabricById(f.fab).directional })));
-    const tplPack = tplItems.length ? packRects(tplItems, wof, 100000) : { placed: [], unplaced: [], usedH: 0 };
-    for (const r of templates.filter(r => r.recipe.hexSide)) {
-      const hp = honeycombPack(r.units, r.recipe.hexSide, wof);
-      for (const p of hp.placed) tplPack.placed.push({ ...p, y: p.y + tplPack.usedH, poly: translatePoly(p.poly, 0, tplPack.usedH), item: { r } });
-      tplPack.usedH += hp.usedH;
-    }
-    const lengthIn = sum(stripGroups, g => g.count * g.w) + sum(angled, a => a.count * a.recipe.w) + sum(tri60, a => a.count * a.recipe.w)
-      + sum(joinedPlans, j => j.count * j.w) + tplPack.usedH;
+    const sheet = layoutBin(cutDemand({ stripGroups, angled, tri60, joined: joinedPlans, templates }), wof, Infinity, !!fabricById(f.fab).directional);
+    for (const g of stripGroups) { const res = sheet.groups.get(g); g.strips = res.strips; g.partials = res.partials; g.count = res.strips.length; }
+    const tplPack = sheet.tplPack;
+    const lengthIn = sheet.H;
     const pieces = sum(recs, r => r.pieces) + joinedPlans.length;
     const withExtra = lengthIn * (1 + (doc.cutting.extra || 0) / 100);
     fabrics.push({
-      fab: f.fab, sources: [...f.sources], stripGroups, angled, tri60, joined: joinedPlans, templates, tplPack,
+      fab: f.fab, sources: [...f.sources], stripGroups, angled, tri60, joined: joinedPlans, templates, tplPack, sheet,
       lengthIn, buyIn: roundYardIn(withExtra, doc.cutting.roundTo), pieces, recipes: recs,
     });
   }
   fabrics.sort((a, b) => fabricIndex(a.fab) - fabricIndex(b.fab));
-  for (const f of fabrics) f.fq = f.lengthIn > 0 && f.lengthIn <= 18 ? fitsInPieces(f, [{ w: 21, h: 18, label: 'FQ' }]).ok : false;
+  for (const f of fabrics) f.fq = f.lengthIn > 0 && f.lengthIn <= 18 ? stashPlan(f, [{ w: 21, h: 18 }]).ok : false;
 
   // backing, batting
   const oh = doc.cutting.overhang ?? 4;
@@ -350,65 +351,189 @@ function computePlan(Q) {
 
 /* ---------- stash / fat-quarter fitting ---------- */
 // Every individual cut as a rectangle (approximate for angled/joined), for packing onto owned pieces.
-function cutRectsForFabric(f) {
-  const dir = !!fabricById(f.fab).directional;
-  const out = [];
-  for (const g of f.stripGroups) for (const r of g.recipes) for (let i = 0; i < r.units; i++) out.push({ w: r.recipe.sub, h: g.w, label: r.recipe.unitLabel, rot: !dir });
-  for (const a of [...f.angled, ...f.tri60]) for (let i = 0; i < a.units; i++) out.push({ w: a.recipe.step, h: a.recipe.w, label: a.recipe.makes, rot: !dir });
-  for (const j of f.joined) {
-    let left = j.total;
-    while (left > 0) { const len = Math.min(left, 20); out.push({ w: len + (j.join === 'diagonal' ? j.w : 0.5), h: j.w, label: `${j.src} strip`, rot: !dir }); left -= 20; }
-  }
-  for (const r of f.templates) for (let i = 0; i < r.units; i++) out.push({ w: r.recipe.w, h: r.recipe.h, label: r.recipe.makes, rot: !dir });
-  return out;
+/* ---------- laying the cuts out on the fabric ----------
+   Steps are cut in order down the length of a piece of fabric (the yardage you buy, or a piece
+   from your stash). Full-width strips come first in each step; what's left of every strip
+   becomes free space that later steps use before any new fabric: narrower strips are cut as
+   partial strips from it, and template pieces (hexagons nested honeycomb-style) are placed in
+   it. Positions are in inches on the fabric. */
+const LEFTOVER_MIN = 1.5;   // smaller scraps aren't worth reusing
+
+// What a fabric needs cut, as lists the layout consumes (so a piece of stash can take some
+// and the rest can go on to the next piece).
+function cutDemand(f) {
+  return {
+    groups: f.stripGroups.map(g => ({ ref: g, w: g.w, units: g.units.slice() })),
+    runs: [...f.angled, ...f.tri60].map(a => ({ ref: a, recipe: a.recipe, left: a.units })),
+    joined: f.joined.map(j => ({ ref: j, w: j.w, left: j.total, join: j.join })),
+    items: f.templates.filter(r => !r.recipe.hexSide).flatMap(r => Array.from({ length: r.units }, () => ({ w: r.recipe.w, h: r.recipe.h, r }))),
+    hexes: f.templates.filter(r => r.recipe.hexSide).map(r => ({ r, left: r.units })),
+  };
 }
-function fitsInPieces(f, pieces) {
-  let remaining = cutRectsForFabric(f);
-  const total = remaining.length;
-  const bins = [];
-  for (const p of pieces) {
-    if (!remaining.length) { bins.push({ piece: p, placed: [] }); continue; }
-    const r = packRects(remaining, Math.max(p.w, p.h), Math.min(p.w, p.h));
-    bins.push({ piece: p, placed: r.placed, w: Math.max(p.w, p.h), h: Math.min(p.w, p.h) });
-    remaining = r.unplaced;
+// Pieces still to cut (units × what each unit makes; joined strips count once each).
+function demandPieces(d) {
+  return sum(d.groups, g => sum(g.units, u => u.r.recipe.yield || 1)) + sum(d.runs, a => a.left)
+    + d.joined.filter(j => j.left > 1e-6).length + d.items.length + sum(d.hexes, h => h.left);
+}
+
+// Lay what's left of `d` onto a W-wide piece of fabric at most Hmax long, using it up as it goes.
+function layoutBin(d, W, Hmax, directional) {
+  const bands = [], partials = [], tplPlaced = [], groups = new Map(), runs = new Map(), joinedCount = new Map();
+  let free = [], y = 0;
+  const keep = fr => fr.w >= LEFTOVER_MIN - 1e-6 && fr.h >= LEFTOVER_MIN - 1e-6;
+  const addFree = fr => { if (keep(fr)) free.push(fr); };
+  const room = h => y + h <= Hmax + 1e-6;
+  // rotary strips, widest first: partial strips from leftovers, then full strips
+  for (const g of d.groups) {
+    const res = { strips: [], partials: [] };
+    groups.set(g.ref, res);
+    let units = g.units.slice().sort((a, b) => b.len - a.len);
+    for (const fr of free.slice().sort((a, b) => a.h - b.h || b.w - a.w)) {
+      while (units.length && fr.h >= g.w - 1e-6) {
+        let used = 0;
+        const cuts = [];
+        units = units.filter(u => { if (used + u.len <= fr.w + 1e-6) { cuts.push({ x: fr.x + used, w: u.len, recipe: u.r.recipe }); used += u.len; return false; } return true; });
+        if (!cuts.length) break;
+        const ps = { x: fr.x, y: fr.y, w: used, h: g.w, cuts, from: fr.from, group: g.ref };
+        res.partials.push(ps); partials.push(ps);
+        if (fr.w - used >= LEFTOVER_MIN) free.push({ x: fr.x + used, y: fr.y, w: fr.w - used, h: g.w, from: fr.from });
+        fr.y += g.w; fr.h -= g.w;
+      }
+    }
+    free = free.filter(keep);
+    for (const st of packStrips(Hmax === Infinity ? units : units.filter(u => u.len <= W + 1e-6), W)) {   // oversize cuts stay on the main plan (flagged there)
+      if (!room(g.w)) break;
+      let x = 0;
+      bands.push({ y, h: g.w, kind: 'strip', ref: g.ref, cuts: st.cuts.map(c => { const o = { x, w: c.len, recipe: c.r.recipe }; x += c.len; return o; }) });
+      res.strips.push(st);
+      for (const c of st.cuts) units.splice(units.indexOf(c), 1);
+      addFree({ x: st.used, y, w: W - st.used, h: g.w, from: g.ref });
+      y += g.w;
+    }
+    g.units = units;
   }
-  return { ok: remaining.length === 0, total, short: remaining.length, bins };
+  // angled and 60° strips; the end of the last strip is left over
+  for (const a of d.runs) {
+    const r = a.recipe;
+    const per = r.method === 'tri60' ? Math.max(1, Math.floor((W - r.first + r.step) / r.step)) : Math.max(1, Math.floor((W - (r.trim || 0)) / r.step));
+    let count = 0;
+    while (a.left > 0 && room(r.w)) {
+      const n = Math.min(a.left, per);
+      a.left -= n; count++;
+      bands.push({ y, h: r.w, kind: r.method, ref: a.ref, recipe: r, n });
+      const used = r.method === 'tri60' ? Math.ceil(n / 2) * (r.w * 2 / Math.sqrt(3)) + r.w / Math.sqrt(3)
+        : r.method === 'trap' ? n * Math.max(r.a, r.b) : (r.trim || 0) + n * r.step + r.w;
+      addFree({ x: Math.min(W, used), y, w: W - used, h: r.w, from: a.ref });
+      y += r.w;
+    }
+    runs.set(a.ref, { count, perStrip: per });
+  }
+  // joined strips (borders, binding): pieced from strips W long; the end of the last one is left over
+  for (const j of d.joined) {
+    const loss = j.join === 'diagonal' ? j.w : 2 * doc.cutting.seam;
+    let count = 0;
+    while (j.left > 1e-6 && room(j.w)) {
+      bands.push({ y, h: j.w, kind: 'joined', ref: j.ref, label: j.ref.src });
+      j.left -= count ? W - loss : W;
+      count++;
+      if (j.left <= 1e-6) addFree({ x: W + j.left, y, w: -j.left, h: j.w, from: j.ref });
+      y += j.w;
+    }
+    joinedCount.set(j.ref, count);
+  }
+  // templates: the leftovers and the rest of the fabric below the strips form one list of free
+  // rectangles (overlapping maximal rectangles, MaxRects-style). Pieces go top-first, so they
+  // fill leftovers before new fabric, and nest beside each other as well as below.
+  const tplY = y;
+  if (Hmax - y > 0.5) free.push({ x: 0, y, w: W, h: Hmax === Infinity ? 100000 : Hmax - y, from: null });
+  const occupy = b => { free = splitFree(free, b).filter(keep); };
+  const topFirst = () => free.slice().sort((a, b) => a.y - b.y || b.w * b.h - a.w * a.h);
+  let todo = d.items.map(it => ({ ...it, rot: !directional }));
+  for (const fr of topFirst()) {
+    if (!todo.length) break;
+    if (!free.includes(fr)) continue;
+    const pk = packRects(todo, fr.w, fr.h);
+    if (!pk.placed.length) continue;
+    for (const p of pk.placed) {
+      tplPlaced.push({ ...p, x: p.x + fr.x, y: p.y + fr.y, from: fr.from });
+      occupy({ x: p.x + fr.x, y: p.y + fr.y, w: p.w, h: p.h });
+    }
+    todo = pk.unplaced;
+  }
+  // hexagons: fill gaps above what's already used, then honeycomb rows across the full width below
+  const bottom = () => Math.max(y, ...tplPlaced.map(p => p.y + p.h));
+  const placeHex = (hx, x0, y0, w, h, from) => {
+    const hp = honeycombPack(hx.left, hx.r.recipe.hexSide, w, h);
+    if (!hp.placed.length) return false;
+    const polys = hp.placed.map(p => translatePoly(p.poly, x0, y0));
+    hp.placed.forEach((p, k) => tplPlaced.push({ ...p, x: p.x + x0, y: p.y + y0, poly: polys[k], item: { r: hx.r }, from }));
+    hx.left -= hp.placed.length;
+    const bb = bounds(polys.flat());
+    occupy({ x: bb.minX, y: bb.minY, w: bb.w, h: bb.h });
+    return true;
+  };
+  for (const hx of d.hexes) {
+    // each round, use the free area where a hexagon costs the least extra fabric length
+    // (gaps and space beside other pieces cost nothing; a narrow column costs a lot)
+    for (let guard = 0; hx.left && guard < 200; guard++) {
+      const b = bottom();
+      let best = null;
+      for (const f of free) {
+        const hp = honeycombPack(hx.left, hx.r.recipe.hexSide, f.w, f.h);
+        if (!hp.placed.length) continue;
+        const score = Math.max(0, f.y + hp.usedH - b) / hp.placed.length;
+        if (!best || score < best.score - 1e-9 || (score < best.score + 1e-9 && hp.placed.length > best.n)) best = { f, score, n: hp.placed.length };
+      }
+      if (!best || !placeHex(hx, best.f.x, best.f.y, best.f.w, best.f.h, best.f.from)) break;
+    }
+  }
+  d.items = todo.map(({ rot, ...it }) => it);
+  const tplH = Math.max(0, ...tplPlaced.map(p => p.y + p.h)) - tplY;
+  return { W, bands, partials, tplPlaced, tplY, H: Math.max(tplY, tplY + tplH), groups, runs, joinedCount };
+}
+
+// Remove box b from a list of (possibly overlapping) free rectangles, keeping the maximal pieces.
+function splitFree(free, b) {
+  const next = [];
+  for (const f of free) {
+    if (b.x >= f.x + f.w - 1e-6 || b.x + b.w <= f.x + 1e-6 || b.y >= f.y + f.h - 1e-6 || b.y + b.h <= f.y + 1e-6) { next.push(f); continue; }
+    if (b.x > f.x + 1e-6) next.push({ ...f, w: b.x - f.x });
+    if (b.x + b.w < f.x + f.w - 1e-6) next.push({ ...f, x: b.x + b.w, w: f.x + f.w - b.x - b.w });
+    if (b.y > f.y + 1e-6) next.push({ ...f, h: b.y - f.y });
+    if (b.y + b.h < f.y + f.h - 1e-6) next.push({ ...f, y: b.y + b.h, h: f.y + f.h - b.y - b.h });
+  }
+  return next.filter((a, i) => !next.some((c, j) => j !== i && a.x >= c.x - 1e-6 && a.y >= c.y - 1e-6 && a.x + a.w <= c.x + c.w + 1e-6 && a.y + a.h <= c.y + c.h + 1e-6 && (j < i || a.w * a.h < c.w * c.h - 1e-9)));
+}
+
+// The stash check: lay a fabric's cuts onto the pieces you own, one after another, with the
+// same layout as the cutting maps, then work out what you'd still need to buy.
+function stashPlan(f, pieces) {
+  const d = cutDemand(f), dir = !!fabricById(f.fab).directional, total = demandPieces(d);
+  const bins = pieces.map(p => {
+    const W = Math.max(p.w, p.h), H = Math.min(p.w, p.h), before = demandPieces(d);
+    const L = layoutBin(d, W, H, dir);
+    return { piece: p, W, H, L, pieces: before - demandPieces(d) };
+  });
+  const left = demandPieces(d);
+  let buyIn = 0;
+  if (left) buyIn = roundYardIn(layoutBin(d, doc.cutting.wof, Infinity, dir).H * (1 + (doc.cutting.extra || 0) / 100), doc.cutting.roundTo);
+  return { bins, ok: !left, total, covered: total - left, buyIn };
 }
 
 /* ---------- the cutting map: where every cut sits on the actual piece of fabric ----------
    Bands run across the full width of fabric, stacked down its length in cutting order.
    Each cut carries the instruction step number it belongs to. */
-function fabricSheet(f) {
-  const wof = doc.cutting.wof;
+function fabricSheet(f) { return sheetFromLayout(f, f.sheet, doc.cutting.wof, f.sheet.H, f.buyIn); }
+// A drawable map for a layout (the yardage, or one stash piece), with each cut carrying the
+// number of the cutting step it belongs to.
+function sheetFromLayout(f, L, W, H, buyIn) {
   const rows = fabricInstructions(f);
-  const bands = [];
-  let y = 0;
-  rows.forEach((row, ri) => {
-    const step = ri + 1;
-    if (row.kind === 'strip') {
-      for (const st of row.group.strips) {
-        let x = 0;
-        const cuts = st.cuts.map(c => { const o = { x, w: c.len, recipe: c.r.recipe, step }; x += c.len; return o; });
-        bands.push({ y, h: row.group.w, step, kind: 'strip', cuts });
-        y += row.group.w;
-      }
-    } else if (row.kind === 'angled' || row.kind === 'tri60') {
-      const a = row.a, r = a.recipe;
-      let left = a.units;
-      for (let k = 0; k < a.count; k++) {
-        const n = Math.min(left, a.perStrip);
-        left -= n;
-        bands.push({ y, h: r.w, step, kind: r.method, recipe: r, n });
-        y += r.w;
-      }
-    } else if (row.kind === 'joined') {
-      for (let k = 0; k < row.j.count; k++) { bands.push({ y, h: row.j.w, step, kind: 'joined', label: row.j.src }); y += row.j.w; }
-    }
-  });
-  const tplStep = new Map(rows.map((r, i) => [r.r, i + 1]).filter(([r]) => r));
-  const tpl = f.tplPack.placed.length ? { y, h: f.tplPack.usedH, placed: f.tplPack.placed.map(p => ({ ...p, step: tplStep.get(p.item.r) })) } : null;
-  if (tpl) y += tpl.h;
-  return { W: wof, H: y, bands, tpl, rows, buyIn: f.buyIn };
+  const stepOf = ref => rows.findIndex(r => r.group === ref || r.a === ref || r.j === ref || r.r === ref) + 1;
+  const bands = L.bands.map(b => ({ ...b, step: stepOf(b.ref) }));
+  const partials = L.partials.map(p => ({ ...p, step: stepOf(p.group) }));
+  const placed = L.tplPlaced.map(p => ({ ...p, step: stepOf(p.item.r) }));
+  const tpl = placed.length ? { y: L.tplY, h: L.H - L.tplY, placed, abs: true } : null;
+  return { W, H, bands, partials, tpl, rows, buyIn };
 }
 
 /* ---------- human-readable cutting instructions ---------- */
@@ -424,12 +549,23 @@ function cutVerb(recipe, units) {
 }
 function fabricInstructions(f) {
   const rows = [];
+  const stepOf = ref => rows.findIndex(r => r.group === ref || r.a === ref || r.j === ref || r.r === ref) + 1;
+  // "from the leftover of step 2: …" lines, grouped by the step they come from
+  const fromLeftovers = (list, what) => {
+    const by = new Map();
+    for (const x of list) { const k = stepOf(x.from); by.set(k, [...(by.get(k) || []), x]); }
+    return [...by.entries()].sort((a, b) => a[0] - b[0]).map(([k, xs]) => `From the leftover of step ${k}: ${what(xs)}`);
+  };
   for (const g of f.stripGroups) {
     const parts = g.recipes.map(r => {
       const v = cutVerb(r.recipe, r.units);
       return `${r.units} × ${r.recipe.unitLabel}${v ? ` — ${v}` : ''}`;
     });
-    rows.push({ kind: 'strip', head: `Cut ${plural(g.count, 'strip')} ${fmtLen(g.w, 'up')} × WOF`, parts, group: g });
+    const np = g.partials.length;
+    if (np) parts.unshift(...fromLeftovers(g.partials, xs => `cut ${xs.map(x => `a ${fmtLen(g.w, 'up')} × ${fmtLen(x.w, 'up')} ${x.w < g.w * 1.5 ? 'piece' : 'strip'}`).join(', ')}.`));
+    const head = g.count && np ? `Cut ${plural(g.count, 'strip')} ${fmtLen(g.w, 'up')} × WOF, plus ${plural(np, 'shorter strip')} from leftovers`
+      : g.count ? `Cut ${plural(g.count, 'strip')} ${fmtLen(g.w, 'up')} × WOF` : `Cut ${plural(np, 'strip')} ${fmtLen(g.w, 'up')} wide from leftovers`;
+    rows.push({ kind: 'strip', head, parts, group: g });
   }
   for (const a of f.angled) {
     if (a.recipe.method === 'trap') {
@@ -453,7 +589,12 @@ function fabricInstructions(f) {
     rows.push({ kind: 'joined', head: `Cut ${plural(j.count, 'strip')} ${fmtLen(j.w, 'up')} × WOF for ${j.src.toLowerCase()}`, parts: [desc], j });
   }
   for (const r of f.templates) {
-    rows.push({ kind: 'template', head: `Cut ${r.units} × ${r.recipe.makes.toLowerCase()} from template`, parts: [r.recipe.applique ? (doc.cutting.appMethod === 'fusible' ? 'Fusible appliqué: trace the reversed template onto fusible web, fuse it to the wrong side of the fabric and cut on the line.' : 'Appliqué piece: add a scant ¼" turn-under allowance as you cut.') : 'Trace the template, cut on the dashed (seam allowance) line.'], r });
+    const inLeft = (f.sheet?.tplPlaced || []).filter(p => p.item.r === r && p.from);
+    rows.push({ kind: 'template', head: `Cut ${r.units} × ${r.recipe.makes.toLowerCase()} from template`, parts: [
+      ...(inLeft.length ? [(() => {
+        const n = inLeft.length, st = uniq(inLeft.map(p => stepOf(p.from))).sort((a, b) => a - b);
+        return `${n === r.units ? (n === 1 ? 'It fits' : 'All of them fit') : `${n} of them ${n === 1 ? 'fits' : 'fit'}`} in the leftover${st.length > 1 ? 's' : ''} from step${st.length > 1 ? 's' : ''} ${st.join(', ')} — see the map.`;
+      })()] : []),r.recipe.applique ? (doc.cutting.appMethod === 'fusible' ? 'Fusible appliqué: trace the reversed template onto fusible web, fuse it to the wrong side of the fabric and cut on the line.' : 'Appliqué piece: add a scant ¼" turn-under allowance as you cut.') : 'Trace the template, cut on the dashed (seam allowance) line.'], r });
   }
   return rows;
 }

@@ -21,7 +21,7 @@ function fabricSheetSvg(sheet, fab, opts = {}) {
     s += `<rect x="0" y="${need}" width="${W}" height="${round(H - need, 3)}" fill="none" stroke="#9aa3ad" stroke-width="${hair}" stroke-dasharray="${hair * 6} ${hair * 4}"/>`;
     if (H - need > fs * 1.4) s += `<text x="${W / 2}" y="${need + (H - need) / 2}" font-size="${fs * .9}" text-anchor="middle" dominant-baseline="central" fill="#6b7785">extra to buy (shrinkage, mistakes, rounding)</text>`;
   }
-  s += `<text x="${W / 2}" y="${-MT * .45}" font-size="${fs}" text-anchor="middle" fill="#4f5d6b">← ${esc(fmtLen(W))} width of fabric (selvage to selvage) →</text>`;
+  s += `<text x="${W / 2}" y="${-MT * .45}" font-size="${fs}" text-anchor="middle" fill="#4f5d6b">${esc(opts.title || `← ${fmtLen(W)} width of fabric (selvage to selvage) →`)}</text>`;
   // length ruler on the right: every ¼ yd (or 10 cm)
   const tick = displayUnits === 'cm' ? 10 / CM_PER_IN : 9;
   for (let t = 0, k = 0; t <= H + 1e-6; t += tick, k++) {
@@ -70,10 +70,22 @@ function fabricSheetSvg(sheet, fab, opts = {}) {
       if (h > fs * 1.2) s += `<text x="${W / 2}" y="${round(y + h / 2, 3)}" font-size="${fs * .85}" text-anchor="middle" dominant-baseline="central" fill="${ink}" pointer-events="none">${esc(b.label.toLowerCase())} strip</text>`;
     }
   }
+  // shorter strips cut from leftovers, with their step number at the start
+  for (const ps of sheet.partials || []) {
+    s += `<rect x="${round(ps.x, 3)}" y="${round(ps.y, 3)}" width="${round(ps.w, 3)}" height="${round(ps.h, 3)}" fill="none" stroke="#6b7785" stroke-width="${hair}" stroke-dasharray="${hair * 4} ${hair * 3}"/>`;
+    for (const c of ps.cuts) {
+      s += poly(rectPts(c.x, ps.y, c.w, ps.h), ps.step);
+      if (Math.min(c.w, ps.h) > fs * 2.4) s += `<text x="${round(c.x + c.w / 2, 3)}" y="${round(ps.y + ps.h / 2, 3)}" font-size="${fs * .85}" text-anchor="middle" dominant-baseline="central" fill="${ink}" pointer-events="none">${esc(shortLen(c.w, 'up'))}${Math.abs(c.w - ps.h) > 1e-3 ? `×${esc(shortLen(ps.h, 'up'))}` : ''}</text>`;
+    }
+    s += badge(ps.x + fs * 0.9, ps.y + Math.min(ps.h / 2, fs * 0.9), ps.step, fs * 0.7);
+  }
   if (sheet.tpl) {
     const t = sheet.tpl;
-    s += badge(-ML / 2, t.y + fs, t.placed[0]?.step || '', Math.min(ML * .36, fs * .95));
+    if (sheet.H > t.y + 1e-6) s += badge(-ML / 2, t.y + fs, t.placed.find(p => p.y >= t.y - 1e-6)?.step || t.placed[0]?.step || '', Math.min(ML * .36, fs * .95));
+    const marked = new Set();
     for (const p of t.placed) {
+      // pieces placed in leftovers get their step number beside the first one
+      if (p.from && !marked.has(p.step + '|' + p.from)) { marked.add(p.step + '|' + p.from); s += badge(p.x + fs * 0.8, p.y + fs * 0.8, p.step, fs * 0.7); }
       let o;
       if (p.poly) o = p.poly;
       else {
@@ -81,7 +93,7 @@ function fabricSheetSvg(sheet, fab, opts = {}) {
         if (p.rot) o = translatePoly(rotatePoly(o, Math.PI / 2), p.item.r.recipe.cutBox.h, 0);
         o = translatePoly(o, p.x, p.y);
       }
-      s += poly(translatePoly(o, 0, t.y), p.step);
+      s += poly(t.abs ? o : translatePoly(o, 0, t.y), p.step);
     }
   }
   return s + '</svg>';
