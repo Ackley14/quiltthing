@@ -14,15 +14,13 @@ function fabricsSection() {
   const bgId = doc.layout.background;
   let chips = '';
   doc.fabrics.forEach((f, i) => {
-    chips += `<button class="fab-chip${f.id === bgId ? ' is-bg' : ''}" draggable="true" aria-pressed="${ui.fabric === f.id}" data-act="pickFabric" data-arg="${f.id}" title="${esc(f.name)} (${letterFor(i)})${f.id === bgId ? ' · background' : ''}. Double-click to edit.">
+    chips += `<button class="fab-chip${f.id === bgId ? ' is-bg' : ''}" draggable="true" aria-pressed="${ui.fabric === f.id}" data-act="pickFabric" data-arg="${f.id}" title="${letterFor(i)} · ${esc(f.name)}${f.id === bgId ? ' (background)' : ''}${ui.fabric === f.id ? '. Click again to edit.' : ''}">
       ${swatchHtml(f.id, 40)}<span class="lt" style="color:${inkOn(f.color)};text-shadow:0 0 2px ${inkOn(f.color) === '#ffffff' ? 'rgba(0,0,0,.6)' : 'rgba(255,255,255,.9)'}">${letterFor(i)}</span>${ui.grayscale ? `<span class="val">${valueLetter(f.color)}</span>` : ''}</button>`;
   });
   chips += `<button class="fab-chip add" data-act="addFabric" title="Add a fabric" aria-label="Add a fabric">${icon('plus', 18)}</button>`;
   // painting with "Background" lets pieces follow whatever the quilt background is
   if (ui.view === 'block') chips += `<button class="fab-chip bgpaint" aria-pressed="${ui.fabric === BG}" data-act="pickFabric" data-arg="${BG}" title="Background: pieces follow the quilt's background fabric">BG</button>`;
-  const f = selFabric();
-  const right = f ? `<button class="icon-btn sm" data-act="fabricPopover" data-arg="${f.id}" title="Edit ${esc(f.name)}" aria-label="Edit ${esc(f.name)}">${icon('edit', 14)}</button>` : '';
-  return section('Fabrics', `<div class="fabrics">${chips}</div>`, { key: 'fabrics', right });
+  return section('Fabrics', `<div class="fabrics">${chips}</div>`, { key: 'fabrics' });
 }
 
 // How this fabric comes (its own width, precuts, or pieces of a set size); default = the shared setting.
@@ -80,14 +78,16 @@ function renderFabricPopover() {
 }
 Actions.fabricPopover = id => { ui.fabPop = ui.fabPop === id ? null : id; if (ui.fabPop) ui.fabric = id; renderSidebar(); };
 Actions.closeFabricPopover = () => { ui.fabPop = null; renderFabricPopover(); };
-document.addEventListener('dblclick', e => { const c = e.target.closest?.('.fab-chip[data-act="pickFabric"]'); if (c && c.dataset.arg !== BG) Actions.fabricPopover(c.dataset.arg); });
 document.addEventListener('pointerdown', e => {
   if (!ui?.fabPop || e.target.closest?.('#fab-pop, .fab-chip, .menu, #modal-root .modal, [data-act="fabricPopover"]')) return;
   ui.fabPop = null; renderFabricPopover();
 }, true);
 
 const selFabric = () => doc.fabrics.find(x => x.id === ui.fabric);
-Actions.pickFabric = id => { ui.fabric = id; if (ui.fabPop && id !== BG) ui.fabPop = id; saveUi(); Views[ui.view]?.onFabricPick?.(id); render(); };
+Actions.pickFabric = (id, el) => {
+  // clicking the fabric that's already chosen opens its settings
+  if (id === ui.fabric && id !== BG && el?.closest?.('#sidebar')) { Actions.fabricPopover(id); return; }
+  ui.fabric = id; if (ui.fabPop && id !== BG) ui.fabPop = id; saveUi(); Views[ui.view]?.onFabricPick?.(id); render(); };
 Actions.addFabric = () => {
   const base = selFabric()?.color || '#1f3a5f';
   const [h, s, l] = hexToHsl(base);
@@ -201,19 +201,15 @@ function myBlocksSection() {
     grid += `<button class="blk${target ? ' target' : ''}" draggable="${ui.view === 'layout'}" aria-pressed="${(ui.view === 'layout' ? placeBlock()?.id : ui.activeBlock) === id}" data-act="pickBlock" data-arg="${id}" title="${esc(b.name)}${n ? ` · used ${n}×` : ''}">
       ${blockThumb(b, 72)}<div class="nm">${esc(b.name)}</div></button>`;
   }
-  const right = `<button class="btn small quiet" data-act="libraryPicker">Library</button><button class="btn small" data-act="addBlockMenu" aria-haspopup="menu">${icon('plus', 14)} Add</button>`;
+  const right = `<button class="btn small" data-act="addBlockMenu" aria-haspopup="menu">${icon('plus', 14)} Add ${icon('down', 12)}</button>`;
   const hint = fillingSlot ? `<p class="hint">Pick a block for slot ${ui.activeSlot + 1}.</p>` : '';
   return section('My blocks', `${hint}${grid ? `<div class="blocks">${grid}</div>` : `<div class="empty-state"><p>No blocks yet.</p><button class="btn primary" data-act="libraryPicker">Browse classic blocks</button></div>`}`, { key: 'myblocks', right });
 }
 Actions.addBlockMenu = (a, el) => openMenu(el, [
   { label: 'From the library…', act: 'libraryPicker' },
-  { label: 'Draw a new block', act: 'newBlock' },
+  { label: 'New block', act: 'newBlock' },
   { label: 'Hexagon block', act: 'newHexBlock' },
   { label: 'Combination of blocks', act: 'newCompound' },
-  '-',
-  { label: 'Import blocks…', act: 'importBlocks' },
-  ...(activeBlock() ? [{ label: `Export ${esc(activeBlock().name)}…`, act: 'exportBlocks', arg: 'one' }] : []),
-  ...(doc.blockOrder.length > 1 ? [{ label: `Export all ${doc.blockOrder.length} blocks…`, act: 'exportBlocks', arg: 'all' }] : []),
 ]);
 Actions.pickBlock = id => {
   const host = activeBlock();
@@ -322,6 +318,7 @@ function libraryFolders() {
     <div class="seg lib-format" role="group" aria-label="Format">${[['all', 'All shapes'], ['square', 'Square'], ['hex', 'Hexagon']].map(([k, l]) => `<button data-act="libFormat" data-arg="${k}" aria-pressed="${fmt === k}">${l}</button>`).join('')}</div>`;
 }
 Actions.libraryPicker = () => {
+  if (!LIB_CATEGORIES.some(([k]) => k === ui.libCat)) ui.libCat = 'all';
   openModal(`<h2>Block library</h2>
     <div class="lib-tools"><input type="text" placeholder="Search" value="${esc(ui.libSearch)}" data-input="libSearch" aria-label="Search blocks"></div>
     <div id="lib-folders">${libraryFolders()}</div>
@@ -331,7 +328,7 @@ Actions.libraryPicker = () => {
 };
 const refreshLibrary = () => { $('#lib-grid') && ($('#lib-grid').innerHTML = libraryGrid()); $('#lib-folders') && ($('#lib-folders').innerHTML = libraryFolders()); };
 Actions.libSearch = v => { ui.libSearch = v; const g = $('#lib-grid'); if (g) g.innerHTML = libraryGrid(); };
-Actions.libCat = v => { ui.libCat = v; if (v === 'hex') ui.libFormat = 'all'; saveUi(); refreshLibrary(); };
+Actions.libCat = v => { ui.libCat = v; saveUi(); refreshLibrary(); };
 Actions.libFormat = v => { ui.libFormat = v; saveUi(); refreshLibrary(); };
 Actions.useLibrary = pid => {
   const p = LIBRARY.find(x => x.id === pid);

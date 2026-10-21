@@ -4,7 +4,7 @@
 
 const LIB_CATEGORIES = [
   ['all', 'All'], ['classic', 'Classic'], ['star', 'Stars'], ['tri', 'Geese & triangles'],
-  ['strip', 'Strips & logs'], ['curve', 'Curves'], ['modern', 'Modern & pictures'], ['app', 'Appliqué'], ['hex', 'Hexagon blocks'],
+  ['strip', 'Strips & logs'], ['curve', 'Curves'], ['modern', 'Modern & pictures'], ['app', 'Appliqué'],
 ];
 
 const LIBRARY = (() => {

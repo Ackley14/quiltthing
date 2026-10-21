@@ -1,17 +1,18 @@
 /* Quilting view: stack of generated quilting-line layers previewed over the quilt. */
 
 Views.quilting = {
+  toolbar() {
+    const back = ui.qSide === 'back';
+    return `<button class="tool fab-drop" data-act="addLayerMenu" aria-haspopup="menu">${icon('plus', 14)} Add quilting ${icon('down', 12)}</button><span class="sep"></span>
+      <div class="seg" role="group" aria-label="Side"><button aria-pressed="${!back}" data-act="qSide" data-arg="front">Front</button><button aria-pressed="${back}" data-act="qSide" data-arg="back">Back</button></div>`;
+  },
   main() {
     const Q = Qnow();
     const layers = doc.quilting.layers;
     const stats = quiltingStats(Q);
     const back = ui.qSide === 'back';
     const bk = back ? cuttingPlan(Q).backing : null, bf = doc.layout.backing?.fabric;
-    return `<div class="stage"><div class="toolbar">
-        <div class="seg" role="group" aria-label="Side"><button aria-pressed="${!back}" data-act="qSide" data-arg="front">Front</button><button aria-pressed="${back}" data-act="qSide" data-arg="back">Back</button></div><div class="spacer"></div>
-        ${back ? '' : `<button class="tool" data-act="toggleUi" data-arg="qFade" aria-pressed="${!!ui.qFade}">Fade quilt</button>`}
-        <button class="tool" data-act="toggleUi" data-arg="grayscale" aria-pressed="${!!ui.grayscale}" title="Value view (G)">Value</button></div>
-      <div class="canvas-wrap">${back ? quiltBackSvg(Q) : quiltSvg(Q, { faded: !!ui.qFade, quilting: quiltingSvg(Q) })}</div>
+    return `<div class="stage"><div class="canvas-wrap">${back ? quiltBackSvg(Q) : quiltSvg(Q, { faded: !!ui.qFade, quilting: quiltingSvg(Q) })}</div>
       <div class="status-bar">${back ? `Back of the quilt, stitching mirrored. ${bf ? esc(fabricLabel(bf)) : 'No backing fabric chosen'} · ${esc(bk.chosen.title.toLowerCase())}. <a href="#" data-act="view" data-arg="fabric">Backing settings</a>` : layers.length
         ? `About <b>${Math.round(stats.total / 36)} yd</b> of stitching · <b>${Math.ceil(stats.threadYds / 50) * 50} yd</b> of thread, top and bobbin`
         : 'Add a quilting pattern on the right.'}</div></div>`;
@@ -21,16 +22,16 @@ Views.quilting = {
     const Q = Qnow();
     const stats = quiltingStats(Q);
     const open = layers.find(L => L.id === ui.qOpen) ? ui.qOpen : null;
-    let h = `<section class="sec add-q"><label class="f">Add quilting<select data-change="addQuiltLayer"><option value="">Choose a pattern…</option>${QUILT_TYPES.map(t => `<option value="${t.key}">${t.label}</option>`).join('')}</select></label></section>`;
+    let h = `<section class="sec add-q"><div class="layers-h"><h3>Quilting layers</h3></div>${layers.length ? '' : '<p class="hint">Use Add quilting above to plan the stitching.</p>'}</section>`;
     layers.forEach((L, i) => {
       const t = quiltType(L.type);
       const p = `quilting.layers.${i}`;
       const len = stats.per[i]?.length || 0;
       const where = (QUILT_AREAS.find(([k]) => k === L.area) || [null, ''])[1];
       const head = `<div class="layer-row"><span class="layer-sw" style="background:${L.color}"></span><span class="nm"><b>${t.label}</b> <span class="muted">${esc(where.toLowerCase())}</span></span>
-        <button class="icon-btn sm" data-act="qToggleShow" data-arg="${i}" title="${L.visible ? 'Hide' : 'Show'}" aria-label="${L.visible ? 'Hide' : 'Show'} ${t.label}">${icon(L.visible ? 'eye' : 'x', 14)}</button></div>`;
-      if (L.id !== open) { h += `<section class="sec layer closed"><div class="sec-h" data-act="qOpen" data-arg="${L.id}" role="button" aria-expanded="false">${head}</div></section>`; return; }
-      h += `<section class="sec layer"><div class="sec-h" data-act="qOpen" data-arg="${L.id}" role="button" aria-expanded="true">${head}</div><div class="sec-b">
+        <button class="icon-btn sm" data-act="qToggleShow" data-arg="${i}" title="${L.visible ? 'Hide' : 'Show'}" aria-label="${L.visible ? 'Hide' : 'Show'} ${t.label}">${icon(L.visible ? 'eye' : 'eyeoff', 14)}</button></div>`;
+      if (L.id !== open) { h += `<section class="sec layer closed"><div class="sec-h" data-act="qOpen" data-arg="${L.id}" role="button" tabindex="0" aria-expanded="false">${head}</div></section>`; return; }
+      h += `<section class="sec layer"><div class="sec-h" data-act="qOpen" data-arg="${L.id}" role="button" tabindex="0" aria-expanded="true">${head}</div><div class="sec-b">
         <div class="f-row"><label class="f">Pattern<select data-bind="${p}.type">${QUILT_TYPES.map(x => `<option value="${x.key}" ${x.key === L.type ? 'selected' : ''}>${x.label}</option>`).join('')}</select></label>
         <label class="f">Where<select data-bind="${p}.area">${QUILT_AREAS.filter(([k]) => L.area === k || areaAvail(Q, k)).map(([k, l]) => `<option value="${k}" ${L.area === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
         ${['panel', 'aroundPanel'].includes(L.area) && !Q.panels.length ? '<p class="hint warn">This quilt has no inset panel.</p>' : ''}
@@ -44,14 +45,16 @@ Views.quilting = {
         ${appliquePolys(Q).length ? `<label class="check"><input type="checkbox" data-bind="${p}.skipApp" data-type="bool" ${L.skipApp !== false ? 'checked' : ''}> ${L.type === 'ditch' ? "Don't cross appliqué" : 'Go around appliqué'}</label>` : ''}
         ${L.type === 'ditch' && appliquePolys(Q).length ? `<label class="check"><input type="checkbox" data-bind="${p}.outlineApp" data-type="bool" ${L.outlineApp !== false ? 'checked' : ''}> Stitch around appliqué</label>` : ''}
         <p class="hint">${esc(t.help)} About ${Math.round(len / 36)} yd of stitching.</p>
-        <div class="btn-row layer-actions"><input type="color" value="${L.color}" data-change="qColor" data-arg="${i}" aria-label="Line colour" title="Line colour on screen">
+        <div class="btn-row layer-actions"><label class="color-dot" title="Line colour on screen" style="background:${L.color}"><input type="color" value="${L.color}" data-change="qColor" data-arg="${i}" aria-label="Line colour"></label>
           <button class="icon-btn sm" data-act="qMove" data-arg="${i}|-1" ${i ? '' : 'disabled'} title="Move up" aria-label="Move up">${icon('up', 14)}</button><button class="icon-btn sm" data-act="qMove" data-arg="${i}|1" ${i < layers.length - 1 ? '' : 'disabled'} title="Move down" aria-label="Move down">${icon('down', 14)}</button>
           <span class="spacer"></span><button class="btn small quiet" data-act="qDup" data-arg="${i}">Duplicate</button><button class="btn small quiet danger" data-act="qDel" data-arg="${i}">Remove</button></div></div></section>`;
     });
     if (layers.length > 1) h += `<p class="hint" style="padding:8px 16px 0">Stitch from the top of the list down.</p>`;
-    return h + nextStep('fabric', 'Fabric & cutting');
+    return h;
   },
 };
+Actions.addLayerMenu = (a, el) => openMenu(el, QUILT_TYPES.map(t => ({ label: t.label, act: 'addQuiltType', arg: t.key })), { align: 'left' });
+Actions.addQuiltType = type => Actions.addQuiltLayer(type, { value: '' });
 Actions.qOpen = id => { ui.qOpen = ui.qOpen === id ? null : id; renderInspector(); };
 Actions.qToggleShow = i => { const L = doc.quilting.layers[+i]; if (L) { L.visible = !L.visible; commit(); } };
 // Only offer the "Where" choices this quilt has.
@@ -74,7 +77,7 @@ function backingPanelHtml() {
   const custom = !widths.includes(w) || ui.backWidthOther;
   return `${fabricPicker(bf, 'backingFab')}
     <div class="f-row">
-      <label class="f">Fabric width<select data-change="backingWidthPick">${widths.map(x => `<option value="${x}" ${!custom && w === x ? 'selected' : ''}>${x}"</option>`).join('')}<option value="other" ${custom ? 'selected' : ''}>Other</option></select></label>
+      <label class="f">Backing fabric width<select data-change="backingWidthPick">${widths.map(x => `<option value="${x}" ${!custom && w === x ? 'selected' : ''}>${x}"</option>`).join('')}<option value="other" ${custom ? 'selected' : ''}>Other</option></select></label>
       ${custom ? lenField('Width', 'cutting.backingWidth', { min: 10, max: 140 }) : ''}</div>
     ${bk.options.length > 1 ? `<div class="sub-h">Make it</div>
     <label class="check opt"><input type="radio" name="bkm" data-change="backingMethod" value="auto" ${auto ? 'checked' : ''}> <span>${esc(bk.auto.title)} <span class="muted">· ${cost(bk.auto)}</span></span></label>
@@ -87,7 +90,7 @@ function backingPanelHtml() {
       <input type="text" inputmode="decimal" value="${esc(inputLen(p.w))}" data-change="stashW" data-arg="${p.id}" aria-label="Width" title="Width">
       <input type="text" inputmode="decimal" value="${esc(inputLen(p.h))}" data-change="stashH" data-arg="${p.id}" aria-label="Length" title="Length">
       <button class="icon-btn sm" data-act="stashDel" data-arg="${p.id}" aria-label="Remove" title="Remove">${icon('x', 14)}</button></div>`).join('')}` : ''}
-    <div class="btn-row"><button class="btn small quiet" data-act="backingPieceAdd">${icon('plus', 14)} A piece I have</button>${bf ? '<button class="btn small quiet" data-act="backingFab" data-arg="">Clear fabric</button>' : ''}</div>`;
+    <div class="btn-row"><button class="btn small quiet" data-act="backingPieceAdd">${icon('plus', 14)} Add a piece you own</button>${bf ? '<button class="btn small quiet" data-act="backingFab" data-arg="">No backing fabric</button>' : ''}</div>`;
 }
 Actions.backingWidthPick = v => {
   if (v === 'other') { ui.backWidthOther = true; renderInspector(); return; }

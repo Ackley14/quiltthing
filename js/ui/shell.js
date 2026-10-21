@@ -48,6 +48,8 @@ const ICON_PATHS = {
   menu: '<path d="M2.5 4h11M2.5 8h11M2.5 12h11"/>',
   sliders: '<path d="M2.5 4.5h11M2.5 11.5h11"/><circle cx="5.5" cy="4.5" r="1.6" fill="#fff"/><circle cx="10.5" cy="11.5" r="1.6" fill="#fff"/>',
   check: '<path d="M3 8.5l3 3 7-7"/>',
+  eyeoff: '<path d="M2 2l12 12"/><path d="M6.4 3.8A6.6 6.6 0 0 1 8 3.5c4 0 6.5 4.5 6.5 4.5a11 11 0 0 1-1.9 2.4M10.3 11.6A6.5 6.5 0 0 1 8 12.5c-4 0-6.5-4.5-6.5-4.5a11 11 0 0 1 2.4-2.9"/>',
+  flipv: '<path d="M1.5 8h13" stroke-dasharray="1.5 1.5"/><path d="M4 6L12 2.5V6zM4 10l8 3.5V10z"/>',
 };
 function icon(name, size = 16) {
   return `<svg class="ic" viewBox="0 0 16 16" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name] || ''}</svg>`;
@@ -69,12 +71,13 @@ function render() {
 function renderView() {
   const V = Views[ui.view] || Views.block;
   document.body.classList.toggle('no-side', !SIDEBAR_VIEWS.includes(ui.view));
+  // the second header row: the step's tools and view options
+  renderToolbar();
   const main = $('#main'), insp = $('#inspector');
   preserveFocus(main, () => { main.innerHTML = V.main(); });
   V.afterMain?.(main);
   preserveFocus(insp, () => { insp.innerHTML = V.inspector(); });
   document.body.classList.toggle('grayscale', !!ui.grayscale);
-  if (ui.grayscale) main.insertAdjacentHTML('afterbegin', `<button class="gs-banner" data-act="toggleUi" data-arg="grayscale" title="Turn off (G)">Value view · turn off</button>`);
 }
 // Main canvas only — for live previews while a control in a side panel is being dragged.
 function renderMainOnly() {
@@ -153,10 +156,10 @@ function renderTopbar() {
     `<button role="tab" aria-selected="${tabOf(ui.view) === v.key}" data-act="view" data-arg="${v.key}" title="${v.label} (${i + 1})"><span class="n">${i + 1}</span><span class="lbl">${v.label}</span></button>`).join('');
   $('#top-actions').innerHTML = `
     <span class="save-dot hide-sm">${saveStatus.at && !saveStatus.ok ? 'Not saved' : ''}</span>
-    <button class="icon-btn" data-act="undo" ${undoStack.past.length ? '' : 'disabled'} aria-label="Undo" title="Undo (Ctrl+Z)">${icon('undo')}</button>
-    <button class="icon-btn" data-act="redo" ${undoStack.future.length ? '' : 'disabled'} aria-label="Redo" title="Redo (Ctrl+Shift+Z)">${icon('redo')}</button>
-    <button class="icon-btn mobile-only" data-act="fileMenu" aria-haspopup="menu">File</button>
-`;
+    <button class="icon-btn mobile-only" data-act="fileMenu" aria-haspopup="menu">File</button>`;
+  // the quilt's name, editable in place (it names saved files and the pattern)
+  const slot = $('#doc-title-slot');
+  if (document.activeElement?.id !== 'doc-title') slot.innerHTML = `<input id="doc-title" class="doc-title" type="text" data-bind="meta.title" value="${esc(doc.meta.title)}" aria-label="Quilt name" title="Quilt name" spellcheck="false">`;
   $('#menubar').innerHTML = menubarHtml();
 }
 
@@ -247,24 +250,55 @@ function fabricPicker(current, act, opts = {}) {
 function section(title, body, opts = {}) {
   const key = opts.key || title;
   const collapsed = key in ui.collapsed ? ui.collapsed[key] : !!opts.closed;
-  return `<section class="sec${collapsed ? ' closed' : ''}"><div class="sec-h" data-act="toggleSec" data-arg="${esc(key)}" data-def="${opts.closed ? 1 : 0}" role="button" aria-expanded="${!collapsed}"><span class="tog">${icon(collapsed ? 'right' : 'down', 14)}</span><h3>${title}</h3>${opts.right ? `<span class="sec-r">${opts.right}</span>` : ''}</div>${collapsed ? '' : `<div class="sec-b">${body}</div>`}</section>`;
+  return `<section class="sec${collapsed ? ' closed' : ''}"><div class="sec-h" data-act="toggleSec" data-arg="${esc(key)}" data-def="${opts.closed ? 1 : 0}" role="button" tabindex="0" aria-expanded="${!collapsed}"><span class="tog">${icon(collapsed ? 'right' : 'down', 14)}</span><h3>${title}</h3>${opts.right ? `<span class="sec-r">${opts.right}</span>` : ''}</div>${collapsed ? '' : `<div class="sec-b">${body}</div>`}</section>`;
 }
-// The quiet link to the next step, at the foot of the right-hand panel.
-function nextStep(view, label) {
-  return `<div class="next-step"><button class="btn link" data-act="view" data-arg="${view}">Next: ${label} ${icon('right', 14)}</button></div>`;
+// The tool row: undo and redo, the step's tools and the options for the current tool or
+// selection, then the view switches and the next step.
+function renderToolbar() {
+  const V = Views[ui.view] || Views.block, next = VIEW_LIST[VIEW_LIST.findIndex(v => v.key === tabOf(ui.view)) + 1];
+  const undoRedo = `<button class="tool icon-only" data-act="undo" ${undoStack.past.length ? '' : 'disabled'} aria-label="Undo" title="Undo (Ctrl+Z)">${icon('undo')}</button><button class="tool icon-only" data-act="redo" ${undoStack.future.length ? '' : 'disabled'} aria-label="Redo" title="Redo (Ctrl+Shift+Z)">${icon('redo')}</button><span class="sep"></span>`;
+  preserveFocus($('#tooltools'), () => {
+    $('#tooltools').innerHTML = undoRedo + (V.toolbar?.() || '') + `<div class="spacer"></div>` + viewToggles()
+      + (next ? `<span class="sep"></span><button class="tool next-btn" data-act="view" data-arg="${next.key}">Next: ${next.label} ${icon('right', 14)}</button>` : '');
+  });
+}
+// View switches shared by the canvas steps, at the right end of the tool row.
+function viewToggles() {
+  const v = ui.view, t = (act, arg, label, on, title = '') => `<button class="tool toggle" data-act="${act}" ${arg ? `data-arg="${arg}"` : ''} aria-pressed="${!!on}"${title ? ` title="${title}"` : ''}>${label}</button>`;
+  const value = t('toggleUi', 'grayscale', 'Value', ui.grayscale, 'Value view: greys only (G)');
+  if (v === 'block' && activeBlock()?.kind === 'drawn') return t('toggleSeamLines', '', 'Seam lines', ui.showSeamLines !== false) + t('toggleUi', 'showPieces', 'Cut pieces', ui.showPieces) + t('toggleUi', 'showCentre', 'Centre lines', ui.showCentre) + value
+    + `<span class="zoom-ctl"><button class="tool" data-act="edZoomBy" data-arg="out" title="Zoom out (−)" aria-label="Zoom out">−</button><button class="tool" id="ed-zoom" data-act="edZoomBy" data-arg="fit" title="Fit (0)">${Math.round(edZoom() * 100)}%</button><button class="tool" data-act="edZoomBy" data-arg="in" title="Zoom in (+)" aria-label="Zoom in">+</button></span>`;
+  if (v === 'block') return t('toggleUi', 'showPieces', 'Cut pieces', ui.showPieces) + value;
+  if (v === 'layout') return t('toggleUi', 'seamLines', 'Piece outlines', ui.seamLines) + value + t('toggleUi', 'showQuilting', 'Quilting', ui.showQuilting && doc.quilting.layers.length).replace('<button', `<button ${doc.quilting.layers.length ? '' : 'disabled'}`);
+  if (v === 'quilting') return (ui.qSide === 'back' ? '' : t('toggleUi', 'qFade', 'Fade quilt', ui.qFade)) + value;
+  if (v === 'pattern') return `<button class="btn primary small" data-act="printPattern" title="In the print dialog: Save as PDF for a file, scale 100%, background graphics on">${icon('print', 14)} Print pattern</button>`;
+  return '';
 }
 
 /* ---------- modals, menus, toasts ---------- */
-let _modalClose = null;
+let _modalClose = null, _modalReturn = null;
+// Tab stays inside an open dialog
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Tab' || !$('#modal-root').innerHTML) return;
+  const f = [...$$('#modal-root .modal button, #modal-root .modal input, #modal-root .modal select, #modal-root .modal textarea')].filter(x => !x.disabled && x.offsetParent);
+  if (!f.length) return;
+  const i = f.indexOf(document.activeElement);
+  if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); }
+  else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
+}, true);
 function openModal(html, onClose) {
   closeMenu();
-  $('#modal-root').innerHTML = `<div class="modal-back" data-act="modalBack"><div class="modal" role="dialog" aria-modal="true"><button class="x" data-act="closeModal" aria-label="Close">×</button>${html}</div></div>`;
+  _modalReturn = document.activeElement;
+  $('#modal-root').innerHTML = `<div class="modal-back" data-act="modalBack"><div class="modal" role="dialog" aria-modal="true"><button class="x" data-act="closeModal" aria-label="Close">${icon('x')}</button>${html}</div></div>`;
+  $('#app').inert = true;
   _modalClose = onClose || null;
-  setTimeout(() => $('#modal-root .modal input, #modal-root .modal button.primary')?.focus(), 30);
+  setTimeout(() => $('#modal-root .modal input, #modal-root .modal [data-act="confirmOk"], #modal-root .modal button.primary')?.focus(), 30);
 }
 function closeModal() {
   if (!$('#modal-root').innerHTML) return false;
   $('#modal-root').innerHTML = '';
+  $('#app').inert = false;
+  _modalReturn?.focus?.({ preventScroll: true }); _modalReturn = null;
   const cb = _modalClose; _modalClose = null;
   cb?.();
   return true;
@@ -302,7 +336,14 @@ function openMenu(anchor, items, opts = {}) {
   setTimeout(() => m.querySelector('button')?.focus(), 10);
 }
 function closeMenu() { if (!_menuEl) return false; _menuEl.remove(); _menuEl = null; return true; }
-document.addEventListener('pointerdown', e => { if (_menuEl && !_menuEl.contains(e.target)) closeMenu(); }, true);
+let _swallowClick = false;
+document.addEventListener('pointerdown', e => {
+  if (!_menuEl || _menuEl.contains(e.target)) return;
+  const bar = e.target.closest?.('#menubar button, [aria-haspopup="menu"]');
+  closeMenu();
+  if (!bar) { e.preventDefault(); e.stopPropagation(); _swallowClick = true; }
+}, true);
+document.addEventListener('click', e => { if (_swallowClick) { _swallowClick = false; e.preventDefault(); e.stopPropagation(); } }, true);
 document.addEventListener('click', e => { if (_menuEl && _menuEl.contains(e.target) && e.target.closest('[data-act]:not([disabled])')) setTimeout(closeMenu, 0); });
 
 function toast(msg, ms = 2600) {
@@ -330,29 +371,7 @@ Actions.toggleDrawer = which => {
 Actions.setUi = (arg) => { const [k, v] = arg.split('='); ui[k] = v === 'true' ? true : v === 'false' ? false : v; saveUi(); render(); };
 Actions.toggleUi = k => { ui[k] = !ui[k]; saveUi(); render(); };
 
-Actions.fileMenu = (a, el) => openMenu(el, [
-  { label: 'New project…', act: 'newProject' },
-  { label: 'Sample: Midnight Bullseye…', act: 'loadSample' },
-  { label: 'Sample: Hexie Bloom…', act: 'loadTessSample' },
-  '-',
-  { label: 'Open project file…', act: 'openProject', kb: 'Ctrl+O' },
-  { label: 'Save project file', act: 'saveProject', kb: 'Ctrl+S' },
-  '-',
-  { label: 'Import blocks from file…', act: 'importBlocks' },
-  { label: 'Export all blocks…', act: 'exportBlocks', arg: 'all' },
-  '-',
-  { label: 'Export PNG…', act: 'exportPngDialog' },
-  { label: 'Export SVG', act: 'exportSvg' },
-  { label: 'Print pattern', act: 'printPattern', kb: 'Ctrl+P' },
-  '-',
-  { label: ui.units === 'cm' ? 'Show inches' : 'Show centimetres', act: 'toggleUnits' },
-]);
-Actions.helpMenu = (a, el) => openMenu(el, [
-  { label: 'How it works', act: 'help', kb: '?' },
-  { label: 'Keyboard shortcuts', act: 'shortcuts' },
-  '-',
-  { label: 'About', act: 'about' },
-]);
+Actions.fileMenu = (a, el) => openMenu(el, MENUS.file());   // the phone-width File button
 Actions.newProject = () => confirmModal('Start a new project?', 'This replaces the current design in this browser. Save a project file first if you want to keep it.', 'Start new', () => {
   doc = newDoc(); ui.activeBlock = null; ui.fabric = doc.fabrics[1].id; ui.view = 'block';
   addBlockToDoc(newDrawnBlock('My first block'));
@@ -360,10 +379,10 @@ Actions.newProject = () => confirmModal('Start a new project?', 'This replaces t
 }, true);
 Actions.loadSample = () => confirmModal('Load the sample quilt?', 'This replaces the current design in this browser. Save a project file first if you want to keep it.', 'Load sample', () => {
   loadSampleProject(); toast('Sample quilt loaded');
-}, true);
+});
 Actions.loadTessSample = () => confirmModal('Load the Hexie Bloom sample?', 'This replaces the current design in this browser. Save a project file first if you want to keep it.', 'Load sample', () => {
   loadTessSample().then(() => toast('Hexie Bloom loaded')).catch(err => toast(err.message));
-}, true);
+});
 Actions.saveProject = () => { exportProject(); toast('Project file downloaded'); };
 Actions.openProject = () => {
   const inp = document.createElement('input');
@@ -497,6 +516,10 @@ Actions.about = () => openModal(`<h2>Quilt Designer ${APP_VERSION}</h2>
   <div class="actions"><button class="btn primary" data-act="closeModal">Close</button></div>`);
 
 /* ---------- keyboard ---------- */
+document.addEventListener('keydown', e => {
+  const t = e.target;
+  if ((e.key === 'Enter' || e.key === ' ') && t?.matches?.('[role="button"][data-act]')) { e.preventDefault(); t.click(); }
+});
 document.addEventListener('keydown', e => {
   const t = e.target;
   const inField = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);

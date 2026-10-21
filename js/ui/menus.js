@@ -3,12 +3,12 @@
    another opens it, like a desktop app. Right-click menus give the same actions on things in the
    panels (blocks, fabrics, quilting layers, fabric rows). */
 
-const STEP_MENU = { block: 'Block', layout: 'Layout', quilting: 'Quilting', fabric: 'Fabric', cutting: 'Fabric', pattern: 'Pattern' };
 let _barMenu = null;            // which menu-bar menu is open
 
+// The menus never change name or position; Edit, View and Insert offer what applies to the step you're on.
+const BAR_MENUS = [['file', 'File'], ['edit', 'Edit'], ['view', 'View'], ['insert', 'Insert'], ['options', 'Options'], ['help', 'Help']];
 function menubarHtml() {
-  return [['file', 'File'], ['edit', 'Edit'], ['view', 'View'], ['options', 'Options'], ['step', STEP_MENU[ui.view] || 'Block'], ['help', 'Help']]
-    .map(([k, l]) => `<button data-act="menubar" data-arg="${k}" aria-haspopup="menu" aria-expanded="${_barMenu === k}">${l}</button>`).join('');
+  return BAR_MENUS.map(([k, l]) => `<button data-act="menubar" data-arg="${k}" aria-haspopup="menu" aria-expanded="${_barMenu === k}">${l}</button>`).join('');
 }
 Actions.menubar = (k, el) => {
   if (_barMenu === k && _menuEl) { closeMenu(); return; }
@@ -48,23 +48,30 @@ const MENUS = {
       { label: 'Undo', act: 'undo', kb: 'Ctrl+Z', disabled: !undoStack.past.length },
       { label: 'Redo', act: 'redo', kb: 'Ctrl+Shift+Z', disabled: !undoStack.future.length },
     ];
-    if (ui.view === 'block' && activeBlock()?.kind === 'drawn') {
+    const b = activeBlock();
+    if (ui.view === 'block' && b?.kind === 'drawn') {
       const n = selList().length;
-      items.push('-',
+      items.push('-', { header: n ? plural(n, 'shape') : 'Shapes' },
         { label: 'Copy', act: 'selCopy', kb: 'Ctrl+C', disabled: !n },
         { label: 'Paste', act: 'selPaste', kb: 'Ctrl+V', disabled: !_edClip },
         { label: 'Duplicate', act: 'selDup', kb: 'Ctrl+D', disabled: !n },
-        { label: 'Delete', act: 'selDelete', kb: 'Del', disabled: !n },
         { label: 'Select all', act: 'selAll', kb: 'Ctrl+A' },
-        '-',
-        { label: 'Turn left', act: 'selRotate', arg: 'ccw', kb: 'Q', disabled: !n },
-        { label: 'Turn right', act: 'selRotate', arg: 'cw', kb: 'E', disabled: !n },
-        { label: 'Mirror across', act: 'selMirror', arg: 'h', kb: 'X', disabled: !n },
-        { label: 'Mirror down', act: 'selMirror', arg: 'v', kb: 'Y', disabled: !n },
-        { label: 'To front', act: 'selOrder', arg: 'front', disabled: !n },
-        { label: 'To back', act: 'selOrder', arg: 'back', disabled: !n });
+        { label: 'Rotate 90°', act: 'selRotate', arg: 'cw', kb: 'E', disabled: !n },
+        { label: 'Flip horizontal', act: 'selMirror', arg: 'h', kb: 'X', disabled: !n },
+        { label: 'Flip vertical', act: 'selMirror', arg: 'v', kb: 'Y', disabled: !n },
+        { label: 'Bring to front', act: 'selOrder', arg: 'front', disabled: !n },
+        { label: 'Send to back', act: 'selOrder', arg: 'back', disabled: !n },
+        { label: 'Delete', act: 'selDelete', kb: 'Del', disabled: !n });
     }
-    if (ui.view === 'layout') items.push('-', { label: 'Clear layout…', act: 'clearLayout' });
+    if (ui.view === 'block' && b) {
+      items.push('-', { header: esc(b.name) },
+        ...(b.kind === 'drawn' ? [{ label: `Rotate block ${isHexBlock(b) ? 60 : 90}°`, act: 'blockRotate' }, { label: 'Flip block', act: 'blockMirror' }] : []),
+        { label: 'Duplicate block', act: 'blockDuplicate' },
+        ...(b.kind === 'drawn' ? [{ label: 'Add suggested seams', act: 'autoSeams' }, { label: 'Remove all seams', act: 'clearSeams', disabled: !(b.seams?.length || b.appSeams?.length) }, { label: 'Clear all shapes…', act: 'blockClear', danger: true }] : []),
+        { label: 'Delete block…', act: 'blockDelete', danger: true });
+    }
+    if (ui.view === 'layout') items.push('-', { label: 'Clear layout…', act: 'clearLayout', danger: true });
+    if (ui.view === 'quilting' && doc.quilting.layers.length) items.push('-', { label: 'Show all layers', act: 'qShowAll', arg: '1' }, { label: 'Hide all layers', act: 'qShowAll', arg: '' });
     return items;
   },
   view: () => {
@@ -77,15 +84,28 @@ const MENUS = {
       { label: 'Zoom in', act: 'edZoomBy', arg: 'in', kb: '+' },
       { label: 'Zoom out', act: 'edZoomBy', arg: 'out', kb: '−' },
       { label: 'Fit the block', act: 'edZoomBy', arg: 'fit', kb: '0' });
-    if (v === 'layout') {
-      items.push(tick('Seam lines', 'toggleUi', 'seamLines', ui.seamLines));
-      if (doc.quilting.layers.length) items.push(tick('Quilting lines', 'toggleUi', 'showQuilting', ui.showQuilting));
-    }
-    if (v === 'quilting') items.push('-', tick('Front', 'qSide', 'front', ui.qSide !== 'back'), tick('Back', 'qSide', 'back', ui.qSide === 'back'), '-', tick('Fade quilt', 'toggleUi', 'qFade', ui.qFade));
-    if (v === 'fabric' || v === 'cutting') items.push('-', tick('Shopping list', 'fabPane', 'shop', ui.fabPane !== 'cut'), tick('Cutting plan', 'fabPane', 'cut', ui.fabPane === 'cut'), '-', tick('Cutting maps', 'toggleCutMaps', undefined, ui.cutDiagrams !== false));
-    if (v === 'pattern') items.push('-', { header: 'Paper' }, tick('US Letter', 'setUi', 'patternPage=letter', ui.patternPage !== 'a4'), tick('A4', 'setUi', 'patternPage=a4', ui.patternPage === 'a4'));
+    if (v === 'layout') items.push(tick('Piece outlines', 'toggleUi', 'seamLines', ui.seamLines), { ...tick('Quilting lines', 'toggleUi', 'showQuilting', ui.showQuilting), disabled: !doc.quilting.layers.length });
+    if (v === 'quilting') items.push('-', tick('Front', 'qSide', 'front', ui.qSide !== 'back'), tick('Back', 'qSide', 'back', ui.qSide === 'back'), tick('Fade quilt', 'toggleUi', 'qFade', ui.qFade));
+    if (v === 'fabric' || v === 'cutting') items.push('-', tick('Shopping list', 'fabPane', 'shop', ui.fabPane !== 'cut'), tick('Cutting plan', 'fabPane', 'cut', ui.fabPane === 'cut'), tick('Cutting maps', 'toggleCutMaps', undefined, ui.cutDiagrams !== false));
     return items;
   },
+  insert: () => [
+    { header: 'Blocks' },
+    { label: 'From the library…', act: 'libraryPicker' },
+    { label: 'New block', act: 'newBlock' },
+    { label: 'Hexagon block', act: 'newHexBlock' },
+    { label: 'Combination of blocks', act: 'newCompound' },
+    ...(ui.view === 'block' && activeBlock()?.kind === 'drawn' ? [{ label: 'Tracing picture…', act: 'refAdd' }] : []),
+    '-',
+    { header: 'Quilt' },
+    { label: 'Border', act: 'insertBorder' },
+    { label: 'Inset panel', act: 'insertPanel' },
+    { label: 'Quilting layer…', act: 'insertQuilting' },
+    '-',
+    { header: 'Fabric' },
+    { label: 'Fabric', act: 'addFabric' },
+    { label: 'Stash piece…', act: 'stashPicker' },
+  ],
   options: () => [
     { header: 'Units' },
     tick('Inches', 'setUnits', 'in', ui.units !== 'cm'),
@@ -95,7 +115,6 @@ const MENUS = {
     '-',
     { label: 'Cutting settings…', act: 'cuttingSettings' },
   ],
-  step: () => (STEP_MENUS[ui.view] || STEP_MENUS.block)(),
   help: () => [
     { label: 'How it works', act: 'help', kb: '?' },
     { label: 'Keyboard shortcuts', act: 'shortcuts' },
@@ -105,65 +124,10 @@ const MENUS = {
 };
 Actions.setUnits = u => { ui.units = u === 'cm' ? 'cm' : 'in'; saveUi(); render(); };
 Actions.toggleCutMaps = () => Actions.cutDiagrams(ui.cutDiagrams === false);
-
-const STEP_MENUS = {
-  block: () => {
-    const b = activeBlock(), drawn = b?.kind === 'drawn';
-    return [
-      { header: 'New' },
-      { label: 'From the library…', act: 'libraryPicker' },
-      { label: 'Draw a new block', act: 'newBlock' },
-      { label: 'Hexagon block', act: 'newHexBlock' },
-      { label: 'Combination of blocks', act: 'newCompound' },
-      ...(b ? ['-', { header: esc(b.name) },
-        ...(drawn ? [{ label: `Turn ${isHexBlock(b) ? 60 : 90}°`, act: 'blockRotate' }, { label: 'Mirror', act: 'blockMirror' }] : []),
-        { label: 'Rename…', act: 'blockRename', arg: b.id },
-        { label: 'Duplicate', act: 'blockDuplicate' },
-        { label: 'Export…', act: 'exportBlocks', arg: 'one' },
-        ...(drawn ? ['-', { label: 'Add suggested seams', act: 'autoSeams' }, { label: 'Remove all seams', act: 'clearSeams', disabled: !(b.seams?.length || b.appSeams?.length) },
-          { label: refImgs[b.id] ? 'Replace tracing picture…' : 'Tracing picture…', act: 'refAdd' }] : []),
-        '-',
-        ...(drawn ? [{ label: 'Clear all shapes…', act: 'blockClear' }] : []),
-        { label: 'Delete block…', act: 'blockDelete', danger: true }] : []),
-    ];
-  },
-  layout: () => {
-    const L = doc.layout, grid = L.mode !== 'tess';
-    return [
-      { header: 'Setting' },
-      tick('Straight', 'layoutMode', 'grid', L.mode === 'grid'),
-      tick('On point', 'layoutMode', 'onpoint', L.mode === 'onpoint'),
-      tick('Tessellation', 'layoutMode', 'tess', L.mode === 'tess'),
-      '-',
-      ...(grid ? [{ label: 'Fill empty positions', act: 'fillLayout', arg: 'empty' }, { label: 'Fill all positions', act: 'fillLayout', arg: 'all' },
-        { header: 'Turn the blocks' },
-        ...[['same', 'All the same'], ['alternate', 'Alternate'], ['pinwheel', 'Pinwheel'], ['quadrants', 'Quadrants'], ['random', 'Random']].map(([k, l]) => ({ label: l, act: 'rotPattern', arg: k })),
-        '-'] : []),
-      { label: 'Add border', act: 'addBorder' },
-      { label: 'Add inset panel', act: 'addPanel' },
-      '-',
-      { label: 'Clear layout…', act: 'clearLayout', danger: true },
-    ];
-  },
-  quilting: () => [
-    { header: 'Add quilting' },
-    ...QUILT_TYPES.map(t => ({ label: t.label, act: 'addQuiltType', arg: t.key })),
-    ...(doc.quilting.layers.length ? ['-', { label: 'Show all layers', act: 'qShowAll', arg: '1' }, { label: 'Hide all layers', act: 'qShowAll', arg: '' }] : []),
-  ],
-  fabric: () => [
-    { label: 'Add a fabric', act: 'addFabric' },
-    { label: 'Add a stash piece…', act: 'stashPicker' },
-    '-',
-    { label: 'Cutting settings…', act: 'cuttingSettings' },
-  ],
-  pattern: () => [
-    { label: 'Print pattern', act: 'printPattern', kb: 'Ctrl+P' },
-    '-',
-    { label: 'Quilt name and designer…', act: 'view', arg: 'pattern' },
-  ],
-};
-STEP_MENUS.cutting = STEP_MENUS.fabric;
-Actions.addQuiltType = type => Actions.addQuiltLayer(type, { value: '' });
+// Insert commands land you where the new thing is
+Actions.insertBorder = () => { Actions.addBorder(); if (ui.view !== 'layout') Actions.view('layout'); };
+Actions.insertPanel = () => { Actions.addPanel(); if (ui.view !== 'layout') Actions.view('layout'); };
+Actions.insertQuilting = () => { if (ui.view !== 'quilting') Actions.view('quilting'); setTimeout(() => { const b = $('[data-act="addLayerMenu"]'); if (b) Actions.addLayerMenu(null, b); }, 30); };
 Actions.qShowAll = on => { for (const L of doc.quilting.layers) L.visible = !!on; commit(); };
 // A stash piece for any fabric, from the menu bar: pick the fabric first.
 Actions.stashPicker = () => openModal(`<h2>Add a stash piece</h2>
@@ -177,14 +141,12 @@ Actions.stashPickerOk = () => {
 Actions.cuttingSettings = () => {
   openModal(`<h2>Cutting settings</h2>${cuttingSettingsHtml()}<div class="actions"><button class="btn primary" data-act="closeModal">Done</button></div>`);
 };
-// Rename a block in a small dialog (the right-click menus and the Block menu use it).
+// Rename a block: open it and put the cursor in its name field.
 Actions.blockRename = id => {
-  const b = doc.blocks[id]; if (!b) return;
-  openModal(`<h2>Rename block</h2><label class="f">Name<input type="text" id="rename-input" value="${esc(b.name)}"></label>
-    <div class="actions"><button class="btn" data-act="closeModal">Cancel</button><button class="btn primary" data-act="blockRenameOk" data-arg="${id}">Rename</button></div>`);
-  setTimeout(() => { const i = $('#rename-input'); i?.select(); i?.addEventListener('keydown', e => { if (e.key === 'Enter') Actions.blockRenameOk(id); }); }, 40);
+  if (!doc.blocks[id]) return;
+  Actions.blockOpen(id);
+  setTimeout(() => { const f = $('#inspector [data-change="blockName"]'); f?.focus(); f?.select(); }, 30);
 };
-Actions.blockRenameOk = id => { const b = doc.blocks[id], v = $('#rename-input')?.value.trim(); closeModal(); if (b && v) { b.name = v; commit(); } };
 
 /* ---------- right-click menus ---------- */
 // Make `id` the block being edited, then run an action that works on the current block.
@@ -262,3 +224,25 @@ document.addEventListener('contextmenu', e => {
     return;
   }
 });
+
+/* ---------- keyboard: arrows move through an open menu, left/right switch menu-bar menus,
+   Alt + the first letter opens a menu-bar menu ---------- */
+document.addEventListener('keydown', e => {
+  if (e.altKey && !e.ctrlKey && /^[a-z]$/i.test(e.key)) {
+    const b = $$('#menubar button').find(x => x.textContent.trim()[0].toLowerCase() === e.key.toLowerCase());
+    if (b) { e.preventDefault(); Actions.menubar(b.dataset.arg, b); return; }
+  }
+  if (!_menuEl) return;
+  const items = [...(_menuEl.querySelectorAll('button:not([disabled])'))];
+  const i = items.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault(); e.stopPropagation();
+    const n = items.length, j = i < 0 ? 0 : (i + (e.key === 'ArrowDown' ? 1 : -1) + n) % n;
+    items[j]?.focus();
+  } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && _barMenu) {
+    e.preventDefault(); e.stopPropagation();
+    const bar = $$('#menubar button'), k = bar.findIndex(b => b.dataset.arg === _barMenu);
+    const next = bar[(k + (e.key === 'ArrowRight' ? 1 : -1) + bar.length) % bar.length];
+    Actions.menubar(next.dataset.arg, next);
+  }
+}, true);

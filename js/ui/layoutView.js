@@ -18,21 +18,34 @@ function layoutTool() {
 }
 
 Views.layout = {
+  toolbar() {
+    const tool = layoutTool(), L = doc.layout, hexMode = L.mode === 'tess';
+    const tools = LAYOUT_TOOLS.filter(t => !(hexMode && t.key === 'place' && !tessCanPlace()))
+      .map(t => `<button class="tool" data-act="layoutTool" data-arg="${t.key}" aria-pressed="${tool === t.key}" title="${t.label} (${t.kb})">${icon(t.icon)} ${t.label}</button>`).join('');
+    let opts = '';
+    if (tool === 'place') {
+      const b = placeBlock(), hexB = b && isHexBlock(b), steps = hexB ? 6 : 4;
+      const turns = Array.from({ length: steps }, (_, r) => `<button class="tool icon-only rot" data-act="placeRot" data-arg="${r}" aria-pressed="${ui.placeRot % steps === r}" title="Turn new blocks ${r * (hexB ? 60 : 90)}°" aria-label="${r * (hexB ? 60 : 90)}°">${hexB ? `${r * 60}°` : rotIcon(r, ui.placeFlip)}</button>`).join('');
+      opts = `<button class="tool fab-drop" data-act="placeBlockMenu" aria-haspopup="menu" title="The block to place">${b ? `${blockThumb(b, 20, 'mini')} ${esc(b.name)}` : 'Choose a block'} ${icon('down', 12)}</button>
+        <span class="tb-label">Turn</span>${turns}
+        <button class="tool toggle" data-act="placeFlipToggle" aria-pressed="${!!ui.placeFlip}" title="Mirror new blocks (Shift)">Mirror</button>
+        <span class="sep"></span><button class="tool" data-act="arrangeMenu" aria-haspopup="menu">Arrange ${icon('down', 12)}</button>`;
+    } else if (tool === 'paintcell') {
+      opts = `<span class="tb-label">Paint with</span><button class="tool fab-drop" data-act="paintFabricMenu" aria-haspopup="menu">${swatchHtml(ui.fabric === BG ? L.background : ui.fabric, 16)} ${esc(fabricLabel(ui.fabric))} ${icon('down', 12)}</button>`;
+    } else if (ui.selCell) {
+      const c = cellContent(ui.selCell), pb = placeBlock(), cellOk = Qnow().cells.some(x => x.key === ui.selCell) || ui.selCell[0] === 'p';
+      opts = c?.b
+        ? `<span class="tb-label"><b>${esc(doc.blocks[c.b].name)}</b> · ${(c.r || 0) * (ui.selCell[0] === 't' ? 60 : 90)}°${c.f ? ' · mirrored' : ''}</span>
+          <button class="tool" data-act="cellRotate">Rotate 90°</button><button class="tool" data-act="cellFlip">Flip</button><button class="tool" data-act="cellEdit">Edit block</button>
+          ${pb && pb.id !== c.b ? `<button class="tool" data-act="cellReplace">Replace with ${esc(pb.name)}</button>` : ''}<button class="tool danger" data-act="cellClear">Clear</button>`
+        : `<span class="tb-label">${c?.fab ? `Plain ${esc(fabricLabel(c.fab))}` : 'Empty position'}</span>${pb && cellOk ? `<button class="tool" data-act="cellReplace">Put ${esc(pb.name)} here</button>` : ''}${c?.fab ? '<button class="tool danger" data-act="cellClear">Clear</button>' : ''}`;
+    } else opts = '<span class="tb-label">Click a position to change it</span>';
+    return `${tools}<span class="sep"></span>${opts}`;
+  },
   main() {
     const Q = Qnow(), tool = layoutTool();
-    const tools = LAYOUT_TOOLS.filter(t => !(doc.layout.mode === 'tess' && t.key === 'place' && !tessCanPlace()))
-      .map(t => `<button class="tool" data-act="layoutTool" data-arg="${t.key}" aria-pressed="${tool === t.key}" title="${t.label} (${t.kb})">${icon(t.icon)} ${t.label}</button>`).join('');
-    const b = placeBlock();
-    const placing = tool === 'place'
-      ? (b ? `<span class="placing">${blockThumb(b, 22, 'mini')} <b>${esc(b.name)}</b> <span class="muted">${ui.placeRot ? `${ui.placeRot * (isHexBlock(b) ? 60 : 90)}°` : ''}${ui.placeFlip ? ' mirrored' : ''}</span></span>` : '<span class="muted">Pick a block on the left</span>')
-      : tool === 'paintcell' ? `<span class="placing">${swatchHtml(ui.fabric === BG ? doc.layout.background : ui.fabric, 18)} <b>${esc(fabricLabel(ui.fabric))}</b></span>` : '';
-    return `<div class="stage"><div class="toolbar">${tools}<span class="sep"></span>${placing}<div class="spacer"></div>
-        <button class="tool" data-act="toggleUi" data-arg="seamLines" aria-pressed="${!!ui.seamLines}">Seams</button>
-        <button class="tool" data-act="toggleUi" data-arg="grayscale" aria-pressed="${!!ui.grayscale}" title="Value view (G)">Value</button>
-        ${doc.quilting.layers.length ? `<button class="tool" data-act="toggleUi" data-arg="showQuilting" aria-pressed="${!!ui.showQuilting}">Quilting</button>` : ''}
-      </div>
-      <div class="canvas-wrap">${layoutCanvasSvg(Q)}</div>
-      <div class="status-bar" title="${esc(layoutHint(tool))}">${Q.warnings.length ? `<span style="color:var(--danger)">${esc(Q.warnings.join(' '))}</span> · ` : ''}${layoutHint(tool)}</div></div>`;
+    return `<div class="stage"><div class="canvas-wrap">${layoutCanvasSvg(Q)}</div>
+      <div class="status-bar">${Q.warnings.length ? `<span class="sb-warn">${esc(Q.warnings.join(' '))}</span>` : ''}<span class="sb-hint">${layoutHint(tool)}</span></div></div>`;
   },
   afterMain(el) {
     const svg = el.querySelector('svg.quilt-svg');
@@ -245,6 +258,29 @@ Actions.layoutMode = m => {
 Actions.layoutRows = v => { const g = doc.layout.grid; resizeGrid(clamp(parseInt(v, 10) || 1, 1, 40), g.cols); commit(); };
 Actions.layoutCols = v => { const g = doc.layout.grid; resizeGrid(g.rows, clamp(parseInt(v, 10) || 1, 1, 40)); commit(); };
 Actions.placeRot = r => { ui.placeRot = +r; saveUi(); render(); };
+Actions.placeFlipToggle = () => { ui.placeFlip = !ui.placeFlip; saveUi(); render(); };
+// The block the Place tool puts down
+Actions.placeBlockMenu = (a, el) => {
+  const hexOnly = doc.layout.mode === 'tess' && !tessHasPanels(), pick = id => hexOnly ? isHexBlock(doc.blocks[id]) : true;
+  openMenu(el, [...doc.blockOrder.filter(pick).map(id => ({ label: `${blockThumb(doc.blocks[id], 18, 'mini')} ${esc(doc.blocks[id].name)}`, act: 'placePick', arg: id, checked: placeBlock()?.id === id })),
+    '-', { label: 'From the library…', act: 'libraryPicker' }], { align: 'left' });
+};
+Actions.placePick = id => { ui.placeBlock = id; saveUi(); render(); };
+// Whole-layout arranging: fill, alternate, turn patterns, clear
+Actions.arrangeMenu = (a, el) => {
+  const pb = placeBlock(), tess = doc.layout.mode === 'tess';
+  const others = [...doc.blockOrder.filter(id => id !== pb?.id && !isHexBlock(doc.blocks[id])).map(id => ({ label: esc(doc.blocks[id].name), act: 'alternatePick', arg: id })),
+    ...doc.fabrics.map(f => ({ label: `${swatchHtml(f.id, 14)} Plain ${esc(f.name)}`, act: 'alternatePick', arg: 'fab:' + f.id }))];
+  openMenu(el, [
+    { label: tess ? 'Fill plain hexagons' : 'Fill empty positions', act: 'fillLayout', arg: 'empty', disabled: !pb },
+    { label: tess ? 'Fill all hexagons' : 'Fill all positions', act: 'fillLayout', arg: 'all', disabled: !pb },
+    ...(tess ? [{ label: 'Random turns', act: 'hexTurns', arg: 'random' }, { label: 'All upright', act: 'hexTurns', arg: 'same' }]
+      : [{ header: `Alternate ${pb ? esc(pb.name) : 'the block'} with` }, ...others,
+        { header: 'Turn the blocks' }, ...[['same', 'All the same'], ['alternate', 'Alternate'], ['pinwheel', 'Pinwheel'], ['quadrants', 'Quadrants'], ['random', 'Random']].map(([k, l]) => ({ label: l, act: 'rotPattern', arg: k }))]),
+    '-', { label: 'Clear layout…', act: 'clearLayout', danger: true },
+  ], { align: 'left' });
+};
+Actions.alternatePick = v => { ui.altWith = v; Actions.alternateWith(); };
 Actions.placeFlip = v => { ui.placeFlip = !!v; saveUi(); render(); };
 Actions.cellRotate = () => { if (ui.selCell) { rotateCell(ui.selCell); commit(); } };
 Actions.cellFlip = () => { if (ui.selCell) { flipCell(ui.selCell); commit(); } };
@@ -285,7 +321,7 @@ Actions.hexTurns = kind => {
   commit();
 };
 Actions.alternateWith = () => {
-  const b = placeBlock(), sel = $('#alt-with')?.value;
+  const b = placeBlock(), sel = ui.altWith;
   if (!b || !sel) { toast('Pick a block in the sidebar, and something to alternate with'); return; }
   const second = sel.startsWith('fab:') ? { fab: sel.slice(4) } : { b: sel, r: 0, f: false };
   for (const c of Qnow().cells.filter(c => c.key[0] !== 'p')) {
@@ -362,6 +398,13 @@ function snapPanel(p, off, axis) {
   }
   return best;
 }
+// Slide a tessellation on the quilt by a share of one repeat (0–95%), shown in inches too.
+function nudgeField(label, key, period) {
+  const v = Math.round(((doc.layout.tess[key] || 0) % 1) * 100);
+  return `<label class="f">${label} <span class="muted">${fmtLen(v / 100 * period)}</span><input type="range" min="0" max="95" step="5" value="${v}" data-input="tessNudgeLive" data-change="tessNudge" data-arg="${key}"></label>`;
+}
+Actions.tessNudgeLive = (v, el) => { doc.layout.tess[el.dataset.arg] = +v / 100; renderMainOnly(); };
+Actions.tessNudge = (v, el) => { doc.layout.tess[el.dataset.arg] = +v / 100; commit(); };
 // Blocks partly covered by a panel or the edge: cut just what shows, or make them whole and trim.
 function partialToggle() {
   return `<label class="check"><input type="checkbox" data-bind="layout.panelExact" data-type="bool" ${doc.layout.panelExact !== false ? 'checked' : ''}> Cut partial blocks to shape</label>`;
@@ -471,6 +514,7 @@ function layoutInspector() {
         <label class="f">Orientation<select data-bind="layout.tess.orient" data-type="int">${sh.orientLabels.map((l, i) => `<option value="${i}" ${t.orient === i ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
       ${['zigzag', 'brick', 'diamond'].includes(t.shape) ? `<div class="f-row">${numField('Height ÷ width', 'layout.tess.ratio', { min: 0.2, max: 4, step: 0.05 })}${t.shape === 'zigzag' ? numField('Lean ÷ width', 'layout.tess.lean', { min: 0, max: 2, step: 0.05 }) : ''}</div>` : ''}
       <div class="f-row">${lenField('Centre width', 'layout.tess.width', { min: 2, max: 200 })}${lenField('Centre height', 'layout.tess.height', { min: 2, max: 200 })}</div>
+      <div class="f-row">${nudgeField('Nudge across', 'offX', tessPeriod(t)[0])}${nudgeField('Nudge down', 'offY', tessPeriod(t)[1])}</div>
       <label class="check"><input type="checkbox" data-bind="layout.tess.snap" data-type="bool" ${t.snap !== false ? 'checked' : ''}> Fit to whole shapes</label>
       ${t.snap !== false ? `<p class="hint">Fitted size ${fmtSize(...tessSize(t))}.</p>` : ''}
       <label class="f">Edges</label><div class="seg">${[['trim', 'Trim shapes'], ['fill', 'Fill gaps']].map(([k, l]) => `<button aria-pressed="${t.edge === k}" data-act="tessEdge" data-arg="${k}">${l}</button>`).join('')}</div>
@@ -486,39 +530,10 @@ function layoutInspector() {
     h += section('Fill patterns', `<label class="f">Fabrics to use</label>
       <div class="fabpick">${doc.fabrics.map(f => `<button aria-pressed="${set.includes(f.id)}" data-act="tessToggleSet" data-arg="${f.id}" title="${esc(f.name)}">${swatchHtml(f.id, 20)}</button>`).join('')}</div>
       <div class="btn-row">${[['random', 'Random'], ['rows', 'Rows'], ['cols', 'Columns'], ['diag', 'Diagonals'], ['rings', 'Rings'], ['gradient', 'Gradient'], ['orient', 'By direction']].map(([k, l]) => `<button class="btn small" data-act="tessPattern" data-arg="${k}">${l}</button>`).join('')}</div>
-      <div class="btn-row"><button class="btn small" data-act="tessPattern" data-arg="shuffle">Shuffle</button><button class="btn small" data-act="tessPattern" data-arg="solid" title="Paint every shape with the selected fabric">Fill all</button><button class="btn small quiet danger" data-act="clearLayout">Clear</button></div>`, { key: 'tessfill' });
-    if (t.shape === 'hex') {
-      const hb = placeBlock() && isHexBlock(placeBlock());
-      const rotBtns = [0, 1, 2, 3, 4, 5].map(r => `<button aria-pressed="${ui.placeRot % 6 === r}" data-act="placeRot" data-arg="${r}" title="${r * 60}°">${r * 60}°</button>`).join('');
-      h += section('Hexagon blocks', `${hb ? '' : '<p class="hint">Pick a hexagon block in My blocks, or add one with Add, Hexagon block.</p>'}
-        <label class="f">Turn new blocks</label><div class="seg">${rotBtns}</div>
-        <label class="check"><input type="checkbox" ${ui.placeFlip ? 'checked' : ''} data-change="placeFlip"> Mirror new blocks</label>
-        <div class="btn-row"><button class="btn small" data-act="fillLayout" data-arg="empty" ${hb ? '' : 'disabled'}>Fill plain hexagons</button><button class="btn small" data-act="fillLayout" data-arg="all" ${hb ? '' : 'disabled'}>Fill all</button></div>
-        <div class="btn-row"><button class="btn small" data-act="hexTurns" data-arg="random">Random turns</button><button class="btn small" data-act="hexTurns" data-arg="same">All upright</button></div>`, { key: 'hexblocks', closed: !hb });
-    }
+      <div class="btn-row"><button class="btn small" data-act="tessPattern" data-arg="shuffle">Shuffle</button><button class="btn small" data-act="tessPattern" data-arg="solid" title="Paint every shape with the selected fabric">Paint all</button><button class="btn small quiet danger" data-act="clearLayout">Clear</button></div>`, { key: 'tessfill' });
   }
 
-  if (L.mode !== 'tess') {
-    const rotBtns = [0, 1, 2, 3].map(r => `<button aria-pressed="${ui.placeRot === r}" data-act="placeRot" data-arg="${r}" title="${r * 90}°">${rotIcon(r, ui.placeFlip)}</button>`).join('');
-    h += section('Place blocks', `<label class="f">Turn new blocks</label><div class="rot-grid">${rotBtns}</div>
-      <label class="check"><input type="checkbox" ${ui.placeFlip ? 'checked' : ''} data-change="placeFlip"> Mirror new blocks</label>`, { key: 'place' });
-    const altOpts = [...doc.blockOrder.filter(id => id !== placeBlock()?.id && !isHexBlock(doc.blocks[id])).map(id => `<option value="${id}">${esc(doc.blocks[id].name)}</option>`), ...doc.fabrics.map(f => `<option value="fab:${f.id}">Plain ${esc(f.name)}</option>`)].join('');
-    h += section('Arrange', `<div class="btn-row"><button class="btn small" data-act="fillLayout" data-arg="empty">Fill empty</button><button class="btn small" data-act="fillLayout" data-arg="all">Fill all</button><button class="btn small quiet danger" data-act="clearLayout">Clear</button></div>
-      <label class="f">Alternate with</label><div class="row" style="display:flex;gap:6px;margin-top:3px"><select id="alt-with" style="flex:1">${altOpts}</select><button class="btn small" data-act="alternateWith">Apply</button></div>
-      <label class="f">Turn the blocks</label><div class="btn-row" style="margin-top:3px">${[['same', 'All the same'], ['alternate', 'Alternate'], ['pinwheel', 'Pinwheel'], ['quadrants', 'Quadrants'], ['random', 'Random']].map(([k, l]) => `<button class="btn small" data-act="rotPattern" data-arg="${k}">${l}</button>`).join('')}</div>`, { key: 'arrange', closed: true });
-  }
 
-  if (ui.selCell) {
-    const c = cellContent(ui.selCell);
-    const cell = Q.cells.find(x => x.key === ui.selCell);
-    let body;
-    if (c?.b) body = `<p class="hint"><b>${esc(doc.blocks[c.b].name)}</b> · ${(c.r || 0) * (ui.selCell[0] === 't' ? 60 : 90)}°${c.f ? ' · mirrored' : ''}</p>
-      <div class="btn-row"><button class="btn small" data-act="cellRotate">Turn</button><button class="btn small" data-act="cellFlip">Mirror</button><button class="btn small" data-act="cellEdit">Edit block</button></div>
-      <div class="btn-row"><button class="btn small" data-act="cellReplace" ${placeBlock() ? '' : 'disabled'}>Replace with ${esc(placeBlock()?.name || 'selected')}</button><button class="btn small quiet danger" data-act="cellClear">Clear</button></div>`;
-    else if (c?.fab) body = `<p class="hint">Plain ${esc(fabricLabel(c.fab))}</p><div class="btn-row"><button class="btn small" data-act="cellReplace" ${cell && placeBlock() ? '' : 'disabled'}>Put ${esc(placeBlock()?.name || 'block')} here</button><button class="btn small quiet danger" data-act="cellClear">Clear</button></div>`;
-    else body = `<p class="hint">Empty.</p><div class="btn-row"><button class="btn small" data-act="cellReplace" ${cell && placeBlock() ? '' : 'disabled'}>Put ${esc(placeBlock()?.name || 'block')} here</button></div>`;
-    h += section('Selected', body, { key: 'selcell' });
-  }
 
   let borders = L.borders.map((b, i) => `<div class="list-item"><div class="li-h"><b>Border ${i + 1}</b><button class="icon-btn sm" data-act="removeBorder" data-arg="${i}" aria-label="Remove border ${i + 1}" title="Remove">${icon('x', 14)}</button></div>
       ${lenField('Width', `layout.borders.${i}.width`, { min: 0.25, max: 24 })}
@@ -558,5 +573,5 @@ function layoutInspector() {
   }
 
   h += section('Background', `${fabricPicker(L.background, 'bgFab')}<p class="hint">Block pieces painted BG use this fabric.</p>`, { key: 'bgfab', closed: true });
-  return h + nextStep('quilting', 'Quilting');
+  return h;
 }

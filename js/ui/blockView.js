@@ -17,26 +17,34 @@ const BLOCK_TOOLS = [
 const ed = { drag: null, hover: null, shift: false };
 
 Views.block = {
+  toolbar() {
+    const b = activeBlock();
+    if (!b || b.kind === 'compound') return '';
+    const tools = BLOCK_TOOLS.map(t => `<button class="tool icon-only" data-act="blockTool" data-arg="${t.key}" aria-pressed="${ui.tool === t.key}" title="${t.label} (${t.kb})" aria-label="${t.label}">${icon(t.icon)}</button>`).join('');
+    // options for the current tool, or for the selection
+    const sel = selList(), fabBtn = (act, f, mixed) => `<button class="tool fab-drop" data-act="${act}" aria-haspopup="menu" title="Fabric">${f ? swatchHtml(f === BG ? doc.layout.background : f, 16) : '<span class="sw mixed"></span>'} ${mixed ? 'Mixed' : esc(f === BG ? 'Background' : fabricLabel(f))} ${icon('down', 12)}</button>`;
+    let opts = '';
+    if (ui.tool === 'select' && sel.length) {
+      const fs = uniq(sel.map(i => b.regions[i].fab));
+      const ib = (act, arg, ic, label) => `<button class="tool icon-only" data-act="${act}" ${arg ? `data-arg="${arg}"` : ''} title="${label}" aria-label="${label}">${icon(ic)}</button>`;
+      opts = `<span class="tb-label">${plural(sel.length, 'shape')}</span>${fabBtn('selFabricMenu', fs.length === 1 ? fs[0] : null, fs.length > 1)}
+        ${ib('selDup', '', 'dup', 'Duplicate (Ctrl+D)')}${ib('selRotate', 'cw', 'rotate', 'Rotate 90° (E)')}${ib('selMirror', 'h', 'mirror', 'Flip horizontal (X)')}${ib('selMirror', 'v', 'flipv', 'Flip vertical (Y)')}${ib('selOrder', 'front', 'front', 'Bring to front')}${ib('selOrder', 'back', 'back', 'Send to back')}${ib('selDelete', '', 'trash', 'Delete (Del)')}`;
+    } else if (ui.tool === 'paint') opts = `<span class="tb-label">Paint with</span>${fabBtn('paintFabricMenu', ui.fabric)}`;
+    else if (ui.tool !== 'select') opts = `<button class="tool toggle" data-act="toggleSnap" aria-pressed="${!ui.snapOff}" title="Snap points to the grid">Snap</button>`;
+    return `${tools}<span class="sep"></span>${opts}
+      ${refImgs[b.id] ? `<button class="tool toggle" data-act="refAdjustToggle" aria-pressed="${!!ui.refAdjust}" title="Drag to move the tracing picture, scroll to resize it">Move picture</button>` : ''}
+      <span id="seam-tool-slot"></span>`;
+  },
   main() {
     const b = activeBlock();
     if (!b) return `<div class="stage"><div class="canvas-wrap"><div class="empty-state big"><h2>Start with a block</h2><p>Draw on a grid, or start from a classic.</p><div class="btn-row" style="justify-content:center"><button class="btn primary" data-act="libraryPicker">Browse classic blocks</button><button class="btn" data-act="newBlock">Draw a block</button></div></div></div></div>`;
     const S = b.kind === 'drawn' ? blockFrameSize(b) : doc.layout.blockSize, m = S * 0.07;   // margin doubles as room to start a box-select
     if (b.kind === 'compound') {
-      return `<div class="stage"><div class="toolbar"><span class="ed-name" style="margin-left:0">Editing <b>${esc(b.name)}</b>, a combination block</span><div class="spacer"></div>
-          <button class="tool" data-act="toggleUi" data-arg="showPieces" aria-pressed="${!!ui.showPieces}">Show pieces</button></div>
-        <div class="canvas-wrap"><svg id="editor" class="editor" viewBox="${-m} ${-m} ${S + 2 * m} ${S + 2 * m}">${blockSvg(b, S, S, { slots: true, activeSlot: ui.activeSlot, pieces: ui.showPieces })}</svg></div>
+      return `<div class="stage"><div class="canvas-wrap"><svg id="editor" class="editor" viewBox="${-m} ${-m} ${S + 2 * m} ${S + 2 * m}">${blockSvg(b, S, S, { slots: true, activeSlot: ui.activeSlot, pieces: ui.showPieces })}</svg></div>
         <div class="status-bar">${ui.activeSlot != null ? `Pick a block on the left for slot ${ui.activeSlot + 1}.` : 'Click a slot, then pick a block for it.'}</div></div>`;
     }
-    const tools = BLOCK_TOOLS.map(t => `<button class="tool icon-only" data-act="blockTool" data-arg="${t.key}" aria-pressed="${ui.tool === t.key}" title="${t.label} (${t.kb})" aria-label="${t.label}">${icon(t.icon)}</button>`).join('');
-    return `<div class="stage"><div class="toolbar">${tools}<span class="sep"></span>
-        <button class="tool" data-act="blockViewMenu" aria-haspopup="menu">View ${icon('down', 14)}</button>
-        <button class="tool" data-act="toggleSnap" aria-pressed="${!ui.snapOff}" title="Snap points to the grid">Snap</button>
-        ${refImgs[b.id] ? `<button class="tool" data-act="refAdjustToggle" aria-pressed="${!!ui.refAdjust}" title="Drag to move the tracing picture, scroll to resize it">Move picture</button>` : ''}
-        <span class="zoom-ctl"><button class="tool" data-act="edZoomBy" data-arg="out" title="Zoom out (−)" aria-label="Zoom out">−</button><button class="tool" id="ed-zoom" data-act="edZoomBy" data-arg="fit" title="Fit (0)">${Math.round(edZoom() * 100)}%</button><button class="tool" data-act="edZoomBy" data-arg="in" title="Zoom in (+)" aria-label="Zoom in">+</button></span>
-        <div class="spacer"></div><span id="seam-tool-slot"></span><span class="ed-name">Editing <b>${esc(b.name)}</b></span>
-      </div>
-      <div class="canvas-wrap"><svg id="editor" class="editor tool-${ui.refAdjust && refImgs[b.id] ? 'ref' : ui.tool}" viewBox="${edViewBox(S).map(v => round(v, 4)).join(' ')}" aria-label="Block editor"><g ${edTurn(b, S)}><g id="ed-c">${editorShapes(b)}</g></g><g id="ed-ref" pointer-events="none">${refImageSvg(b, S)}</g><g ${edTurn(b, S)}><g id="ed-g">${editorGuides(b)}</g><g id="ed-ov" pointer-events="none"></g></g></svg>
-        <div id="sel-bar" class="sel-bar" hidden></div><div id="seam-card" class="seam-card" hidden></div></div>
+    return `<div class="stage"><div class="canvas-wrap"><svg id="editor" class="editor tool-${ui.refAdjust && refImgs[b.id] ? 'ref' : ui.tool}" viewBox="${edViewBox(S).map(v => round(v, 4)).join(' ')}" aria-label="Block editor"><g ${edTurn(b, S)}><g id="ed-c">${editorShapes(b)}</g></g><g id="ed-ref" pointer-events="none">${refImageSvg(b, S)}</g><g ${edTurn(b, S)}><g id="ed-g">${editorGuides(b)}</g><g id="ed-ov" pointer-events="none"></g></g></svg>
+        <div id="seam-card" class="seam-card" hidden></div></div>
       <div class="status-bar" id="ed-status">${blockStatus(b)}</div></div>`;
   },
   afterMain(el) {
@@ -61,8 +69,6 @@ Views.block = {
   },
   inspector() { return blockInspector(); },
   key(e) { return blockViewKey(e); },
-  // picking a fabric while shapes are selected recolours them
-  onFabricPick(id) { if (ui.tool === 'select' && selList().length) Actions.regionFab(id); },
 };
 
 /* ---------- geometry helpers (grid units) ---------- */
@@ -322,29 +328,9 @@ function selBounds(b, list = selList()) {
   return bounds(list.flatMap(i => b.regions[i].pts));
 }
 // Small toolbar floating just above the selection.
+// The selection's options sit in the tool row; refresh it when the selection changes.
 function positionSelBar() {
-  const bar = $('#sel-bar'), b = activeBlock(), svg = $('#editor'), wrap = bar?.parentElement;
-  if (!bar || !b || b.kind !== 'drawn' || !svg) return;
-  const sel = selList();
-  if (ui.tool !== 'select' || !sel.length || ed.drag) { bar.hidden = true; return; }
-  const k = gridScale(b), bb = selBounds(b, sel);
-  const ctm = $('#ed-c').getScreenCTM(), wr = wrap.getBoundingClientRect();
-  const cs = [[bb.minX, bb.minY], [bb.maxX, bb.minY], [bb.maxX, bb.maxY], [bb.minX, bb.maxY]].map(([x, y]) => new DOMPoint(x * k, y * k).matrixTransform(ctm));
-  const tl = { x: Math.min(...cs.map(q => q.x)), y: Math.min(...cs.map(q => q.y)) }, br = { x: Math.max(...cs.map(q => q.x)), y: Math.max(...cs.map(q => q.y)) };
-  bar.innerHTML = `<span class="sb-count">${sel.length > 1 ? sel.length : ''}</span>
-    ${(() => { const fs = uniq(sel.map(i => b.regions[i].fab)), f = fs.length === 1 ? fs[0] : null; return `<button class="sb-fab" data-act="selFabricMenu" aria-haspopup="menu" title="Change fabric">${f ? swatchHtml(f === BG ? doc.layout.background : f, 16) : '<span class="sw mixed"></span>'}${icon('down', 12)}</button>`; })()}
-    <button data-act="selDup" title="Duplicate (Ctrl+D)" aria-label="Duplicate">${icon('dup')}</button>
-    <button data-act="selRotate" data-arg="cw" title="Turn 90° (E)" aria-label="Turn">${icon('rotate')}</button>
-    <button data-act="selMirror" data-arg="h" title="Mirror (X)" aria-label="Mirror">${icon('mirror')}</button>
-    <button data-act="selOrder" data-arg="front" title="To front" aria-label="To front">${icon('front')}</button>
-    <button data-act="selOrder" data-arg="back" title="To back" aria-label="To back">${icon('back')}</button>
-    <button data-act="selDelete" class="danger" title="Delete (Del)" aria-label="Delete"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2.5 4h11M6 4V2.5h4V4M4 4l.8 9.5h6.4L12 4M6.8 6.5v5M9.2 6.5v5"/></svg></button>`;
-  bar.hidden = false;
-  const bw = bar.offsetWidth, bh = bar.offsetHeight;
-  let x = (tl.x + br.x) / 2 - wr.left - bw / 2, y = tl.y - wr.top - bh - 8;
-  if (y < 4) y = br.y - wr.top + 8;
-  bar.style.left = `${clamp(x, 4, wr.width - bw - 4)}px`;
-  bar.style.top = `${clamp(y, 4, wr.height - bh - 4)}px`;
+  if (ui.view === 'block' && !ed.drag) renderToolbar();
 }
 
 /* ---------- pointer interaction ---------- */
@@ -914,6 +900,11 @@ Actions.selDelete = () => {
 };
 Actions.selPaint = () => Actions.regionFab(ui.fabric);
 // The fabric dropdown on the selection bar: pick the fabric for the selected shapes.
+Actions.paintFabricMenu = (a, el) => openMenu(el, [
+  ...doc.fabrics.map((f, i) => ({ label: `${swatchHtml(f.id, 16)} <b>${letterFor(i)}</b> ${esc(f.name)}`, act: 'pickFabric', arg: f.id, checked: ui.fabric === f.id })),
+  '-',
+  { label: '<span class="sw bgsw"></span> Background', act: 'pickFabric', arg: BG, checked: ui.fabric === BG },
+], { align: 'left' });
 Actions.selFabricMenu = (a, el) => {
   const b = activeBlock(), cur = uniq(selList().map(i => b.regions[i].fab));
   openMenu(el, [
@@ -989,7 +980,7 @@ function edContext(e) {
     items.push({ label: `Paint with ${esc(ui.fabric === BG ? 'quilt background' : fabricLabel(ui.fabric))}`, act: 'selPaint' },
       { label: 'Pick up this fabric', act: 'selPick' }, '-',
       { label: 'Duplicate', act: 'selDup', kb: 'Ctrl+D' }, { label: 'Copy', act: 'selCopy', kb: 'Ctrl+C' },
-      { label: 'Rotate 90°', act: 'selRotate', arg: 'cw', kb: 'E' }, { label: 'Mirror left–right', act: 'selMirror', arg: 'h', kb: 'X' }, { label: 'Mirror top–bottom', act: 'selMirror', arg: 'v', kb: 'Y' }, '-',
+      { label: 'Rotate 90°', act: 'selRotate', arg: 'cw', kb: 'E' }, { label: 'Flip horizontal', act: 'selMirror', arg: 'h', kb: 'X' }, { label: 'Flip vertical', act: 'selMirror', arg: 'v', kb: 'Y' }, '-',
       { label: 'Bring to front', act: 'selOrder', arg: 'front' }, { label: 'Send to back', act: 'selOrder', arg: 'back' }, '-',
       { label: `Delete ${what}`, act: 'selDelete', kb: 'Del', danger: true });
   } else {
@@ -1272,40 +1263,39 @@ function blockInspector() {
     });
     h += section('Slots', slots, { key: 'slots' });
     h += constructionSection(b, S);
-    return h + nextStep('layout', 'Layout');
+    return h;
   }
 
   const sel = selList();
   const tsel = selectedText(b, sel);
-  if (tsel) h += textEditSection(b, tsel);
+  // the selection comes first, so it's always in view; its commands live on the bar beside it
+  let selh = '';
+  if (tsel) selh += textEditSection(b, tsel);
   if (sel.length > 1) {
     const fabs = uniq(sel.map(i => b.regions[i].fab));
-    h += section(`${sel.length} shapes`, `<label class="f">Fabric</label>${fabricPicker(fabs.length === 1 ? fabs[0] : null, 'regionFab', { allowBg: true })}
-      <div class="btn-row"><button class="btn small" data-act="selRotate" data-arg="cw">Turn</button><button class="btn small" data-act="selMirror" data-arg="h">Mirror</button><button class="btn small" data-act="selDup">Duplicate</button></div>
-      <div class="btn-row"><button class="btn small" data-act="selOrder" data-arg="front">To front</button><button class="btn small" data-act="selOrder" data-arg="back">To back</button><button class="btn small quiet danger" data-act="selDelete">Delete</button></div>`, { key: 'shape' });
+    selh += section(`${sel.length} shapes selected`, `<label class="f">Fabric</label>${fabricPicker(fabs.length === 1 ? fabs[0] : null, 'regionFab', { allowBg: true })}`, { key: 'shape' });
   }
   const r = sel.length === 1 ? b.regions[sel[0]] : null;
   if (r) {
-    h += section('Shape', `<label class="f">Fabric</label>${fabricPicker(r.fab, 'regionFab', { allowBg: true })}
+    selh += section('Selected shape', `<label class="f">Fabric</label>${fabricPicker(r.fab, 'regionFab', { allowBg: true })}
       <label class="check" title="Sewn on top; doesn't cut the pieces underneath"><input type="checkbox" data-change="regionApp" ${r.app ? 'checked' : ''}> Appliqué</label>
-      <label class="f">Order</label><div class="btn-row" style="margin-top:3px"><button class="btn small" data-act="regionOrder" data-arg="back">To back</button><button class="btn small" data-act="regionOrder" data-arg="down" aria-label="Back one">${icon('down', 14)}</button><button class="btn small" data-act="regionOrder" data-arg="up" aria-label="Forward one">${icon('up', 14)}</button><button class="btn small" data-act="regionOrder" data-arg="front">To front</button></div>
-      <label class="f">Copies around the centre</label>
-      <div class="btn-row" style="margin-top:3px">${(hex ? [['rot2', '2'], ['rot3', '3'], ['rot6', '6']] : [['rot2', '2'], ['rot4', '4'], ['rot8', '8']]).map(([k, l]) => `<button class="btn small" data-act="regionCopies" data-arg="${k}">${l}</button>`).join('')}<button class="btn small" data-act="regionCopies" data-arg="h">Mirror across</button><button class="btn small" data-act="regionCopies" data-arg="v">Mirror down</button><button class="btn small" data-act="regionCopies" data-arg="4">4-way</button></div>
-      <div class="btn-row"><button class="btn small quiet danger" data-act="regionDelete">Delete shape</button></div>`, { key: 'shape' });
+      <label class="f">Add copies around the centre</label>
+      <div class="btn-row" style="margin-top:3px">${(hex ? [['rot2', '2'], ['rot3', '3'], ['rot6', '6']] : [['rot2', '2'], ['rot4', '4'], ['rot8', '8']]).map(([k, l]) => `<button class="btn small" data-act="regionCopies" data-arg="${k}">${l}</button>`).join('')}<button class="btn small" data-act="regionCopies" data-arg="h">Mirrored copy ↔</button><button class="btn small" data-act="regionCopies" data-arg="v">Mirrored copy ↕</button><button class="btn small" data-act="regionCopies" data-arg="4">4-way</button></div>`, { key: 'shape' });
   }
+  h = selh + h;
 
   // shapes list
   let list = '';
   for (let i = b.regions.length - 1; i >= 0; i--) {
     const reg = b.regions[i];
-    list += `<div class="region-row" aria-pressed="${sel.includes(i)}" data-act="selectRegion" data-arg="${i}">${reg.fab === BG ? '<span class="sw" style="background:repeating-linear-gradient(45deg,#fafafa,#fafafa 3px,#e6e6e3 3px,#e6e6e3 6px)"></span>' : swatchHtml(reg.fab, 16)}<span class="nm">${esc(regionName(b, reg))} <span class="muted">${esc(reg.fab === BG ? 'background' : fabricLabel(reg.fab))}${reg.app ? ' · appliqué' : ''}</span></span></div>`;
+    list += `<div class="region-row" role="button" tabindex="0" aria-pressed="${sel.includes(i)}" data-act="selectRegion" data-arg="${i}">${reg.fab === BG ? '<span class="sw" style="background:repeating-linear-gradient(45deg,#fafafa,#fafafa 3px,#e6e6e3 3px,#e6e6e3 6px)"></span>' : swatchHtml(reg.fab, 16)}<span class="nm">${esc(regionName(b, reg))} <span class="muted">${esc(reg.fab === BG ? 'background' : fabricLabel(reg.fab))}${reg.app ? ' · appliqué' : ''}</span></span></div>`;
   }
   h += section(`Shapes <span class="muted">${b.regions.length}</span>`, list ? `${list}<p class="hint">Top of the list is in front.</p>` : '<p class="hint">Empty block. Draw with the tools above.</p>', { key: 'shapes', closed: true });
   h += refSection(b);
   h += section(`Seams${b.seams?.length ? ` <span class="muted">${b.seams.length}</span>` : ''}`, `<p class="hint">Seam lines split pieces so they sew with straight seams.</p>
     <div class="btn-row"><button class="btn small" data-act="autoSeams">Add suggested seams</button>${b.seams?.length ? '<button class="btn small quiet" data-act="clearSeams">Remove all</button>' : ''}</div>`, { key: 'seams', closed: true });
   h += constructionSection(b, S);
-  return h + nextStep('layout', 'Layout');
+  return h;
 }
 // A shape's name in the shapes list, in quilting words.
 function regionName(b, reg) {
@@ -1329,5 +1319,5 @@ function constructionSection(b, S) {
   let body = `<p class="${an.setIn ? 'hint warn' : 'hint'}">${plural(pieces.length, 'piece')} to cut. ${how}</p>
     <dl class="kv">${Object.entries(counts).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}${Object.entries(units).map(([k, v]) => `<dt>${esc(UNIT_NAMES[k] || k)}</dt><dd>${v}</dd>`).join('')}</dl>`;
   for (const p of probs) body += `<p class="hint${p.kind === 'tiny' ? '' : ' warn'}">${esc(p.msg)}</p>`;
-  return section('Construction', body, { key: 'construct', closed: !an.setIn && !probs.some(p => p.kind !== 'tiny') });
+  return section('Construction', body, { key: 'construct', closed: true });
 }

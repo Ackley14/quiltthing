@@ -9,7 +9,7 @@ const STASH_PRESETS = [
 // Seam allowance, fabric width and the other cutting settings (opened from Options or Fabric & cutting).
 function cuttingSettingsHtml() {
   const c = doc.cutting;
-  return `<div class="f-row">${lenField('Seam allowance', 'cutting.seam', { min: 0, max: 1 })}${lenField('Fabric width', 'cutting.wof', { min: 10, max: 140 })}</div>
+  return `<div class="f-row">${lenField('Seam allowance', 'cutting.seam', { min: 0, max: 1 })}${lenField('Usable width (WOF)', 'cutting.wof', { min: 10, max: 140 })}</div>
     <label class="f">Default fabric<select data-change="defaultFormat">${formatOptionsHtml(c.defaultFormat?.kind === 'yardage' ? null : c.defaultFormat, false).replace('value="yardage"', `value="yardage" ${!c.defaultFormat || c.defaultFormat.kind === 'yardage' ? 'selected' : ''}`)}</select></label>
     <div class="f-row">${numField('Extra %', 'cutting.extra', { min: 0, max: 50 })}
     ${selectField('Round up to', 'cutting.roundTo', [['eighth', '⅛ yard'], ['quarter', '¼ yard'], ['half', '½ yard'], ['none', "Don't round"]])}</div>
@@ -17,18 +17,25 @@ function cuttingSettingsHtml() {
     ${lenField('Backing extra all round', 'cutting.overhang', { min: 0, max: 12 })}</div>
     ${doc.layout.mode === 'tess' && doc.layout.tess.edge === 'trim' ? `<label class="check"><input type="checkbox" data-bind="layout.tess.cutEdges" data-type="bool" ${doc.layout.tess.cutEdges ? 'checked' : ''}> Cut edge pieces to shape</label>` : ''}
     ${doc.layout.mode !== 'tess' && Qnow().cells.some(cl => cl.b && cl.clip) ? partialToggle() : ''}
-    <p class="hint">Fabric width is what's left after trimming the selvages. Quilting cotton is usually 40–42".</p>`;
+    <p class="hint">Usable width is what's left after trimming the selvages. Quilting cotton is usually 40–42".</p>`;
 }
 
 Views.fabric = {
+  toolbar() {
+    const cut = ui.fabPane === 'cut';
+    const Q = Qnow(), plan = cuttingPlan(Q), pre = precutSummary(plan.fabrics);
+    return `<div class="seg" role="group" aria-label="Show"><button aria-pressed="${!cut}" data-act="fabPane" data-arg="shop">Shopping list</button><button aria-pressed="${cut}" data-act="fabPane" data-arg="cut">Cutting plan</button></div>
+      ${cut ? `<button class="tool toggle" data-act="toggleCutMaps" aria-pressed="${ui.cutDiagrams !== false}">Cutting maps</button>` : ''}
+      <button class="tool" data-act="cuttingSettings">Cutting settings…</button>
+      <span class="sep"></span><span class="tb-label">${fmtSize(Q.W, Q.H)} · buy <b>${fmtYards(sum(plan.fabrics, f => f.buyIn) + plan.backing.buyIn)}</b>${pre ? ` + ${esc(pre)}` : ''} · ${plural(plan.totalPieces, 'piece')}</span>`;
+  },
   main() {
     const Q = Qnow(), plan = cuttingPlan(Q);
     const cut = ui.fabPane === 'cut';
     const totalBuy = sum(plan.fabrics, f => f.buyIn) + plan.backing.buyIn;
     const precutText = precutSummary(plan.fabrics);
-    let h = `<div class="docview${cut ? ' wide' : ''}"><div class="doc-head"><h2>Fabric &amp; cutting</h2>
-        <div class="seg" role="group" aria-label="Show"><button aria-pressed="${!cut}" data-act="fabPane" data-arg="shop">Shopping list</button><button aria-pressed="${cut}" data-act="fabPane" data-arg="cut">Cutting plan</button></div></div>
-      <p class="summary">${fmtSize(Q.W, Q.H)} · buy <b>${fmtYards(totalBuy)}</b> including backing${precutText ? ` and <b>${esc(precutText)}</b>` : ''} · ${plural(plan.totalPieces, 'piece')} to cut</p>`;
+    let h = `<div class="docview wide">
+`;
     if (!plan.fabrics.length) return h + `<div class="empty-state"><p>Nothing to cut yet. Place some blocks in the layout first.</p><button class="btn" data-act="view" data-arg="layout">Go to Layout</button></div></div>`;
     for (const w of [...Q.warnings, ...plan.problems]) h += `<div class="callout bad" style="margin-bottom:10px">${esc(w)}</div>`;
     return h + (cut ? cuttingPlanHtml(plan) : shoppingListHtml(plan)) + '</div>';
@@ -47,8 +54,8 @@ Views.fabric = {
       ${rows ? `<div class="stash-row hdr"><span>Name</span><span>Width</span><span>Length</span><span></span></div>${rows}` : ''}
       <div class="btn-row"><button class="btn small" data-act="stashMenu" data-arg="${stashFabric()}">${icon('plus', 14)} Add a piece</button></div>`, { key: 'stash', closed: !n });
     const c = doc.cutting;
-    h += `<section class="sec"><div class="btn-row" style="margin-top:10px"><button class="btn small" data-act="cuttingSettings">Cutting settings…</button></div></section>`;
-    return h + nextStep('pattern', 'Pattern');
+
+    return h;
   },
 };
 Actions.fabPane = v => { ui.fabPane = v === 'cut' ? 'cut' : 'shop'; saveUi(); render(); };

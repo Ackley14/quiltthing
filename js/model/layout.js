@@ -220,7 +220,11 @@ function buildQuilt() {
     const faceFab = o => t.shape === 'tumbling' && t.faces ? [t.faces.top, t.faces.right, t.faces.left][o] : null;
     // hexagon blocks painted onto hexagon tiles
     const hexBlockAt = key => { const c = t.shape === 'hex' && t.blocks?.[key]; return c && isHexBlock(doc.blocks[c.b]) ? c : null; };
-    for (const tile of latticeTiles(t.shape, t.size, t.ratio, t.lean, t.orient, cw, ch)) {
+    // nudge: the sheet slides over the pattern by a fraction of one repeat across and down; shapes keep
+    // their keys, so painted shapes and hexagon blocks move with the pattern
+    const [rx, ry] = tessPeriod(t), ox = (((t.offX || 0) % 1) + 1) % 1 * rx, oy = (((t.offY || 0) % 1) + 1) % 1 * ry;
+    for (const tile0 of latticeTiles(t.shape, t.size, t.ratio, t.lean, t.orient, cw + (ox ? rx : 0), ch + (oy ? ry : 0))) {
+      const tile = ox || oy ? { ...tile0, pts: translatePoly(tile0.pts, -ox, -oy) } : tile0;
       const bb = bounds(tile.pts);
       if (bb.maxX <= 1e-9 || bb.maxY <= 1e-9 || bb.minX >= cw - 1e-9 || bb.minY >= ch - 1e-9) continue;
       const clipped = clipToRect(tile.pts, cw, ch);
