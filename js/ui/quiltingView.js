@@ -28,7 +28,8 @@ Views.quilting = {
       const len = stats.per[i]?.length || 0;
       h += section(`${i + 1}. ${t.label}`, `
         <div class="f-row"><label class="f">Pattern<select data-bind="${p}.type">${QUILT_TYPES.map(x => `<option value="${x.key}" ${x.key === L.type ? 'selected' : ''}>${x.label}</option>`).join('')}</select></label>
-        <label class="f">Where<select data-bind="${p}.area">${[['all', 'Whole quilt'], ['center', 'Centre only'], ['borders', 'Borders only']].map(([k, l]) => `<option value="${k}" ${L.area === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+        <label class="f">Where<select data-bind="${p}.area">${QUILT_AREAS.filter(([k]) => Q.panels.length || L.area === k || !['panel', 'aroundPanel'].includes(k)).map(([k, l]) => `<option value="${k}" ${L.area === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+        ${['panel', 'aroundPanel'].includes(L.area) && !Q.panels.length ? '<p class="hint" style="color:var(--danger)">There are no inset panels in this layout, so this layer has nothing to stitch.</p>' : ''}
         ${t.noSpacing ? '' : lenField(L.type === 'spiral' ? 'Distance between turns' : 'Spacing', `${p}.spacing`, { min: 0.25, max: 24 })}
         ${['lines', 'crosshatch', 'diamonds', 'wavy', 'zigzag', 'spiral'].includes(L.type) ? `<label class="f">Rotation <span class="muted">${Math.round(L.angle)}°</span><input type="range" min="0" max="180" step="5" value="${((L.angle % 180) + 180) % 180}" data-input="qAngleLive" data-change="qAngle" data-arg="${i}"></label>` : ''}
         ${t.wave ? `<div class="f-row">${lenField('Wave height', `${p}.amp`, { min: 0.1, max: 6 })}${lenField('Wave length', `${p}.wave`, { min: 0.5, max: 24 })}</div>` : ''}

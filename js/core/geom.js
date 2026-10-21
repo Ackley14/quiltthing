@@ -531,8 +531,10 @@ function segRectInterval(p0, p1, r) {
   }
   return t1 - t0 > 1e-9 ? [t0, t1] : null;
 }
-// Clip a polyline to (inside outer) and optionally (outside inner). Returns polylines.
+// Clip a polyline to (inside outer) and optionally (outside inner — one rect or a list).
+// Returns polylines.
 function clipPolyline(points, outer, inner) {
+  const holes = !inner ? [] : Array.isArray(inner) ? inner : [inner];
   const runs = [];
   let cur = null;
   const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
@@ -540,13 +542,15 @@ function clipPolyline(points, outer, inner) {
     const a = points[i], b = points[i + 1];
     const io = segRectInterval(a, b, outer);
     let intervals = io ? [io] : [];
-    if (inner && io) {
-      const ii = segRectInterval(a, b, inner);
-      if (ii) {
-        intervals = [];
-        if (ii[0] > io[0] + 1e-9) intervals.push([io[0], Math.min(io[1], ii[0])]);
-        if (ii[1] < io[1] - 1e-9) intervals.push([Math.max(io[0], ii[1]), io[1]]);
-      }
+    for (const h of holes) {
+      const ii = segRectInterval(a, b, h);
+      if (!ii) continue;
+      intervals = intervals.flatMap(([t0, t1]) => {
+        const keep = [];
+        if (ii[0] > t0 + 1e-9) keep.push([t0, Math.min(t1, ii[0])]);
+        if (ii[1] < t1 - 1e-9) keep.push([Math.max(t0, ii[1]), t1]);
+        return keep;
+      });
     }
     for (const [t0, t1] of intervals) {
       const p = lerp(a, b, t0), q = lerp(a, b, t1);

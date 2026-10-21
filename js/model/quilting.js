@@ -12,7 +12,7 @@ const QUILT_TYPES = [
   { key: 'spiral', label: 'Spiral', angle: 0, help: 'One continuous spiral from the centre outward.' },
   { key: 'circles', label: 'Concentric circles', angle: 0, help: 'Rings around the centre ("baptist fan" look when trimmed by the edges).' },
   { key: 'squares', label: 'Concentric squares', angle: 0, help: 'Nested rectangles echoing the quilt outline.' },
-  { key: 'ditch', label: 'In the ditch', angle: 0, help: 'Stitches right along the seams between blocks, sashing and borders.', noSpacing: true },
+  { key: 'ditch', label: 'In the ditch', angle: 0, help: 'Stitches right along the seams — between blocks, sashing and borders, inside each block, and around appliqué.', noSpacing: true },
   { key: 'echo', label: 'Echo each block', angle: 0, help: 'Outlines inside every block or tile, repeated inward at the spacing.' },
   { key: 'faces', label: '3D face lines (dimensional)', angle: 0, help: 'Straight lines inside each shape, running along one of its own edges — a different direction per face, so tumbling-block cubes look more three-dimensional. For tessellations.' },
 ];
@@ -25,11 +25,47 @@ function newQuiltLayer(type = 'crosshatch') {
     dirs: { 0: 0, 1: 0, 2: 0 }, grade: true };
 }
 
+const QUILT_AREAS = [
+  ['all', 'Whole quilt'], ['center', 'Centre only'], ['borders', 'Borders only'],
+  ['panel', 'Inset panel only'], ['aroundPanel', 'Centre, around the inset'],
+];
+// The areas a layer covers: each is a rect to stitch inside (`outer`) minus rects to skip (`inner`).
+// Patterns like spirals and circles are centred on each area, so every inset panel gets its own.
 function quiltAreaRects(Q, area) {
-  const outer = { x: 0, y: 0, w: Q.W, h: Q.H };
-  if (area === 'center') return { outer: Q.inner, inner: null };
-  if (area === 'borders') return doc.layout.borders.some(b => b.width > 0) ? { outer, inner: Q.inner } : null;
-  return { outer, inner: null };
+  const outer = { x: 0, y: 0, w: Q.W, h: Q.H }, panels = Q.panels || [];
+  if (area === 'center') return [{ outer: Q.inner, inner: null }];
+  if (area === 'borders') return doc.layout.borders.some(b => b.width > 0) ? [{ outer, inner: Q.inner }] : [];
+  if (area === 'panel') return panels.map(r => ({ outer: r, inner: null }));
+  if (area === 'aroundPanel') return [{ outer: Q.inner, inner: panels }];
+  return [{ outer, inner: null }];
+}
+// Seams inside each block (and around its appliqué), placed where the block sits in the quilt.
+// The block's own outline is left out: it's already among the seams between blocks.
+function blockDitchSegments(Q) {
+  const segs = [];
+  const near = (p, a, b) => {
+    const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy || 1e-12;
+    const t = clamp(((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2, 0, 1);
+    return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy) < 1e-6 * (1 + Math.sqrt(L2));
+  };
+  for (const c of Q.cells) {
+    const block = c.b && doc.blocks[c.b];
+    if (!block) continue;
+    const S = c.size, outline = blockOutline(block, S), map = cellPointMapper(c);
+    const onOutline = (a, b) => outline.some((o, i) => { const o2 = outline[(i + 1) % outline.length]; return near(a, o, o2) && near(b, o, o2); });
+    for (const p of blockPieces(block, S, S)) for (const ring of [p.pts, ...p.holes]) for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      if (!p.app && onOutline(a, b)) continue;
+      const A = map(a), B = map(b);
+      if (!c.clip) { segs.push([A, B]); continue; }
+      // a block cut off by an edge or panel: keep only the part inside the quilt
+      for (const part of c.clip) for (const [t0, t1] of lineChords(part, [], A, B).chords) {
+        const u0 = Math.max(0, t0), u1 = Math.min(1, t1);
+        if (u1 - u0 > 1e-6) segs.push([[A[0] + (B[0] - A[0]) * u0, A[1] + (B[1] - A[1]) * u0], [A[0] + (B[0] - A[0]) * u1, A[1] + (B[1] - A[1]) * u1]]);
+      }
+    }
+  }
+  return segs;
 }
 
 // Raw (unclipped) polylines covering a rect, rotated by `angle` about its centre.
@@ -60,8 +96,9 @@ function parallelLines(R, spacing, angle, shape = 'line', amp = 0, wave = 4) {
 }
 
 function quiltLayerPaths(Q, layer) {
-  const A = quiltAreaRects(Q, layer.area);
-  if (!A) return [];
+  return quiltAreaRects(Q, layer.area).flatMap(A => quiltAreaPaths(Q, layer, A));
+}
+function quiltAreaPaths(Q, layer, A) {
   const R = A.outer, sp = Math.max(0.25, +layer.spacing || 2);
   const cx = R.x + R.w / 2, cy = R.y + R.h / 2, maxR = Math.hypot(R.w, R.h) / 2;
   let raw = [];
@@ -112,6 +149,10 @@ function quiltLayerPaths(Q, layer) {
         const onEdge = p => p[0] < 1e-6 || p[1] < 1e-6 || p[0] > Q.W - 1e-6 || p[1] > Q.H - 1e-6;
         if (onEdge(a) && onEdge(b) && (Math.abs(a[0] - b[0]) < 1e-6 || Math.abs(a[1] - b[1]) < 1e-6)) continue;
         segs.push([a, b]);
+      }
+      for (const [a, b] of blockDitchSegments(Q)) {
+        const k = [ptKey(a), ptKey(b)].sort().join('|');
+        if (!seen.has(k)) { seen.add(k); segs.push([a, b]); }
       }
       raw = segs;
       break;
@@ -212,7 +253,8 @@ function quiltingStats(Q) {
 
 function quiltingInstructions(L) {
   const sp = fmtLen(L.spacing);
-  const where = { all: 'across the whole quilt', center: 'in the quilt centre (inside the borders)', borders: 'in the borders only' }[L.area];
+  const where = { all: 'across the whole quilt', center: 'in the quilt centre (inside the borders)', borders: 'in the borders only',
+    panel: 'in the inset panel (including its frames)', aroundPanel: 'in the quilt centre, around the inset panel' }[L.area] || '';
   const ang = Math.round(((L.angle % 180) + 180) % 180);
   const dirWord = ang === 90 ? 'vertical' : ang === 0 ? 'horizontal' : `${ang}°`;
   switch (L.type) {
@@ -224,7 +266,7 @@ function quiltingInstructions(L) {
     case 'spiral': return `Stitch a continuous spiral ${where}, starting at the centre with turns ${sp} apart. Begin with a small circle, then rotate the quilt as you go — a walking foot and slow speed give smooth curves.`;
     case 'circles': return `Stitch concentric circles ${sp} apart from the centre ${where}. Mark the circles with a string compass or circle template.`;
     case 'squares': return `Stitch nested rectangles ${sp} apart ${where}, starting ${fmtLen(L.spacing / 2)} in from the edge and working inward.`;
-    case 'ditch': return `Stitch in the ditch ${where}: sew right in the seam lines between blocks, sashing and borders so the stitches disappear. Do this first to stabilise the quilt.`;
+    case 'ditch': return `Stitch in the ditch ${where}: sew right in the seam lines — between blocks, sashing and borders, and the seams inside each block — so the stitches disappear, and stitch just outside the edge of any appliqué. Do this first to stabilise the quilt.`;
     case 'echo': return `Echo quilt ${where}: stitch ${plural(L.echoes || 1, 'outline')} inside each block or tile, ${sp} apart.`;
     case 'faces': {
       const tum = doc.layout.mode === 'tess' && doc.layout.tess.shape === 'tumbling';

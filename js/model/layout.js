@@ -155,7 +155,7 @@ function clipToRect(pts, W, H) {
 /* ---------- build ---------- */
 function buildQuilt() {
   const L = doc.layout, BS = L.blockSize;
-  const Q = { mode: L.mode, BS, cells: [], tiles: [], patches: [], warnings: [] };
+  const Q = { mode: L.mode, BS, cells: [], tiles: [], patches: [], panels: [], warnings: [] };
   const off = sum(L.borders, b => b.width);
   let cw = 0, ch = 0;
 
@@ -250,6 +250,7 @@ function buildQuilt() {
     }
     for (const pg of panels) {
       const p = pg.p;
+      Q.panels.push({ id: p.id, x: off + pg.x0, y: off + pg.y0, w: pg.outer, h: pg.outer });   // framed panel, for quilting areas
       // frames from the inside out: sides first, then top & bottom (the sewing order)
       let x = off + pg.x0 + pg.fw, y = off + pg.y0 + pg.fw, s = p.size;
       (p.frames || []).forEach((fr, k) => {
@@ -300,6 +301,12 @@ const DRAW_BLEED = 0.04;
 // "Seam lines" view: seams inside blocks/tiles, and the heavier lines between blocks
 const SEAM_INK = 'rgba(20,24,30,.55)';
 const SEAM_INK_STRONG = 'rgba(20,24,30,.7)';
+// Block frame coordinates → quilt coordinates for a cell (the same placement as cellTransform).
+function cellPointMapper(c) {
+  const h = c.size / 2, f = c.flip ? -1 : 1;
+  const a = (c.angle + (c.rot || 0) * (c.rstep || 90)) * Math.PI / 180, co = Math.cos(a), si = Math.sin(a);
+  return ([x, y]) => { const px = (x - h) * f, py = y - h; return [c.cx + px * co - py * si, c.cy + px * si + py * co]; };
+}
 function cellTransform(c, bleed = 0) {
   const h = c.size / 2, k = (c.size + bleed) / c.size;
   return `translate(${round(c.cx, 4)} ${round(c.cy, 4)}) rotate(${c.angle + (c.rot || 0) * (c.rstep || 90)}) scale(${round((c.flip ? -1 : 1) * k, 5)} ${round(k, 5)}) translate(${-h} ${-h})`;

@@ -3,11 +3,31 @@
    they work offline and when the app is opened straight from disk. */
 
 const TEXT_FONTS = [
-  { key: 'archivo', label: 'Bold sans' },
-  { key: 'slab', label: 'Slab serif' },
-  { key: 'lilita', label: 'Rounded' },
-  { key: 'script', label: 'Script' },
+  { key: 'firasans', label: 'Fira Sans', group: 'Sans serif' },
+  { key: 'firasans-bold', label: 'Fira Sans Bold', group: 'Sans serif' },
+  { key: 'firasans-black', label: 'Fira Sans Black', group: 'Sans serif' },
+  { key: 'archivo', label: 'Archivo Black', group: 'Sans serif' },
+  { key: 'roboto', label: 'Roboto Bold', group: 'Sans serif' },
+  { key: 'opensans', label: 'Open Sans Bold', group: 'Sans serif' },
+  { key: 'montserrat', label: 'Montserrat Bold', group: 'Sans serif' },
+  { key: 'lato', label: 'Lato Bold', group: 'Sans serif' },
+  { key: 'poppins', label: 'Poppins Bold', group: 'Sans serif' },
+  { key: 'oswald', label: 'Oswald (narrow)', group: 'Sans serif' },
+  { key: 'bebas', label: 'Bebas Neue (tall capitals)', group: 'Sans serif' },
+  { key: 'lilita', label: 'Lilita One', group: 'Rounded' },
+  { key: 'comfortaa', label: 'Comfortaa Bold', group: 'Rounded' },
+  { key: 'slab', label: 'Alfa Slab One', group: 'Serif' },
+  { key: 'robotoslab', label: 'Roboto Slab Bold', group: 'Serif' },
+  { key: 'merriweather', label: 'Merriweather Bold', group: 'Serif' },
+  { key: 'playfair', label: 'Playfair Display Bold', group: 'Serif' },
+  { key: 'script', label: 'Pacifico', group: 'Script' },
+  { key: 'lobster', label: 'Lobster', group: 'Script' },
+  { key: 'dancing', label: 'Dancing Script Bold', group: 'Script' },
 ];
+const fontLabel = key => TEXT_FONTS.find(f => f.key === key)?.label || key;
+function fontOptions(cur) {
+  return uniq(TEXT_FONTS.map(f => f.group)).map(g => `<optgroup label="${g}">${TEXT_FONTS.filter(f => f.group === g).map(f => `<option value="${f.key}" ${f.key === cur ? 'selected' : ''}>${f.label}</option>`).join('')}</optgroup>`).join('');
+}
 const _fonts = {};
 const _scriptLoads = {};
 function loadScriptOnce(src) {

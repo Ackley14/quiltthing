@@ -30,6 +30,7 @@ Views.block = {
     return `<div class="stage"><div class="toolbar">${tools}<span class="sep"></span>
         <button class="tool" data-act="toggleSeamLines" aria-pressed="${ui.showSeamLines !== false}" title="Show or hide the red seam lines you've added">Seam lines</button>
         <button class="tool" data-act="toggleUi" data-arg="showPieces" aria-pressed="${!!ui.showPieces}" title="Outline each piece you'll actually cut — overlapping shapes are cut apart where they meet">Show pieces</button>
+        <button class="tool" data-act="toggleUi" data-arg="showCentre" aria-pressed="${!!ui.showCentre}" title="Show the block's centre lines (across and down the middle)">Centre lines</button>
         <button class="tool" data-act="toggleSnap" aria-pressed="${!ui.snapOff}" title="Snap points to the grid. Turn off to place points anywhere — corners of other shapes still pull points in so pieces meet.">Snap</button>
         ${refImgs[b.id] ? `<button class="tool" data-act="refAdjustToggle" aria-pressed="${!!ui.refAdjust}" title="Drag to move the tracing picture, scroll to resize it">✥ Picture</button>` : ''}
         <div class="spacer"></div><span id="seam-tool-slot"></span>
@@ -142,6 +143,13 @@ function editorGuides(b) {
       s += `<line class="gridline" x1="${i * k}" y1="0" x2="${i * k}" y2="${S}" stroke-width="${hair * (i === 0 || i === b.n ? 1.4 : .8)}"/>`;
       s += `<line class="gridline" x1="0" y1="${i * k}" x2="${S}" y2="${i * k}" stroke-width="${hair * (i === 0 || i === b.n ? 1.4 : .8)}"/>`;
     }
+  }
+  // centre lines: across and down the middle (point to point and flat to flat on a hexagon)
+  if (ui.showCentre) {
+    const c = S / 2, ink = 'stroke="#d6336c" stroke-linecap="round" pointer-events="none"';
+    s += `<line x1="${c}" y1="0" x2="${c}" y2="${S}" ${ink} stroke-width="${hair * 1.8}" stroke-dasharray="${hair * 10} ${hair * 4}"/>
+      <line x1="0" y1="${c}" x2="${S}" y2="${c}" ${ink} stroke-width="${hair * 1.8}" stroke-dasharray="${hair * 10} ${hair * 4}"/>
+      <circle cx="${c}" cy="${c}" r="${S * 0.012}" fill="#d6336c" pointer-events="none"/>`;
   }
   // seams (always shown while the seam tool is active, so they can be clicked to remove)
   if (ui.showSeamLines !== false || ui.tool === 'seam') (b.seams || []).forEach(([A, B], i) => {
@@ -313,9 +321,10 @@ function edDown(e) {
       return;
     }
     if (e.shiftKey) { const cur = selList(); setSel(cur.includes(ri) ? cur.filter(i => i !== ri) : [...cur, ri]); refreshEditor(); renderInspector(); return; }
-    if (!selList().includes(ri)) { setSel([ri]); renderInspector(); }
+    const fresh = !selList().includes(ri);
+    if (fresh) { setSel(textGroup(b, ri)); renderInspector(); }
     svg.setPointerCapture(e.pointerId);
-    ed.drag = { kind: 'move', start: p, ri, orig: new Map(selList().map(i => [i, b.regions[i].pts.map(q => q.slice())])), moved: false };
+    ed.drag = { kind: 'move', start: p, ri, fresh, orig: new Map(selList().map(i => [i, b.regions[i].pts.map(q => q.slice())])), moved: false };
     refreshEditor();
     return;
   }
@@ -420,7 +429,8 @@ function edUp(e) {
   if (dr.kind === 'move') {
     if (dr.moved) { commit(); return; }
     // a plain click on one shape of a multi-selection narrows the selection to it
-    if (selList().length > 1) { setSel([dr.ri]); refreshEditor(); renderInspector(); return; }
+    // (the first click on a placed word selects the whole word; a second picks one letter)
+    if (selList().length > 1 && !dr.fresh) { setSel([dr.ri]); refreshEditor(); renderInspector(); return; }
     positionSelBar();
     return;
   }
@@ -724,17 +734,20 @@ Actions.selPick = () => { const b = activeBlock(), sel = selList(); if (!sel.len
 Actions.selDup = () => {
   const b = activeBlock(), sel = selList(); if (!sel.length) return;
   const copies = sel.map(i => { const c = JSON.parse(JSON.stringify(b.regions[i])); c.pts = c.pts.map(([x, y]) => [x + 1, y + 1]); return c; });
+  forkTextIds(b, copies);
   const start = b.regions.length;
   b.regions.push(...copies);
   setSel(copies.map((_, k) => start + k)); ui.tool = 'select'; commit();
 };
-Actions.selCopy = () => { const b = activeBlock(), sel = selList(); if (!sel.length) return; _edClip = { n: b.n, regions: sel.map(i => JSON.parse(JSON.stringify(b.regions[i]))), pastes: 0 }; toast(`Copied ${plural(sel.length, 'shape')}`, 1200); };
+Actions.selCopy = () => { const b = activeBlock(), sel = selList(); if (!sel.length) return; _edClip = { n: b.n, regions: sel.map(i => JSON.parse(JSON.stringify(b.regions[i]))), texts: JSON.parse(JSON.stringify(b.texts || {})), pastes: 0 }; toast(`Copied ${plural(sel.length, 'shape')}`, 1200); };
 Actions.selPaste = () => {
   const b = activeBlock(); if (!_edClip || !b || b.kind !== 'drawn') return;
   _edClip.pastes++;
   const k = b.n / _edClip.n, off = _edClip.pastes;
   const start = b.regions.length;
-  for (const r of _edClip.regions) { const c = JSON.parse(JSON.stringify(r)); c.pts = c.pts.map(([x, y]) => [round(x * k + off, 6), round(y * k + off, 6)]); b.regions.push(c); }
+  const pasted = _edClip.regions.map(r => { const c = JSON.parse(JSON.stringify(r)); c.pts = c.pts.map(([x, y]) => [round(x * k + off, 6), round(y * k + off, 6)]); return c; });
+  forkTextIds(b, pasted, _edClip.texts || {});
+  b.regions.push(...pasted);
   setSel(_edClip.regions.map((_, i) => start + i)); ui.tool = 'select'; commit();
 };
 Actions.selRotate = dir => {
@@ -841,7 +854,9 @@ function placeText(b, at) {
   const t = textAtOrigin(b);
   if (!t) { ensureFont(); toast(loadedFont(textOpts().font) ? 'Type some words on the right first' : 'Still loading the font — try again in a moment'); return; }
   const fab = textFabric(), start = b.regions.length, outline = blockOutline(b, b.n);
-  const regs = t.regions.map(r => ({ ...r, fab, pts: r.pts.map(([x, y]) => [round(x + at[0], 4), round(y + at[1], 4)]) }));
+  const o = textOpts(), tid = uid('t');
+  b.texts = { ...(b.texts || {}), [tid]: { str: o.str, font: o.font, h: o.h } };
+  const regs = t.regions.map(r => ({ ...r, fab, txt: tid, pts: r.pts.map(([x, y]) => [round(x + at[0], 4), round(y + at[1], 4)]) }));
   b.regions.push(...regs);
   setSel(regs.map((_, i) => start + i));
   ui.tool = 'select'; ed.hover = null;
@@ -855,9 +870,62 @@ Actions.textH = (v, el) => { const h = parseLen(v); if (h > 0) { ui.textH = clam
 function textToolSection() {
   const o = textOpts();
   return section('Text', `<label class="f">Words<textarea rows="2" data-input="textStr" spellcheck="false">${esc(o.str)}</textarea></label>
-    <div class="f-row"><label class="f">Font<select data-change="textFont">${TEXT_FONTS.map(f => `<option value="${f.key}" ${f.key === o.font ? 'selected' : ''}>${f.label}</option>`).join('')}</select></label>
+    <div class="f-row"><label class="f">Font<select data-change="textFont">${fontOptions(o.font)}</select></label>
       <label class="f">Capital height<input type="text" inputmode="decimal" value="${esc(inputLen(o.h))}" data-change="textH"></label></div>
-    <p class="hint">${loadedFont(o.font) ? '' : '<b>Loading the font…</b> '}Uses the fabric selected in the sidebar. Click the block to place the words; each letter becomes an appliqué shape (holes included) that you can move, rotate, mirror or recolour. Turned-edge appliqué is easiest with letters 1½–2" tall or more; fusible appliqué (Fabric → Cutting settings) copes with smaller.</p>`, { key: 'text' });
+    <p class="hint">${loadedFont(o.font) ? '' : '<b>Loading the font…</b> '}Uses the fabric selected in the sidebar. Click the block to place the words; each letter becomes an appliqué shape (holes included) that you can move, rotate, mirror or recolour. Click placed words with <b>Select</b> to change them later. Turned-edge appliqué is easiest with letters 1½–2" tall or more; fusible appliqué (Fabric → Cutting settings) copes with smaller.</p>`, { key: 'text' });
+}
+
+/* ---------- editing placed text ----------
+   Each placed word keeps a record (block.texts[id] = { str, font, h }) and its letters carry
+   txt: id, so the words can be retyped, re-fonted or resized later. */
+function textGroup(b, ri) {
+  const id = b.regions[ri]?.txt;
+  return id ? b.regions.map((r, i) => r.txt === id ? i : -1).filter(i => i >= 0) : [ri];
+}
+// The one placed word the selection belongs to (if it's all letters of a single word).
+function selectedText(b, sel = selList()) {
+  const ids = uniq(sel.map(i => b.regions[i]?.txt));
+  return ids.length === 1 && ids[0] && b.texts?.[ids[0]] ? ids[0] : null;
+}
+// Rebuild a word's letters in place (centred where they are now, in the first letter's fabric).
+function rebuildText(b, tid, changes) {
+  const t = b.texts?.[tid]; if (!t) return;
+  const next = { ...t, ...changes };
+  loadFont(next.font).then(font => {
+    if (activeBlock() !== b) return;
+    const idx = b.regions.map((r, i) => r.txt === tid ? i : -1).filter(i => i >= 0);
+    if (!idx.length) return;
+    b.texts[tid] = next;
+    const bb = bounds(idx.flatMap(i => b.regions[i].pts)), at = [(bb.minX + bb.maxX) / 2, (bb.minY + bb.maxY) / 2];
+    const fab = b.regions[idx[0]].fab, first = idx[0];
+    const fresh = next.str.trim() ? textRegions(font, next.str, next.h / gridScale(b), at, fab).regions.map(r => ({ ...r, txt: tid })) : [];
+    b.regions = b.regions.filter(r => r.txt !== tid);
+    b.regions.splice(first, 0, ...fresh);
+    if (!fresh.length) delete b.texts[tid];
+    setSel(fresh.map((_, k) => first + k));
+    commit();
+  }).catch(err => toast(err.message));
+}
+// Copies of letters become a separate word.
+function forkTextIds(b, regions, texts = b.texts || {}) {
+  const map = new Map();
+  for (const r of regions) {
+    if (!r.txt || !texts[r.txt]) { delete r.txt; continue; }
+    if (!map.has(r.txt)) { const id = uid('t'); map.set(r.txt, id); b.texts = { ...(b.texts || {}), [id]: { ...texts[r.txt] } }; }
+    r.txt = map.get(r.txt);
+  }
+}
+Actions.textEditStr = (v, el) => { const b = activeBlock(); if (b) rebuildText(b, el.dataset.arg, { str: v }); };
+Actions.textEditFont = (v, el) => { const b = activeBlock(); if (b) rebuildText(b, el.dataset.arg, { font: v }); };
+Actions.textEditH = (v, el) => { const b = activeBlock(), h = parseLen(v); if (b && h > 0) rebuildText(b, el.dataset.arg, { h: clamp(h, 0.25, 48) }); };
+Actions.textToShapes = tid => { const b = activeBlock(); for (const r of b.regions) if (r.txt === tid) delete r.txt; delete b.texts?.[tid]; commit(); toast('The letters are ordinary shapes now', 1600); };
+function textEditSection(b, tid) {
+  const t = b.texts[tid];
+  return section('Text', `<label class="f">Words<textarea rows="2" data-change="textEditStr" data-arg="${tid}" spellcheck="false">${esc(t.str)}</textarea></label>
+    <div class="f-row"><label class="f">Font<select data-change="textEditFont" data-arg="${tid}">${fontOptions(t.font)}</select></label>
+      <label class="f">Capital height<input type="text" inputmode="decimal" value="${esc(inputLen(t.h))}" data-change="textEditH" data-arg="${tid}"></label></div>
+    <p class="hint">Changes rebuild the letters where they are now, in the first letter's fabric (turns and mirroring are reset). Click a selected word again to pick out a single letter.</p>
+    <div class="btn-row"><button class="btn small" data-act="textToShapes" data-arg="${tid}" title="Stop treating these letters as editable text">Make plain shapes</button></div>`, { key: 'textedit' });
 }
 
 /* ---------- tracing picture ---------- */
@@ -971,6 +1039,8 @@ function blockInspector() {
   }
 
   const sel = selList();
+  const tsel = selectedText(b, sel);
+  if (tsel) h += textEditSection(b, tsel);
   if (sel.length > 1) {
     const fabs = uniq(sel.map(i => b.regions[i].fab));
     h += section(`${sel.length} shapes selected`, `<div class="hint" style="margin-top:0">Fabric (applies to all)</div>${fabricPicker(fabs.length === 1 ? fabs[0] : null, 'regionFab', { allowBg: true })}
@@ -994,7 +1064,7 @@ function blockInspector() {
   let list = '';
   for (let i = b.regions.length - 1; i >= 0; i--) {
     const reg = b.regions[i];
-    list += `<div class="region-row" aria-pressed="${sel.includes(i)}" data-act="selectRegion" data-arg="${i}">${reg.fab === BG ? '<span class="sw" style="background:repeating-linear-gradient(45deg,#faf7f1,#faf7f1 3px,#e9e1d2 3px,#e9e1d2 6px)"></span>' : swatchHtml(reg.fab, 16)}<span class="nm">${reg.pts.length === 2 ? 'Ellipse' : reg.pts.length === 3 ? 'Triangle' : reg.pts.length === 4 ? 'Quad' : reg.pts.length + '-sided'} · ${esc(reg.fab === BG ? 'Quilt background' : fabricLabel(reg.fab))}${reg.app ? ' · appliqué' : ''}${reg.b?.some(x => x) ? ' · curved' : ''}</span></div>`;
+    list += `<div class="region-row" aria-pressed="${sel.includes(i)}" data-act="selectRegion" data-arg="${i}">${reg.fab === BG ? '<span class="sw" style="background:repeating-linear-gradient(45deg,#faf7f1,#faf7f1 3px,#e9e1d2 3px,#e9e1d2 6px)"></span>' : swatchHtml(reg.fab, 16)}<span class="nm">${reg.txt && b.texts?.[reg.txt] ? `Letter of “${esc(b.texts[reg.txt].str.slice(0, 16))}”` : reg.pts.length === 2 ? 'Ellipse' : reg.pts.length === 3 ? 'Triangle' : reg.pts.length === 4 ? 'Quad' : reg.pts.length + '-sided'} · ${esc(reg.fab === BG ? 'Quilt background' : fabricLabel(reg.fab))}${reg.app ? ' · appliqué' : ''}${reg.b?.some(x => x) ? ' · curved' : ''}</span></div>`;
   }
   h += section(`Shapes (${b.regions.length})`, list ? `<p class="hint" style="margin-top:0">Top of the list is in front. Shift-click to select several.</p>${list}` : '<p class="hint">No shapes yet — the whole block is quilt background. Use the tools above the canvas to draw.</p>', { key: 'shapes' });
   h += refSection(b);
