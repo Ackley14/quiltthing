@@ -5,7 +5,8 @@ Views.pattern = {
     const a4 = ui.patternPage === 'a4';
     // before printing: anything that would make a poor pattern
     const Q = Qnow(), warn = [...Q.warnings, ...(doc.meta.title === 'Untitled quilt' ? ['The quilt has no name yet (top left).'] : [])];
-    return `<span class="tb-label">Paper</span>
+    return `<button class="btn primary small" data-act="printPattern" title="In the print dialog: Save as PDF for a file, scale 100%, background graphics on">${icon('print', 14)} Print pattern</button><span class="sep"></span>
+      <span class="tb-label">Paper</span>
       <div class="seg" role="group" aria-label="Paper size"><button aria-pressed="${!a4}" data-act="setUi" data-arg="patternPage=letter">US Letter</button><button aria-pressed="${a4}" data-act="setUi" data-arg="patternPage=a4">A4</button></div>
       ${warn.length ? `<span class="sep"></span><span class="tb-warn" title="${esc(warn.join(' '))}">${esc(warn[0])}${warn.length > 1 ? ` (+${warn.length - 1})` : ''}</span>` : ''}
 `;

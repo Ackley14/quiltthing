@@ -74,7 +74,7 @@ function renderView() {
   // the second header row: the step's tools and view options
   renderToolbar();
   const main = $('#main'), insp = $('#inspector');
-  preserveFocus(main, () => { main.innerHTML = V.main(); });
+  preserveFocus(main, () => { main.innerHTML = viewBarHtml() + V.main(); });
   V.afterMain?.(main);
   preserveFocus(insp, () => { insp.innerHTML = V.inspector(); });
   document.body.classList.toggle('grayscale', !!ui.grayscale);
@@ -83,7 +83,7 @@ function renderView() {
 function renderMainOnly() {
   _Q = null;
   const V = Views[ui.view] || Views.block;
-  $('#main').innerHTML = V.main();
+  $('#main').innerHTML = viewBarHtml() + V.main();
   V.afterMain?.($('#main'));
 }
 function renderInspector() {
@@ -255,12 +255,17 @@ function section(title, body, opts = {}) {
 // The tool row: undo and redo, the step's tools and the options for the current tool or
 // selection, then the view switches and the next step.
 function renderToolbar() {
-  const V = Views[ui.view] || Views.block, next = VIEW_LIST[VIEW_LIST.findIndex(v => v.key === tabOf(ui.view)) + 1];
+  const V = Views[ui.view] || Views.block;
   const undoRedo = `<button class="tool icon-only" data-act="undo" ${undoStack.past.length ? '' : 'disabled'} aria-label="Undo" title="Undo (Ctrl+Z)">${icon('undo')}</button><button class="tool icon-only" data-act="redo" ${undoStack.future.length ? '' : 'disabled'} aria-label="Redo" title="Redo (Ctrl+Shift+Z)">${icon('redo')}</button><span class="sep"></span>`;
   preserveFocus($('#tooltools'), () => {
-    $('#tooltools').innerHTML = undoRedo + (V.toolbar?.() || '') + `<div class="spacer"></div>` + viewToggles()
-      + (next ? `<span class="sep"></span><button class="tool next-btn" data-act="view" data-arg="${next.key}">Next: ${next.label} ${icon('right', 14)}</button>` : '');
+    $('#tooltools').innerHTML = undoRedo + (V.toolbar?.() || '');
   });
+}
+// The view bar along the top of the work area: how the canvas is shown, zoom, and the next step.
+function viewBarHtml() {
+  const next = VIEW_LIST[VIEW_LIST.findIndex(v => v.key === tabOf(ui.view)) + 1];
+  const html = viewToggles() + (next ? `${viewToggles() ? '<span class="sep"></span>' : ''}<button class="tool next-btn" data-act="view" data-arg="${next.key}">Next: ${next.label} ${icon('right', 14)}</button>` : '');
+  return html ? `<div class="viewbar" role="toolbar" aria-label="View">${html}</div>` : '';
 }
 // View switches shared by the canvas steps, at the right end of the tool row.
 function viewToggles() {
@@ -271,7 +276,6 @@ function viewToggles() {
   if (v === 'block') return t('toggleUi', 'showPieces', 'Cut pieces', ui.showPieces) + value;
   if (v === 'layout') return t('toggleUi', 'seamLines', 'Piece outlines', ui.seamLines) + value + t('toggleUi', 'showQuilting', 'Quilting', ui.showQuilting && doc.quilting.layers.length).replace('<button', `<button ${doc.quilting.layers.length ? '' : 'disabled'}`);
   if (v === 'quilting') return (ui.qSide === 'back' ? '' : t('toggleUi', 'qFade', 'Fade quilt', ui.qFade)) + value;
-  if (v === 'pattern') return `<button class="btn primary small" data-act="printPattern" title="In the print dialog: Save as PDF for a file, scale 100%, background graphics on">${icon('print', 14)} Print pattern</button>`;
   return '';
 }
 

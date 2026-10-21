@@ -195,8 +195,8 @@ a:hover { text-decoration: underline; }
 .seam-card .sc-icon { font-size: 18px; line-height: 1.2; }
 .seam-card .btn-row { margin-top: 8px; }
 .seam-card .btn-row > .btn { flex: 0 0 auto; }
-.canvas-wrap svg { max-width: 100%; max-height: calc(100vh - 150px); width: auto; height: auto; display: block; filter: drop-shadow(0 2px 8px rgba(31,41,51,.14)); background: #fff; }
-.canvas-wrap svg.editor { width: min(100%, calc(100vh - 150px)); aspect-ratio: 1; background: transparent; filter: none; touch-action: none; user-select: none; -webkit-user-select: none; }
+.canvas-wrap svg { max-width: 100%; max-height: calc(100vh - 186px); width: auto; height: auto; display: block; filter: drop-shadow(0 2px 8px rgba(31,41,51,.14)); background: #fff; }
+.canvas-wrap svg.editor { width: min(100%, calc(100vh - 186px)); aspect-ratio: 1; background: transparent; filter: none; touch-action: none; user-select: none; -webkit-user-select: none; }
 .canvas-wrap svg.quilt-svg { touch-action: none; }
 .grayscale .canvas-wrap svg, .grayscale .blk svg { filter: grayscale(1) drop-shadow(0 3px 10px rgba(31,41,51,.18)); }
 .back-plan { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; margin-top: 8px; }
@@ -547,3 +547,14 @@ details.more[open] summary::before { transform: rotate(45deg); }
 .blk .nm { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 [role="button"]:focus-visible { outline: 2px solid var(--sel); outline-offset: -2px; }
 @media (max-width: 1180px) { .doc-title { width: 120px; } #topbar #tabs button { padding: 0 8px; } }
+
+/* ---------- 3.20: steps and tools in row 2, view controls over the work area ---------- */
+#toolrow #tabs { flex: none; margin: 0; padding-right: 8px; margin-right: 6px; border-right: 1px solid var(--line-2); align-self: stretch; display: flex; gap: 2px; }
+#toolrow #tabs button { border-radius: 0; padding: 0 12px; height: 100%; color: var(--ink-2); font-weight: 500; border-bottom: 2px solid transparent; background: none; }
+#toolrow #tabs button:hover { color: var(--ink); background: none; }
+#toolrow #tabs button[aria-selected="true"] { color: var(--navy); font-weight: 600; border-bottom-color: var(--navy); background: none; }
+.viewbar { position: sticky; top: 0; z-index: 3; display: flex; justify-content: flex-end; align-items: center; gap: 2px; padding: 6px 12px 0; pointer-events: none; }
+.viewbar > * { pointer-events: auto; }
+.viewbar .tool.toggle:not([aria-pressed="true"]) { background: rgba(255,255,255,.6); }
+.viewbar .zoom-ctl .tool { background: #fff; }
+.docview .viewbar, .pattern-preview .viewbar { padding-right: 0; }

@@ -16,7 +16,7 @@ Everything runs in the browser and nothing is uploaded. Projects save automatica
 
 Two sample quilts are built in (File menu): **Midnight Bullseye**, a straight set with a curved-pieced bullseye ringed by stars, and **Hexie Bloom**, a hexagon tessellation with hexie star and cube blocks around a framed lettering panel.
 
-The window works like a desktop design app: a menu bar (File, Edit, View, Insert, Options, Help) with the quilt's name and the five steps, then a tool row with undo, the step's tools and the options for the current tool or selection. Right-click menus on blocks, fabrics, quilting layers and fabric rows give quick access, and fabrics can be dragged onto block pieces and plain squares. Tessellations can be nudged across and down on the sheet.
+The window works like a desktop design app: a menu bar (File, Edit, View, Insert, Options, Help) with the quilt's name; a tool row with the five steps, undo, the step's tools and the options for the current tool or selection; and view controls along the top of the work area. Right-click menus on blocks, fabrics, quilting layers and fabric rows give quick access, and fabrics can be dragged onto block pieces and plain squares. Tessellations can be nudged across and down on the sheet.
 
 ## Running it
 
