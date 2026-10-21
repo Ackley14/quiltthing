@@ -90,7 +90,7 @@ function layoutHint(tool) {
 /* ---------- cell operations ---------- */
 function isBlockKey(key) {
   if (key[0] === 'g' || key[0] === 'p') return true;
-  if (key[0] === 'o') return Qnow().cells.some(c => c.key === key);
+  if (key[0] === 'o') { const Q = Qnow(); return Q.cells.some(c => c.key === key) || Q.tiles.some(t => t.key === key); }   // setting triangles take (halved) blocks too
   if (key[0] === 't' && tessHexBlocks()) { const Q = Qnow(); return Q.cells.some(c => c.key === key) || Q.tiles.some(t => t.key === key && t.role !== 'fill'); }
   return false;
 }
@@ -197,6 +197,10 @@ function hoverCell(key) {
     // a plain hexagon: preview the block where it would sit
     const t = doc.layout.tess, [cx, cy] = centroid(c.full || c.pts);
     c = { ...c, cx, cy, angle: t.orient === 1 ? 0 : 30, size: 2 * t.size, rstep: 60 };
+  } else if (!c.size && key[0] === 'o' && c.full) {
+    // a setting triangle: preview the whole block it would be cut from
+    const [cx, cy] = centroid(c.full);
+    c = { ...c, cx, cy, angle: 45, size: doc.layout.blockSize };
   }
   if (layoutTool() === 'place' && c.size && keyAcceptsBlock(key, activeBlock()) && isBlockKey(key)) {
     const cur = cellContent(key);

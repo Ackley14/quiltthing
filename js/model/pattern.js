@@ -562,6 +562,7 @@ function assemblyText(Q, sa) {
   } else if (Q.mode === 'onpoint') {
     h += `<ol><li>Lay out the blocks on point with the side setting triangles (fabric ${fabricLetter(L.onpoint.fill)}) at the ends of each diagonal row, as numbered.</li>
       <li>Sew the blocks and side triangles of each diagonal row together. The setting triangles are cut oversized slightly; align their square corner with the block edge.</li>
+      ${Q.cells.some(c => c.clip) ? '<li>Blocks shown in setting-triangle positions are made whole and sewn into their diagonal rows like the others; only part of them shows, and the rest is trimmed away with the edges in the last step.</li>' : ''}
       <li>Join the diagonal rows, matching seams. Add the four corner triangles last.</li>
       <li>Trim the edges straight, leaving ${fmtLen(sa)} beyond the block points for seam allowance.</li></ol>`;
   } else {

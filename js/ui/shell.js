@@ -250,8 +250,8 @@ Actions.toggleUi = k => { ui[k] = !ui[k]; saveUi(); render(); };
 
 Actions.fileMenu = (a, el) => openMenu(el, [
   { label: 'New blank project…', act: 'newProject' },
-  { label: 'Load sample quilt…', act: 'loadSample' },
-  { label: 'Load sample: 3D cubes with centre panel…', act: 'loadCubesSample' },
+  { label: 'Load sample: Midnight Bullseye (straight set)…', act: 'loadSample' },
+  { label: 'Load sample: Hexie Bloom (tessellation)…', act: 'loadTessSample' },
   '-',
   { label: 'Open project file…', act: 'openProject', kb: 'Ctrl+O' },
   { label: 'Save project file', act: 'saveProject', kb: 'Ctrl+S' },
@@ -274,8 +274,8 @@ Actions.newProject = () => confirmModal('Start a new project?', 'This replaces t
 Actions.loadSample = () => confirmModal('Load the sample quilt?', 'This replaces the current design in this browser. Save a project file first if you want to keep it.', 'Load sample', () => {
   loadSampleProject(); toast('Sample quilt loaded');
 }, true);
-Actions.loadCubesSample = () => confirmModal('Load the 3D cubes sample?', 'This replaces the current design in this browser. Save a project file first if you want to keep it.', 'Load sample', () => {
-  loadCubesSample(); toast('3D cubes sample loaded');
+Actions.loadTessSample = () => confirmModal('Load the Hexie Bloom sample?', 'This replaces the current design in this browser. Save a project file first if you want to keep it.', 'Load sample', () => {
+  loadTessSample().then(() => toast('Hexie Bloom loaded')).catch(err => toast(err.message));
 }, true);
 Actions.saveProject = () => { exportProject(); toast('Project file downloaded'); };
 Actions.openProject = () => {

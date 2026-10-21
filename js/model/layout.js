@@ -197,8 +197,17 @@ function buildQuilt() {
         Q.cells.push(makeCell(`o${t.key}`, op.cells[t.key], off + cx, off + cy, 45, BS, Math.round((cx + cy) / d), t.key));
       } else {
         const corner = polyArea(clipped) < BS * BS * 0.3;
-        Q.tiles.push({ key: `o${t.key}`, role: corner ? 'corner-setting' : 'side-setting', fab: op.cells[t.key]?.fab || op.fill, whole: false,
-          pts: translatePoly(clipped, off, off), diag: Math.round((centroid(t.pts)[0] + centroid(t.pts)[1]) / d) });
+        const content = op.cells[t.key], blk = content?.b && doc.blocks[content.b];
+        if (blk && !isHexBlock(blk)) {
+          // a block in a setting-triangle position: made whole, then trimmed with the quilt edge
+          const [cx, cy] = centroid(t.pts);
+          const c = makeCell(`o${t.key}`, content, off + cx, off + cy, 45, BS, Math.round((cx + cy) / d), t.key);
+          c.clip = [translatePoly(clipped, off, off)];
+          Q.cells.push(c);
+          continue;
+        }
+        Q.tiles.push({ key: `o${t.key}`, role: corner ? 'corner-setting' : 'side-setting', fab: content?.fab || op.fill, whole: false,
+          pts: translatePoly(clipped, off, off), full: translatePoly(t.pts, off, off), diag: Math.round((centroid(t.pts)[0] + centroid(t.pts)[1]) / d) });
       }
     }
   } else {
