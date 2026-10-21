@@ -697,7 +697,7 @@ Actions.blockDelete = () => {
     L.grid.cells = L.grid.cells.map(c => c?.b === id ? null : c);
     for (const k of Object.keys(L.onpoint.cells)) if (L.onpoint.cells[k]?.b === id) delete L.onpoint.cells[k];
     for (const k of Object.keys(L.tess.blocks || {})) if (L.tess.blocks[k]?.b === id) delete L.tess.blocks[k];
-    for (const p of L.tess.panels || []) if (p.b === id) p.b = null;
+    for (const p of L.panels || []) if (p.b === id) p.b = null;
     for (const o of Object.values(doc.blocks)) if (o.kind === 'compound') o.slots = o.slots.map(s => s?.b === id ? null : s);
     ui.activeBlock = doc.blockOrder[0] || null; ui.selRegion = null;
     commit();

@@ -15,6 +15,9 @@ function loadSampleProject() {
   ];
   const [mid, cream, mustard, rust, teal, blush] = doc.fabrics.map(f => f.id);
   doc.layout.background = mid;
+  // settings this sample doesn't use still need fabrics from its palette
+  Object.assign(doc.layout.grid.sashing, { fabric: cream, cornerFabric: mustard });
+  doc.layout.onpoint.fill = mid; Object.assign(doc.layout.tess, { fill: cream, base: teal });
   const lib = id => LIBRARY.find(p => p.id === id);
   // library blocks come in the palette's order (slot 1 = cream, 2 = mustard, 3 = rust); recolour copies
   const recolor = (b, name, map) => { b.name = name; for (const r of b.regions) r.fab = map[r.fab] ?? r.fab; return b; };
@@ -64,6 +67,8 @@ async function loadTessSample() {
   ];
   const [linen, teal, sage, mustard, coral, plum, peach] = doc.fabrics.map(f => f.id);
   doc.layout.background = linen;
+  Object.assign(doc.layout.grid.sashing, { fabric: linen, cornerFabric: mustard });
+  doc.layout.onpoint.fill = linen; doc.layout.tess.fill = linen;
   const t = doc.layout.tess;
   Object.assign(t, { shape: 'hex', size: 3, orient: 0, width: 54, height: 60, edge: 'trim', cutEdges: true, base: sage, colors: {}, blocks: {}, snap: true, faces: null });
   const h = TRI_H, P = pts => pts.map(([x, y]) => [round(x, 6), round(y, 6)]);
@@ -85,7 +90,7 @@ async function loadTessSample() {
   bloom.regions.push(...textRegions(font, 'Bloom', 2.6 / (doc.layout.blockSize / 12), [6, 6.3], mustard).regions.map(r => ({ ...r, txt: tid })));
   const sg = seamSuggestions(star);
   star.seams = [...sg.required, ...sg.optional];
-  t.panels = [{ id: uid('p'), size: 15, dx: 0, dy: 0, b: bloom.id, r: 0, f: false, fab: null, frames: [{ width: 0.75, fabric: mustard }, { width: 1.25, fabric: plum }] }];
+  doc.layout.panels = [{ id: uid('p'), size: 15, dx: 0, dy: 0, b: bloom.id, r: 0, f: false, fab: null, frames: [{ width: 0.75, fabric: mustard }, { width: 1.25, fabric: plum }] }];
   doc.layout.mode = 'tess';
   // colour rings radiating from the panel, then hexagon blocks scattered through them
   ui.tessPaintSet = [teal, sage, peach, linen];

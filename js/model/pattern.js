@@ -342,7 +342,7 @@ function assemblyMap(Q, codes, sa, page, tplList, blockJobs) {
   let legend = `<h3>Piece key</h3><p class="small">Each shape on the map is labelled with the code of the piece you cut for it (see the cutting list)${blockNo.size ? '; circled numbers are blocks' : ''}. Rows are numbered down the left side.</p><div class="piece-key">`;
   for (const [e, c] of items) {
     const t = tplList.find(x => x.r === e.r);
-    legend += `<div>${shapeThumb(e)}<span>${codeTag(e.code)}<b>${esc(e.r.recipe.makes)}</b> · ${c.whole + c.trim}${c.trim ? (doc.layout.tess.cutEdges ? ` — edge piece${c.trim === 1 ? '' : 's'}, cut to fit` : ` (${c.trim} at the edges${(doc.layout.tess.panels || []).length ? ' or panel' : ''} — sew whole, trim later)`) : ''}<br>fabric <b>${fabricLetter(e.fab)}</b>, cutting step ${e.step}${t ? `, template ${t.id}` : ''}</span></div>`;
+    legend += `<div>${shapeThumb(e)}<span>${codeTag(e.code)}<b>${esc(e.r.recipe.makes)}</b> · ${c.whole + c.trim}${c.trim ? (doc.layout.tess.cutEdges ? ` — edge piece${c.trim === 1 ? '' : 's'}, cut to fit` : ` (${c.trim} at the edges${(doc.layout.panels || []).length ? ' or panel' : ''} — sew whole, trim later)`) : ''}<br>fabric <b>${fabricLetter(e.fab)}</b>, cutting step ${e.step}${t ? `, template ${t.id}` : ''}</span></div>`;
   }
   for (const [id, n] of blockNo) {
     const cells = Q.cells.filter(c => c.b === id);
@@ -462,7 +462,7 @@ function renderPatternDoc() {
       <div class="block-head"><div>${blockDiagramSvg(b, BSZ, 2.2, { codes: blockPieceCodes(codes, id, BSZ) })}</div><div>
         <div class="callout">Make <b>${n}</b> block${n === 1 ? '' : 's'}</div>
         <p>Finished ${blockSizeText(b, BSZ)} · unfinished ${blockSizeText(b, BSZ, 2 * sa)}</p>
-        ${trimmed ? `<p><b>${trimmed}</b> of them run off the edge${(doc.layout.tess.panels || []).length ? ' or under the panel' : ''}: make them whole — they're trimmed after the top is assembled.</p>` : ''}
+        ${trimmed ? `<p><b>${trimmed}</b> of them run off the edge${(doc.layout.panels || []).length ? ' or under the panel' : ''}: make them whole — they're trimmed after the top is assembled.</p>` : ''}
         <div class="fab-key">${fabs.map(f => `<span>${swatchHtml(f, 16)}<b>${fabricLetter(f)}</b> ${esc(fabricLabel(f))}</span>`).join('')}</div>
       </div></div><ol class="steps">`;
     for (const s of steps) h += `<li><div class="step-text">${s.text}</div>${s.diag ? `<div class="step-diag">${s.diag}</div>` : ''}</li>`;
@@ -531,6 +531,20 @@ function renderPatternDoc() {
   return pages.map((p, i) => `<section class="page ${p.cls}">${p.html}<footer><span>${title}</span><span>Quilt Designer ${APP_VERSION}</span></footer></section>`).join('');
 }
 
+// Making and setting in the inset panels (any setting). `name` = what surrounds them.
+function panelStepsHtml(Q, sa, name, exact) {
+  let h = '';
+  for (const p of doc.layout.panels || []) {
+    const pg = panelGeom(p, Q.inner.w, Q.inner.h);
+    const content = p.b && doc.blocks[p.b] ? `the ${esc(doc.blocks[p.b].name)} block` : p.fab ? `a ${fmtSize(p.size, p.size)} square of fabric ${fabricLetter(p.fab)}` : 'the centre square';
+    const frames = (p.frames || []).filter(f => f.width > 0);
+    const tess = Q.mode === 'tess';
+    h += `<li><b>Panel:</b> ${frames.length ? `frame ${content} with ${frames.map((f, k) => `${fmtLen(f.width)} strips of fabric ${fabricLetter(f.fabric)}${k === 0 ? ' (innermost)' : ''}`).join(', then ')} — sides first, then top and bottom — so it measures ${fmtSize(pg.outer + 2 * sa, pg.outer + 2 * sa)} unfinished.` : `${content} measures ${fmtSize(pg.outer + 2 * sa, pg.outer + 2 * sa)} unfinished.`}</li>
+      <li><b>Setting the panel in:</b> piece the ${name} in sections — the full-width rows above and below the panel, and the shorter rows to its left and right. ${exact ? 'The pieces along the panel are cut to shape, so each section already has a straight edge there.' : tess ? `Trim each section's edge that meets the panel straight, ${fmtLen(sa)} beyond the panel line.` : `Blocks the panel partly covers are made whole and sewn into their section; then trim the section's edge that meets the panel straight, ${fmtLen(sa)} beyond the panel line.`} Sew the left and right sections to the panel, then add the top and bottom sections, matching seams.</li>`;
+  }
+  return h;
+}
+
 function assemblyText(Q, sa) {
   const L = doc.layout;
   let h = '';
@@ -543,8 +557,9 @@ function assemblyText(Q, sa) {
     for (let r = 0; r < g.rows; r++) {
       h += `<tr><th>${letterFor(r)}</th>`;
       for (let c = 0; c < g.cols; c++) {
-        const cell = Q.cells[r * g.cols + c];
-        h += `<td>${cell.b ? `${num(cell.b)}${rot(cell)}${cell.flip ? ' ⇋' : ''}` : cell.fab ? `□ ${fabricLetter(cell.fab)}` : '—'}</td>`;
+        // positions under a panel are gone (or trimmed plain squares, now pieces)
+        const cell = Q.cells.find(x => x.key === `g${r * g.cols + c}`) || { fab: Q.tiles.find(x => x.key === `g${r * g.cols + c}`)?.fab, part: true };
+        h += `<td>${cell.b ? `${num(cell.b)}${rot(cell)}${cell.flip ? ' ⇋' : ''}${cell.clip ? ' ✂' : ''}` : cell.fab ? `□ ${fabricLetter(cell.fab)}${cell.part ? ' ✂' : ''}` : cell.part ? '<i>panel</i>' : '—'}</td>`;
       }
       h += '</tr>';
     }
@@ -558,13 +573,13 @@ function assemblyText(Q, sa) {
     } else {
       h += `<li>Sew the blocks in each row together. Press the seams of alternate rows in opposite directions.</li><li>Join the rows, nesting the seams at each intersection.</li>`;
     }
-    h += '</ol>';
+    h += panelStepsHtml(Q, sa, 'blocks', false) + '</ol>';
   } else if (Q.mode === 'onpoint') {
     h += `<ol><li>Lay out the blocks on point with the side setting triangles (fabric ${fabricLetter(L.onpoint.fill)}) at the ends of each diagonal row, as numbered.</li>
       <li>Sew the blocks and side triangles of each diagonal row together. The setting triangles are cut oversized slightly; align their square corner with the block edge.</li>
-      ${Q.cells.some(c => c.clip) ? '<li>Blocks shown in setting-triangle positions are made whole and sewn into their diagonal rows like the others; only part of them shows, and the rest is trimmed away with the edges in the last step.</li>' : ''}
+      ${Q.cells.some(c => c.setting) ? '<li>Blocks shown in setting-triangle positions are made whole and sewn into their diagonal rows like the others; only part of them shows, and the rest is trimmed away with the edges in the last step.</li>' : ''}
       <li>Join the diagonal rows, matching seams. Add the four corner triangles last.</li>
-      <li>Trim the edges straight, leaving ${fmtLen(sa)} beyond the block points for seam allowance.</li></ol>`;
+      <li>Trim the edges straight, leaving ${fmtLen(sa)} beyond the block points for seam allowance.</li>${panelStepsHtml(Q, sa, 'blocks', false)}</ol>`;
   } else {
     const t = L.tess, name = tessShape(t.shape).label.replace(/ \(.*\)$/, '').toLowerCase();
     const edge = t.edge !== 'fill' && t.cutEdges ? 'Edge pieces are cut to their exact shape (each has its own code on the map), so the edges come out straight — no trimming needed. Sew them in with their rows.' : t.edge === 'fill' ? `Partial shapes at the edges are cut from fabric ${fabricLetter(t.fill)} so the quilt finishes with straight edges.` : 'Shapes at the edges are trimmed straight after the top is assembled — cut them as whole shapes and trim later, or use the edge templates.';
@@ -579,13 +594,7 @@ function assemblyText(Q, sa) {
     }[t.shape];
     const nWhole = Q.tiles.filter(x => x.whole).length, hexBlocks = Q.cells.filter(c => c.hex);
     h += `<p>${t.shape === 'tumbling' ? `${nWhole} whole diamonds (about ${Math.round(nWhole / 3)} cubes)` : `${nWhole} whole ${name}`}${hexBlocks.length ? ` and ${plural(hexBlocks.length, 'hexagon block')}` : ''} make up the top.</p><ol>${hexBlocks.length ? `<li>Make the hexagon blocks (see their pages) and lay them out with the plain hexagons as shown, turning each as pictured. Treat each block as one hexagon from here on.</li>` : ''}<li>${how}</li><li>${edge}</li>`;
-    for (const p of t.panels || []) {
-      const pg = panelGeom(p, ...tessSize(t));
-      const content = p.b && doc.blocks[p.b] ? `the ${esc(doc.blocks[p.b].name)} block` : p.fab ? `a ${fmtSize(p.size, p.size)} square of fabric ${fabricLetter(p.fab)}` : 'the centre square';
-      const frames = (p.frames || []).filter(f => f.width > 0);
-      h += `<li><b>Panel:</b> ${frames.length ? `frame ${content} with ${frames.map((f, k) => `${fmtLen(f.width)} strips of fabric ${fabricLetter(f.fabric)}${k === 0 ? ' (innermost)' : ''}`).join(', then ')} — sides first, then top and bottom — so it measures ${fmtSize(pg.outer + 2 * sa, pg.outer + 2 * sa)} unfinished.` : `${content} measures ${fmtSize(pg.outer + 2 * sa, pg.outer + 2 * sa)} unfinished.`}</li>
-        <li><b>Setting the panel in:</b> piece the ${name} in sections — the full-width rows above and below the panel, and the shorter rows to its left and right. ${t.cutEdges ? 'The pieces along the panel are cut to shape, so each section already has a straight edge there.' : `Trim each section's edge that meets the panel straight, ${fmtLen(sa)} beyond the panel line.`} Sew the left and right sections to the panel, then add the top and bottom sections, matching the shape points along each seam.</li>`;
-    }
+    h += panelStepsHtml(Q, sa, name, t.cutEdges);
     h += '</ol>';
   }
   const bs = L.borders.filter(b => b.width > 0);

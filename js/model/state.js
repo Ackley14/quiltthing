@@ -49,10 +49,11 @@ function newDoc() {
         sashing: { width: 0, fabric: cream, cornerstones: false, cornerFabric: mustard, outer: false } },
       onpoint: { rows: 3, cols: 3, cells: {}, fill: cream },
       tess: { shape: 'hex', size: 3, ratio: 0.5, lean: 0.5, orient: 0, width: 48, height: 60,
-        edge: 'trim', fill: cream, base: sage, colors: {}, blocks: {}, seed: 1, snap: true, panels: [], faces: null, cutEdges: false },
+        edge: 'trim', fill: cream, base: sage, colors: {}, blocks: {}, seed: 1, snap: true, faces: null, cutEdges: false },
       borders: [],
       binding: { width: 2.25, fabric: navy },
       backing: { fabric: null },
+      panels: [],             // inset panels: framed squares set into the centre (any setting)
     },
     quilting: { layers: [] },
     cutting: { seam: 0.25, wof: 42, extra: 10, roundTo: 'eighth', backingWidth: 42, overhang: 4, appMethod: 'turned' },
@@ -193,6 +194,9 @@ function validDoc(d) {
 }
 // Fill any fields added after a project was saved, so older v3 files keep loading.
 function upgradeDoc(d) {
+  // inset panels used to belong to tessellations only
+  if (d.layout && !d.layout.panels && d.layout.tess?.panels) d.layout.panels = d.layout.tess.panels;
+  if (d.layout?.tess) delete d.layout.tess.panels;
   const base = newDoc();
   for (const k of Object.keys(base)) if (d[k] === undefined) d[k] = base[k];
   for (const k of Object.keys(base.layout)) if (d.layout[k] === undefined) d.layout[k] = base.layout[k];

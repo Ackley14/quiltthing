@@ -91,7 +91,7 @@ function fabricUsage(id) {
   for (const b of Object.values(doc.blocks)) if (b.kind === 'drawn') for (const r of b.regions) if (r.fab === id) n++;
   const L = doc.layout;
   const refs = [L.background, L.grid.sashing.fabric, L.grid.sashing.cornerFabric, L.onpoint.fill, L.tess.fill, L.tess.base, L.binding.fabric, L.backing?.fabric, ...L.borders.map(b => b.fabric),
-    ...Object.values(L.tess.faces || {}), ...(L.tess.panels || []).flatMap(p => [p.fab, ...(p.frames || []).map(f => f.fabric)])];
+    ...Object.values(L.tess.faces || {}), ...(L.panels || []).flatMap(p => [p.fab, ...(p.frames || []).map(f => f.fabric)])];
   n += refs.filter(r => r === id).length;
   n += Object.values(L.tess.colors).filter(r => r === id).length;
   return n;
@@ -113,7 +113,7 @@ function replaceFabric(oldId, newId) {
   for (const s of doc.stash) s.fabric = swap(s.fabric);
   if (L.backing) L.backing.fabric = swap(L.backing.fabric);
   if (L.tess.faces) for (const k of Object.keys(L.tess.faces)) L.tess.faces[k] = swap(L.tess.faces[k]);
-  for (const p of L.tess.panels || []) { p.fab = swap(p.fab); for (const fr of p.frames || []) fr.fabric = swap(fr.fabric); }
+  for (const p of L.panels || []) { p.fab = swap(p.fab); for (const fr of p.frames || []) fr.fabric = swap(fr.fabric); }
 }
 Actions.deleteFabric = id => {
   if (doc.fabrics.length <= 2) { toast('Keep at least two fabrics'); return; }
@@ -137,7 +137,7 @@ Actions.confirmDeleteFabric = id => {
 function blockUseCount(id) {
   const L = doc.layout;
   let n = L.grid.cells.filter(c => c?.b === id).length + Object.values(L.onpoint.cells).filter(c => c?.b === id).length;
-  n += Object.values(L.tess.blocks || {}).filter(c => c?.b === id).length + (L.tess.panels || []).filter(p => p.b === id).length;
+  n += Object.values(L.tess.blocks || {}).filter(c => c?.b === id).length + (L.panels || []).filter(p => p.b === id).length;
   for (const b of Object.values(doc.blocks)) if (b.kind === 'compound') n += b.slots.filter(s => s?.b === id).length;
   return n;
 }

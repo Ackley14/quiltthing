@@ -202,7 +202,7 @@ function buildQuilt() {
           // a block in a setting-triangle position: made whole, then trimmed with the quilt edge
           const [cx, cy] = centroid(t.pts);
           const c = makeCell(`o${t.key}`, content, off + cx, off + cy, 45, BS, Math.round((cx + cy) / d), t.key);
-          c.clip = [translatePoly(clipped, off, off)];
+          c.clip = [translatePoly(clipped, off, off)]; c.setting = true;
           Q.cells.push(c);
           continue;
         }
@@ -214,9 +214,8 @@ function buildQuilt() {
     const t = L.tess;
     [cw, ch] = tessSize(t);
     const fills = [];
-    // inset panels: framed squares set into the tile field; tiles are trimmed around them
-    const panels = (t.panels || []).map(p => panelGeom(p, cw, ch));
-    const holes = panels.map(pg => rectPts(pg.x0, pg.y0, pg.outer, pg.outer));
+    // inset panels: tiles are trimmed around them
+    const holes = (L.panels || []).map(p => panelGeom(p, cw, ch)).map(pg => rectPts(pg.x0, pg.y0, pg.outer, pg.outer));
     // 3D cubes: unpainted tumbling-block diamonds take the face fabric for their direction
     const faceFab = o => t.shape === 'tumbling' && t.faces ? [t.faces.top, t.faces.right, t.faces.left][o] : null;
     // hexagon blocks painted onto hexagon tiles
@@ -257,24 +256,28 @@ function buildQuilt() {
         Q.cells.push(c);
       }
     }
-    for (const pg of panels) {
-      const p = pg.p;
-      Q.panels.push({ id: p.id, x: off + pg.x0, y: off + pg.y0, w: pg.outer, h: pg.outer });   // framed panel, for quilting areas
-      // frames from the inside out: sides first, then top & bottom (the sewing order)
-      let x = off + pg.x0 + pg.fw, y = off + pg.y0 + pg.fw, s = p.size;
-      (p.frames || []).forEach((fr, k) => {
-        const w = fr.width; if (!(w > 0)) return;
-        Q.patches.push({ role: 'frame', panel: p.id, ring: k, side: 'left', fab: fr.fabric, pts: rectPts(x - w, y, w, s) });
-        Q.patches.push({ role: 'frame', panel: p.id, ring: k, side: 'right', fab: fr.fabric, pts: rectPts(x + s, y, w, s) });
-        Q.patches.push({ role: 'frame', panel: p.id, ring: k, side: 'top', fab: fr.fabric, pts: rectPts(x - w, y - w, s + 2 * w, w) });
-        Q.patches.push({ role: 'frame', panel: p.id, ring: k, side: 'bottom', fab: fr.fabric, pts: rectPts(x - w, y + s, s + 2 * w, w) });
-        x -= w; y -= w; s += 2 * w;
-      });
-      Q.cells.push(makeCell(`p${p.id}`, p.b ? { b: p.b, r: p.r || 0, f: !!p.f } : p.fab ? { fab: p.fab } : null,
-        off + pg.cx, off + pg.cy, 0, p.size, 'panel', p.id));
-    }
     const oneTile = latticeTiles(t.shape, t.size, t.ratio, t.lean, t.orient, t.size * 4, t.size * 4)[0];
     Q.tiles.push(...mergeSmallFills(fills, polyArea(oneTile.pts)));
+  }
+
+  // inset panels: framed squares set into the centre, in any setting
+  const panels = (L.panels || []).map(p => panelGeom(p, cw, ch));
+  if (panels.length && L.mode !== 'tess') trimAroundPanels(Q, panels.map(pg => rectPts(off + pg.x0, off + pg.y0, pg.outer, pg.outer)));
+  for (const pg of panels) {
+    const p = pg.p;
+    Q.panels.push({ id: p.id, x: off + pg.x0, y: off + pg.y0, w: pg.outer, h: pg.outer });   // framed panel, for quilting areas
+    // frames from the inside out: sides first, then top & bottom (the sewing order)
+    let x = off + pg.x0 + pg.fw, y = off + pg.y0 + pg.fw, s = p.size;
+    (p.frames || []).forEach((fr, k) => {
+      const w = fr.width; if (!(w > 0)) return;
+      Q.patches.push({ role: 'frame', panel: p.id, ring: k, side: 'left', fab: fr.fabric, pts: rectPts(x - w, y, w, s) });
+      Q.patches.push({ role: 'frame', panel: p.id, ring: k, side: 'right', fab: fr.fabric, pts: rectPts(x + s, y, w, s) });
+      Q.patches.push({ role: 'frame', panel: p.id, ring: k, side: 'top', fab: fr.fabric, pts: rectPts(x - w, y - w, s + 2 * w, w) });
+      Q.patches.push({ role: 'frame', panel: p.id, ring: k, side: 'bottom', fab: fr.fabric, pts: rectPts(x - w, y + s, s + 2 * w, w) });
+      x -= w; y -= w; s += 2 * w;
+    });
+    Q.cells.push(makeCell(`p${p.id}`, p.b ? { b: p.b, r: p.r || 0, f: !!p.f } : p.fab ? { fab: p.fab } : null,
+      off + pg.cx, off + pg.cy, 0, p.size, 'panel', p.id));
   }
 
   // borders (sides first, then top & bottom — the usual sewing order)
@@ -294,6 +297,49 @@ function buildQuilt() {
   const empty = Q.cells.filter(c => !c.b && !c.fab).length;
   if (empty) Q.warnings.push(`${plural(empty, 'empty block position')} — fill them before cutting.`);
   return Q;
+}
+
+// Straight and on-point settings: a block a panel partly covers is made whole and trimmed (drawn
+// clipped); plain squares, setting triangles and sashing are trimmed to shape; anything the panel
+// covers completely disappears. (Tessellations trim their tiles as they're generated.)
+function trimAroundPanels(Q, holes) {
+  const hb = holes.map(bounds);
+  const hitsOf = pts => { const b = bounds(pts); return holes.filter((h, i) => b.maxX > hb[i].minX + 1e-6 && b.minX < hb[i].maxX - 1e-6 && b.maxY > hb[i].minY + 1e-6 && b.minY < hb[i].maxY - 1e-6); };
+  const minus = (parts, hits) => parts.flatMap(pp => {
+    const mp = pcSafe('difference', toPC(pp), ...hits.map(toPC));
+    return mp ? fromPC(mp).map(x => ({ outer: cleanPoly(x.outer), holes: x.holes })).filter(x => x.outer.length >= 3 && polyArea(x.outer) > 1e-3) : [{ outer: pp, holes: [] }];
+  });
+  const isRect = q => q.length === 4 && q.every((a, i) => { const b = q[(i + 1) % 4]; return Math.abs(a[0] - b[0]) < 1e-6 || Math.abs(a[1] - b[1]) < 1e-6; });
+  const cells = [];
+  for (const c of Q.cells) {
+    const hits = hitsOf(c.pts);
+    if (!hits.length) { cells.push(c); continue; }
+    const parts = minus(c.clip || [c.pts], hits);
+    if (!parts.length) continue;
+    if (c.fab && !c.b) {
+      // a plain square: its uncovered parts are cut as pieces (whole square, trimmed)
+      for (const x of parts) Q.tiles.push({ key: c.key, role: 'trim', fab: c.fab, whole: false, pts: x.outer, full: c.pts, row: c.row, col: c.col });
+      continue;
+    }
+    cells.push({ ...c, clip: parts.map(x => x.outer), clipHoles: parts.flatMap(x => x.holes) });
+  }
+  Q.cells = cells;
+  Q.tiles = Q.tiles.flatMap(t => {
+    if (t.role === 'trim' && !t.diag) return [t];
+    const hits = hitsOf(t.pts);
+    if (!hits.length) return [t];
+    return minus([t.pts], hits).map(x => ({ ...t, role: 'trim', whole: false, pts: x.outer, full: t.full || t.pts }));
+  });
+  const patches = [];
+  for (const p of Q.patches) {
+    const hits = hitsOf(p.pts);
+    if (!hits.length) { patches.push(p); continue; }
+    for (const x of minus([p.pts], hits)) {
+      if (isRect(x.outer) && !x.holes.length) patches.push({ ...p, pts: x.outer });
+      else Q.tiles.push({ key: null, role: 'trim', fab: p.fab, whole: false, pts: x.outer, full: null });   // an odd leftover: cut to shape
+    }
+  }
+  Q.patches = patches;
 }
 
 function makeCell(key, content, cx, cy, angle, size, row, col) {
@@ -333,7 +379,7 @@ function cellContent(key) {
     return f ? { fab: f } : null;
   }
   if (key[0] === 'p') {
-    const p = (L.tess.panels || []).find(x => x.id === key.slice(1));
+    const p = (L.panels || []).find(x => x.id === key.slice(1));
     return p?.b ? { b: p.b, r: p.r || 0, f: !!p.f } : p?.fab ? { fab: p.fab } : null;
   }
   return null;
@@ -350,7 +396,7 @@ function setCellContent(key, content) {
     else if (content?.fab) T.colors[k] = content.fab;
   }
   else if (key[0] === 'p') {
-    const p = (L.tess.panels || []).find(x => x.id === key.slice(1));
+    const p = (L.panels || []).find(x => x.id === key.slice(1));
     if (!p) return;
     p.b = content?.b || null; p.r = content?.r || 0; p.f = !!content?.f; p.fab = content?.fab || null;
   }
@@ -389,10 +435,10 @@ function quiltSvg(Q, opts = {}) {
     if (c.b && c.clip) {
       // cut off by an edge or panel: show only the part that's in the quilt
       const cid = `${idp}-clip-${i}`;
-      s += `<clipPath id="${cid}"><path d="${c.clip.map(pp => polyToPath(pp)).join('')}"/></clipPath><g clip-path="url(#${cid})"><use href="#${symId(c)}" xlink:href="#${symId(c)}" transform="${cellTransform(c, DRAW_BLEED)}"${attr}/></g>`;
+      s += `<clipPath id="${cid}"><path d="${[...c.clip, ...(c.clipHoles || [])].map(pp => polyToPath(pp)).join('')}" clip-rule="evenodd"/></clipPath><g clip-path="url(#${cid})"><use href="#${symId(c)}" xlink:href="#${symId(c)}" transform="${cellTransform(c, DRAW_BLEED)}"${attr}/></g>`;
     } else if (c.b) s += `<use href="#${symId(c)}" xlink:href="#${symId(c)}" transform="${cellTransform(c, DRAW_BLEED)}"${attr}/>`;
     else if (c.fab) s += `<path d="${polyToPath(c.pts)}" fill="${fabricFill(c.fab)}" stroke="${fabricFill(c.fab)}" stroke-width="${DRAW_BLEED}"${attr}/>`;
-    else s += `<path d="${polyToPath(c.pts)}" fill="#f4f1ea" stroke="#c9c2b3" stroke-width="${hair}" stroke-dasharray="${hair * 4} ${hair * 3}"${attr}/>`;
+    else s += `<path d="${(c.clip || [c.pts]).map(pp => polyToPath(pp)).join('')}" fill="#f4f1ea" stroke="#c9c2b3" stroke-width="${hair}" stroke-dasharray="${hair * 4} ${hair * 3}"${attr}/>`;
   });
   if (opts.seams) {
     // block outlines a touch heavier than the seams inside blocks, so the structure reads
@@ -422,12 +468,13 @@ function assemblyLabels(Q, pad) {
   let s = '';
   const lab = (x, y, t) => `<text x="${round(x, 3)}" y="${round(y, 3)}" font-size="${round(fs, 3)}" text-anchor="middle" dominant-baseline="central" font-family="system-ui, sans-serif" font-weight="700" fill="#2b3a4a">${t}</text>`;
   if (Q.mode === 'grid') {
-    const rows = uniq(Q.cells.map(c => c.row)), cols = uniq(Q.cells.map(c => c.col));
-    for (const r of rows) { const c = Q.cells.find(x => x.row === r); s += lab(-pad / 2, c.cy, letterFor(r)); }
-    for (const k of cols) { const c = Q.cells.find(x => x.col === k); s += lab(c.cx, -pad / 2, k + 1); }
+    const grid = Q.cells.filter(c => typeof c.row === 'number' && typeof c.col === 'number');   // not panels
+    const rows = uniq(grid.map(c => c.row)), cols = uniq(grid.map(c => c.col));
+    for (const r of rows) { const c = grid.find(x => x.row === r); s += lab(-pad / 2, c.cy, letterFor(r)); }
+    for (const k of cols) { const c = grid.find(x => x.col === k); s += lab(c.cx, -pad / 2, k + 1); }
   } else if (Q.mode === 'onpoint') {
     const d = Q.BS * Math.SQRT2, off = Q.inner.x;
-    const diags = uniq([...Q.cells.map(c => c.row), ...Q.tiles.map(t => t.diag)]).sort((a, b) => a - b);
+    const diags = uniq([...Q.cells.map(c => c.row), ...Q.tiles.map(t => t.diag)]).filter(Number.isFinite).sort((a, b) => a - b);
     diags.forEach((k, i) => {
       // label each diagonal row where it meets the top or left edge
       const v = k * d;

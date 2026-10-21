@@ -59,7 +59,7 @@ function blockDitchSegments(Q) {
       const A = map(a), B = map(b);
       if (!c.clip) { segs.push([A, B]); continue; }
       // a block cut off by an edge or panel: keep only the part inside the quilt
-      for (const part of c.clip) for (const [t0, t1] of lineChords(part, [], A, B).chords) {
+      for (const part of c.clip) for (const [t0, t1] of lineChords(part, c.clipHoles || [], A, B).chords) {
         const u0 = Math.max(0, t0), u1 = Math.min(1, t1);
         if (u1 - u0 > 1e-6) segs.push([[A[0] + (B[0] - A[0]) * u0, A[1] + (B[1] - A[1]) * u0], [A[0] + (B[0] - A[0]) * u1, A[1] + (B[1] - A[1]) * u1]]);
       }
