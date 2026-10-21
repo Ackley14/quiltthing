@@ -53,7 +53,7 @@ function patternFabricKeyTable(plan, compact) {
   let h = `<table class="pt"><thead><tr><th></th><th>Fabric</th><th>Used for</th>${compact ? '' : '<th>Cut length</th>'}<th>Buy</th></tr></thead><tbody>`;
   for (const f of plan.fabrics) {
     h += `<tr><td class="key">${swatchHtml(f.fab, 22)}<b>${fabricLetter(f.fab)}</b></td><td>${esc(fabricLabel(f.fab))}${fabricById(f.fab).directional ? ' <i>(directional)</i>' : ''}</td>
-      <td>${esc(f.sources.join(', '))}</td>${compact ? '' : `<td>${neededText(f)}</td>`}<td>${stashUseText(f) && !f.buyIn && !f.buyPieces ? `<small>all from ${esc(stashUseText(f))}</small>` : `<b>${buyText(f)}</b>${stashUseText(f) ? `<br><small>plus ${esc(stashUseText(f))}</small>` : f.fq ? '<br><small>or 1 fat quarter</small>' : ''}`}</td></tr>`;
+      <td>${esc(f.sources.join(', '))}</td>${compact ? '' : `<td>${neededText(f)}</td>`}<td>${stashUseText(f) && !f.buyIn && !f.buyPieces ? `<small>all from ${esc(stashUseText(f))}</small>` : fallbackInfo(f) ? (fallbackInfo(f).none ? `<b>${fmtYards(f.buyIn)}</b><br><small>${esc(fallbackReason(fallbackInfo(f), true))}</small>` : `<b>${plural2(f.buyPieces, f.format.name)}</b><br><b>+ ${fmtYards(f.buyIn)}</b> yardage<br><small>for ${esc(fallbackReason(fallbackInfo(f), true))}</small>`) : `<b>${buyText(f)}</b>${stashUseText(f) ? `<br><small>plus ${esc(stashUseText(f))}</small>` : f.fq ? '<br><small>or 1 fat quarter</small>' : ''}`}</td></tr>`;
   }
   return h + '</tbody></table>';
 }
@@ -472,7 +472,9 @@ function renderPatternDoc() {
     plan.fabrics.map(f => {
       const sheet = fabricSheet(f);
       let list = '';
+      const fb = fallbackInfo(f), split = fb && sheet.rows.some(r => r.fallback) && sheet.rows.some(r => !r.fallback);
       sheet.rows.forEach((row, i) => {
+        if (split && (i === 0 || row.fallback !== sheet.rows[i - 1].fallback)) list += `<li class="src-h">${row.fallback ? `From ${fmtLen(fb.width)} yardage: ${esc(fallbackReason(fb, true))}` : `From ${esc(f.format.name.toLowerCase())}s`}</li>`;
         let extra = '';
         if (row.kind === 'template') { const t = tplList.find(x => x.rs.includes(row.r)); if (t) extra = ` <i>(template ${t.id})</i>`; }
         const rec = row.group?.recipes || (row.a ? [row.a] : row.r ? [row.r] : []);
@@ -481,7 +483,7 @@ function renderPatternDoc() {
         list += `<li><span class="stepno">${i + 1}</span><div>${codes.forRow(row).map(e => codeTag(e.code)).join('')}<b>${row.head}</b>${extra}<br>${row.parts.map(esc).join('<br>')}${uses.length ? `<div class="uses">${uses.map(u => usageThumbSvg(u, 0.42, 'in')).join('')}</div>` : ''}</div></li>`;
       });
       const st = stashUseText(f);
-      const maps = fabricSheets(f).map((sh, i) => `${sh.src.kind === 'stash' ? `<div class="map-cap">Your ${esc(sh.src.name.toLowerCase())}</div>` : sh.src.kind === 'precut' ? `<div class="map-cap">${esc(sh.src.name)}</div>` : sh.src.fallback ? '<div class="map-cap">Yardage for the larger cuts</div>' : st ? '<div class="map-cap">Yardage for the rest</div>' : ''}${fabricSheetSvg(sh, f.fab, { width: 2.4, unit: 'in', idp: 'pc' + i, title: sh.title })}`).join('');
+      const maps = fabricSheets(f).map((sh, i) => `${sh.src.kind === 'stash' ? `<div class="map-cap">Your ${esc(sh.src.name.toLowerCase())}</div>` : sh.src.kind === 'precut' ? `<div class="map-cap">${esc(sh.src.name)}</div>` : sh.src.fallback ? `<div class="map-cap">Yardage for ${esc(fallbackInfo(f) ? fallbackReason(fallbackInfo(f), false) : 'the larger cuts')}</div>` : st ? '<div class="map-cap">Yardage for the rest</div>' : ''}${fabricSheetSvg(sh, f.fab, { width: 2.4, unit: 'in', idp: 'pc' + i, title: sh.title })}`).join('');
       return `<div class="cut-fab"><h3>${swatchHtml(f.fab, 20)} Fabric ${fabricLetter(f.fab)}: ${esc(fabricLabel(f.fab))} <span class="muted" style="font-weight:400">· ${st && !f.buyIn && !f.buyPieces ? `all from ${esc(st)}` : `buy ${buyText(f)}${st ? `, plus ${esc(st)}` : ''}`}</span></h3>
         <div class="cut-cols"><ol class="cut-list">${list}</ol><div class="cut-map">${maps}</div></div></div>`;
     }).join(''));

@@ -8,8 +8,10 @@ function cuttingPlanHtml(plan) {
   for (const f of plan.fabrics) {
     const sheet = fabricSheet(f);
     let steps = '';
+    const fb = fallbackInfo(f), split = fb && sheet.rows.some(r => r.fallback) && sheet.rows.some(r => !r.fallback);
     sheet.rows.forEach((row, i) => {
       const n = i + 1;
+      if (split && (i === 0 || row.fallback !== sheet.rows[i - 1].fallback)) steps += `<li class="src-h${row.fallback ? ' fallback' : ''}">${row.fallback ? `From ${fmtLen(fb.width)} yardage: ${esc(fallbackReason(fb, true))}` : `From ${esc(f.format.name.toLowerCase())}s`}</li>`;
       const rec = row.group?.recipes || (row.a ? [row.a] : row.r ? [row.r] : []);
       const icons = rec.map(r => cutIconSvg(r.recipe, f.fab)).join('');
       const uses = [];
@@ -26,7 +28,7 @@ function cuttingPlanHtml(plan) {
         <div class="step-icons">${icons}</div></li>`;
     });
     const st = stashUseText(f);
-    const maps = fabricSheets(f).map((sh, i) => `<div class="hint" style="margin:${i ? '12px' : 0} 0 4px">${sh.src.kind === 'stash' ? `Your ${esc(sh.src.name.toLowerCase())}: ${piecesText(sh.src.pieces)}` : sh.src.kind === 'precut' ? `${esc(sh.src.name)}: ${piecesText(sh.src.pieces)}` : sh.src.fallback ? `Yardage ${esc(f.yardFor || 'for the larger cuts')}: ${fmtYards(f.buyIn)}` : st ? `Yardage for the rest: ${fmtYards(f.buyIn)}` : `${fmtYards(f.buyIn)} of ${esc(formatLabel(f.format))}`}</div>${fabricSheetSvg(sh, f.fab, { width: 380, idp: 'cv' + i, title: sh.title })}`).join('');
+    const maps = fabricSheets(f).map((sh, i) => `<div class="hint" style="margin:${i ? '12px' : 0} 0 4px">${sh.src.kind === 'stash' ? `Your ${esc(sh.src.name.toLowerCase())}: ${piecesText(sh.src.pieces)}` : sh.src.kind === 'precut' ? `${esc(sh.src.name)}: ${piecesText(sh.src.pieces)}` : sh.src.fallback ? `Yardage for ${esc(fallbackInfo(f) ? fallbackReason(fallbackInfo(f), false) : 'the larger cuts')}: ${fmtYards(f.buyIn)}` : st ? `Yardage for the rest: ${fmtYards(f.buyIn)}` : `${fmtYards(f.buyIn)} of ${esc(formatLabel(f.format))}`}</div>${fabricSheetSvg(sh, f.fab, { width: 380, idp: 'cv' + i, title: sh.title })}`).join('');
     h += `<div class="fabcard" id="cut-${f.fab}"><div class="fabcard-h">${swatchHtml(f.fab, 26)}<h3>${fabricLetter(f.fab)} ${esc(fabricLabel(f.fab))}</h3>
       <div class="meta">${plural(f.pieces, 'piece')} · buy ${buyText(f)}${st ? ` · uses ${esc(st)}` : ''}</div></div>
       ${hasStashFor(f.fab) ? `<label class="check" style="margin:-4px 0 8px"><input type="checkbox" data-change="toggleStashUse" data-arg="${f.fab}" ${fabricById(f.fab).skipStash ? '' : 'checked'}> Cut from my stash first</label>` : ''}

@@ -746,7 +746,21 @@ function fabricInstructions(f) {
   const multi = srcs.some(x => x.kind !== 'yardage');
   const fromWhat = x => x.kind === 'stash' ? `From your ${x.name.toLowerCase()}` : x.kind === 'precut' ? `From ${x.name.toLowerCase()}` : 'From yardage';
   const length = x => x.kind !== 'yardage' ? `${fmtLen(x.W, 'up')} long` : 'WOF';
-  const bySource = (count, w) => srcs.map(x => ({ x, n: count(x) })).filter(o => o.n).map(o => `${fromWhat(o.x)}: ${plural(o.n, 'strip')} ${fmtLen(w, 'up')} × ${length(o.x)}.`);
+  // runs of identical precut pieces read as one line: "From charm squares 1–16: 1 strip … each"
+  const bySource = (count, w) => {
+    const list = srcs.map(x => ({ x, n: count(x) })).filter(o => o.n), out = [];
+    for (let i = 0; i < list.length; i++) {
+      const o = list[i];
+      let j = i;
+      while (o.x.kind === 'precut' && list[j + 1]?.x.kind === 'precut' && list[j + 1].n === o.n && list[j + 1].x.W === o.x.W) j++;
+      if (j > i) {
+        const num = x => x.name.match(/(\d+)$/)?.[1];
+        out.push(`From ${o.x.name.replace(/ \d+$/, '').toLowerCase()}s ${num(o.x)}–${num(list[j].x)}: ${plural(o.n, 'strip')} ${fmtLen(w, 'up')} × ${length(o.x)} each.`);
+        i = j;
+      } else out.push(`${fromWhat(o.x)}: ${plural(o.n, 'strip')} ${fmtLen(w, 'up')} × ${length(o.x)}.`);
+    }
+    return out;
+  };
   // "from the leftover of step 2: …" lines, grouped by the step they come from
   const fromLeftovers = (list, what) => {
     const by = new Map();
@@ -812,5 +826,44 @@ function fabricInstructions(f) {
         return `${n === r.units ? (n === 1 ? 'It fits' : 'All of them fit') : `${n} of them ${n === 1 ? 'fits' : 'fit'}`} in the leftover${st.length > 1 ? 's' : ''} from step${st.length > 1 ? 's' : ''} ${st.join(', ')}. See the map.`;
       })()] : []),r.recipe.applique ? (doc.cutting.appMethod === 'fusible' ? 'Fusible appliqué: trace the reversed template onto fusible web, fuse it to the wrong side of the fabric and cut on the line.' : 'Appliqué piece: cut on the dashed line, which includes a 3/16" turn-under.') : 'Trace the template and cut on the dashed line, which includes the seam allowance.'], r });
   }
+  // a fabric bought as precuts (or set-size pieces): steps cut wholly from the yardage it falls back
+  // to are marked and listed last, so the plan reads "from the jelly rolls…, then from yardage…"
+  if (!f.format.yardage) {
+    for (const row of rows) row.fallback = !rowUsesPieces(f, row);
+    if (rows.some(r => r.fallback) && rows.some(r => !r.fallback)) rows.sort((a, b) => a.fallback - b.fallback);
+  }
   return rows;
+}
+// Does a cutting step take anything from the stash or precut pieces (rather than only yardage)?
+function rowUsesPieces(f, row) {
+  return (f.layouts || []).filter(x => x.kind !== 'yardage').some(x => {
+    const L = x.L;
+    if (row.group) return (L.groups.get(row.group)?.strips.length || 0) + (L.groups.get(row.group)?.partials.length || 0) > 0;
+    if (row.a) return (L.runs.get(row.a)?.count || 0) > 0;
+    if (row.j) return (L.joinedCount.get(row.j) || 0) > 0;
+    if (row.r) return L.tplPlaced.some(p => p.item.r === row.r);
+    return false;
+  });
+}
+// The cut size of a step's pieces (for "largest piece" notes).
+const recipeSize = r => [r.w, r.sub ?? r.h ?? r.first ?? r.step ?? r.w];
+// Why a precut fabric also needs yardage: how many pieces don't fit, the largest one, and whether
+// binding or borders (always cut from yardage) are part of it. Null when nothing falls back.
+function fallbackInfo(f) {
+  if (f.format.yardage) return null;
+  const yard = (f.layouts || []).find(l => l.kind === 'yardage');
+  if (!yard || yard.L.H <= 1e-6) return null;
+  const rows = fabricInstructions(f).filter(r => r.fallback);
+  const recs = rows.flatMap(r => r.group?.recipes || (r.a ? [r.a] : r.r ? [r.r] : []));
+  const sizes = recs.map(r => recipeSize(r.recipe)).sort((a, b) => b[0] * b[1] - a[0] * a[1]);
+  const strips = uniq(rows.filter(r => r.j).map(r => r.j.binding ? 'binding' : 'borders'));
+  return { pieces: sum(recs, r => r.pieces), largest: sizes[0] || null, strips, width: doc.cutting.wof, name: f.format.name.toLowerCase(), none: !f.buyPieces };
+}
+// "6 pieces too big for a jelly roll strip (largest 12½" × 12½"), and the binding"
+function fallbackReason(fb, long) {
+  if (fb.none) return `nothing fits a ${fb.name}${long && fb.largest ? ` (largest piece ${fmtSize(fb.largest[0], fb.largest[1], 'up')})` : ''}`;
+  const parts = [];
+  if (fb.pieces) parts.push(`${plural(fb.pieces, 'piece')} too big for a ${fb.name}${long && fb.largest ? ` (largest ${fmtSize(fb.largest[0], fb.largest[1], 'up')})` : ''}`);
+  if (fb.strips.length) parts.push(`the ${fb.strips.join(' and ')}`);
+  return parts.join(', and ');
 }

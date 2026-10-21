@@ -69,10 +69,11 @@ function shoppingListHtml(plan) {
       stash = (fabricById(f.fab).skipStash ? '<span class="muted">not used</span>'
         : `<span title="${sum(used, x => x.pieces)} of ${f.pieces} pieces come from your stash">${esc(stashUseText(f) || 'none of it')}</span>${unused ? ` <span class="muted">(${unused} spare)</span>` : ''}`) + ' ' + stash;
     }
-    const fmt = !f.format.yardage || f.format.width !== defaultFormat().width ? `<br><span class="muted">${esc(formatLabel(f.format))}</span>` : '';
+    const fb = fallbackInfo(f);
+    const fmt = fb ? '' : !f.format.yardage || f.format.width !== defaultFormat().width ? `<br><span class="muted">${esc(formatLabel(f.format))}</span>` : '';
     h += `<tr><td><div class="fabcell">${swatchHtml(f.fab, 26)}<div><b>${fabricLetter(f.fab)}</b> ${esc(fabricLabel(f.fab))}${fabricById(f.fab).directional ? ' <span class="pill">directional</span>' : ''}</div></div></td>
       <td class="used">${esc(f.sources.join(', '))}</td><td class="num">${f.pieces}</td><td class="num">${neededText(f)}</td>
-      <td class="num"><b>${buyText(f)}</b>${fmt}</td><td>${stash}</td>
+      <td class="num">${fb ? buySplitHtml(f, fb) : `<b>${buyText(f)}</b>`}${fmt}</td><td>${stash}</td>
       <td><button class="icon-btn sm" data-act="fabRowMenu" data-arg="${f.fab}" aria-haspopup="menu" aria-label="More for ${esc(fabricLabel(f.fab))}">${icon('more')}</button></td></tr>`;
   }
   const bk = plan.backing, bf = doc.layout.backing?.fabric;
@@ -83,6 +84,11 @@ function shoppingListHtml(plan) {
   return h + `</tbody></table>`;
 }
 // Row menu: other ways to buy this fabric, and its settings.
+// A precut fabric that also needs yardage: the precuts, then the yardage and why.
+function buySplitHtml(f, fb) {
+  if (fb.none) return `<span class="fallback" title="${esc(fallbackReason(fb, true))}"><b>${fmtYards(f.buyIn)}</b></span><br><span class="muted small">${esc(fallbackReason(fb, false))}</span>`;
+  return `<b>${plural2(f.buyPieces, f.format.name)}</b><br><span class="fallback" title="${esc(fallbackReason(fb, true))}"><b>+ ${fmtYards(f.buyIn)}</b> yardage</span><br><span class="muted small">${esc(fallbackReason(fb, false))}</span>`;
+}
 // Other ways to buy a fabric, and its settings (the row's ⋯ button and right-click).
 function fabRowItems(fab) {
   const f = cuttingPlan(Qnow()).fabrics.find(x => x.fab === fab);

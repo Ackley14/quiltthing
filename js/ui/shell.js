@@ -376,15 +376,15 @@ Actions.toggleUi = k => { ui[k] = !ui[k]; saveUi(); render(); };
 
 Actions.fileMenu = (a, el) => openMenu(el, MENUS.file());   // the phone-width File button
 Actions.newProject = () => confirmModal('Start a new project?', 'This replaces the current design in this browser. Save a project file first if you want to keep it.', 'Start new', () => {
-  doc = newDoc(); ui.activeBlock = null; ui.fabric = doc.fabrics[1].id; ui.view = 'block';
+  doc = newDoc(); ui.activeBlock = null; ui.projectId = null; ui.fabric = doc.fabrics[1].id; ui.view = 'block';
   addBlockToDoc(newDrawnBlock('My first block'));
   resetHistory(); saveNow(); render(); toast('New project started');
 }, true);
 Actions.loadSample = () => confirmModal('Load the sample quilt?', 'This replaces the current design in this browser. Save a project file first if you want to keep it.', 'Load sample', () => {
-  loadSampleProject(); toast('Sample quilt loaded');
+  ui.projectId = null; loadSampleProject(); toast('Sample quilt loaded');
 });
 Actions.loadTessSample = () => confirmModal('Load the Hexie Bloom sample?', 'This replaces the current design in this browser. Save a project file first if you want to keep it.', 'Load sample', () => {
-  loadTessSample().then(() => toast('Hexie Bloom loaded')).catch(err => toast(err.message));
+  ui.projectId = null; loadTessSample().then(() => toast('Hexie Bloom loaded')).catch(err => toast(err.message));
 });
 Actions.saveProject = () => { exportProject(); toast('Project file downloaded'); };
 Actions.openProject = () => {
@@ -396,6 +396,7 @@ Actions.openProject = () => {
     file.text().then(text => {
       try {
         doc = parseProjectFile(text);
+        ui.projectId = null; closeModal();
         sanitizeUi();
         ui.view = 'layout';
         resetHistory(); saveNow(); render();
@@ -478,14 +479,15 @@ Actions.help = () => openModal(`<h2>How it works</h2>
     <li><b>Fabric &amp; cutting.</b> What to buy, what you already have, and how to cut every piece.</li>
     <li><b>Pattern.</b> Print the full pattern or save it as a PDF.</li>
   </ol>
-  <p class="hint">Your work saves in this browser. To keep a copy, use File, Save project file.</p>
+  <p class="hint">Your work autosaves in this browser. File, Save keeps named copies here; File, Download project file makes a file you can move to another computer.</p>
   <div class="actions"><button class="btn" data-act="shortcuts">Keyboard shortcuts</button><button class="btn primary" data-act="closeModal">Close</button></div>`);
 Actions.shortcuts = () => openModal(`<h2>Keyboard shortcuts</h2>
   <div class="shortcuts">
     <h4>Everywhere</h4>
     <div><kbd>1</kbd>–<kbd>5</kbd> go to a step</div>
     <div><kbd>Ctrl Z</kbd> undo · <kbd>Ctrl Shift Z</kbd> redo</div>
-    <div><kbd>Ctrl S</kbd> save project file</div>
+    <div><kbd>Ctrl S</kbd> save · <kbd>Ctrl Shift S</kbd> save as</div>
+    <div><kbd>Ctrl O</kbd> open a saved quilt</div>
     <div><kbd>Ctrl P</kbd> print pattern</div>
     <div><kbd>G</kbd> value view</div>
     <h4>Blocks</h4>
@@ -533,8 +535,8 @@ document.addEventListener('keydown', e => {
     Views[ui.view]?.key?.(e);
     return;
   }
-  if (ctrl && (e.key === 's' || e.key === 'S')) { e.preventDefault(); Actions.saveProject(); return; }
-  if (ctrl && (e.key === 'o' || e.key === 'O')) { e.preventDefault(); Actions.openProject(); return; }
+  if (ctrl && (e.key === 's' || e.key === 'S')) { e.preventDefault(); e.shiftKey ? Actions.saveBrowserAs() : Actions.saveBrowser(); return; }
+  if (ctrl && (e.key === 'o' || e.key === 'O')) { e.preventDefault(); Actions.openBrowser(); return; }
   if (ctrl && (e.key === 'p' || e.key === 'P')) { e.preventDefault(); Actions.printPattern(); return; }
   // a dropdown has no undo of its own, so Ctrl+Z still undoes there
   if (inField && !(ctrl && t.tagName === 'SELECT')) return;

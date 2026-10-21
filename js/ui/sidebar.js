@@ -55,6 +55,9 @@ function fabricEditor(f) {
     </div>` : ''}
     <label class="check"><input type="checkbox" ${f.directional ? 'checked' : ''} data-change="fabDir"> Directional print</label>
     ${fabricFormatFields(f)}
+    ${(() => { const pf = cuttingPlan(Qnow()).fabrics.find(x => x.fab === f.id), fb = pf && fallbackInfo(pf);
+      return fb ? `<p class="hint fallback-note">${esc(fallbackReason(fb, true)).replace(/^./, c => c.toUpperCase())}${fb.none ? `, so it's all cut from ${fmtLen(fb.width)} yardage` : `: ${fb.pieces + fb.strips.length === 1 ? 'it is' : 'they are'} cut from ${fmtLen(fb.width)} yardage`}.</p>
+        <div class="btn-row"><button class="btn small" data-act="useFormat" data-arg="${f.id}|">Buy it all as yardage</button></div>` : ''; })()}
     ${!isBg && contrast < 1.6 ? '<p class="hint warn">Low contrast with the background.</p>' : ''}
     <div class="sub-h">Goes well with <span class="muted" style="font-weight:400">· click to add</span></div>
     <div class="harm">${harmonies(f.color).map(h => `<button style="background:${h.hex}" data-act="addFabricColor" data-arg="${h.hex}" title="${colorName(h.hex)}: add as a new fabric" aria-label="Add ${h.label} as a new fabric"></button>`).join('')}</div>

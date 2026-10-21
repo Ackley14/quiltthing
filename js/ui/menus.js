@@ -29,8 +29,12 @@ const tick = (label, act, arg, on, kb) => ({ label, act, arg, checked: !!on, kb 
 const MENUS = {
   file: () => [
     { label: 'New project…', act: 'newProject' },
-    { label: 'Open project file…', act: 'openProject', kb: 'Ctrl+O' },
-    { label: 'Save project file', act: 'saveProject', kb: 'Ctrl+S' },
+    { label: 'Open…', act: 'openBrowser', kb: 'Ctrl+O' },
+    { label: 'Save', act: 'saveBrowser', kb: 'Ctrl+S' },
+    { label: 'Save as…', act: 'saveBrowserAs', kb: 'Ctrl+Shift+S' },
+    '-',
+    { label: 'Download project file', act: 'saveProject' },
+    { label: 'Open project file…', act: 'openProject' },
     '-',
     { header: 'Samples' },
     { label: 'Midnight Bullseye…', act: 'loadSample' },

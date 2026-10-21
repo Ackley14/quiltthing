@@ -557,3 +557,20 @@ details.more[open] summary::before { transform: rotate(45deg); }
 .viewbar .tool.toggle:not([aria-pressed="true"]) { background: rgba(255,255,255,.6); }
 .viewbar .zoom-ctl .tool { background: #fff; }
 .docview .viewbar, .pattern-preview .viewbar { padding-right: 0; }
+/* precut fabrics that fall back to yardage */
+.fallback { color: #9a6200; }
+.fallback::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #e0a930; margin-right: 5px; vertical-align: 1px; }
+.muted.small, span.small { font-size: 11.5px; }
+.hint.fallback-note { color: #8a5a00; background: #fdf5e2; border-radius: 6px; padding: 6px 8px; margin-top: 8px; }
+.cutsteps li.src-h { display: block; padding: 10px 6px 4px; font-weight: 600; font-size: 12.5px; color: var(--ink-2); border-top: 0; }
+.cutsteps li.src-h.fallback { color: #9a6200; }
+.page .cut-list li.src-h { display: block; font-weight: 700; font-size: 9pt; color: #3a4754; margin: 6px 0 4px; }
+/* saved quilts */
+.proj-list { display: grid; gap: 8px; max-height: 56vh; overflow-y: auto; margin: 8px 0; }
+.proj { display: grid; grid-template-columns: 72px 1fr auto; gap: 12px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
+.proj.current { border-color: var(--sel); }
+.proj-open { padding: 0; border: 0; background: none; cursor: pointer; }
+.proj-open img, .proj-noimg { width: 72px; height: 72px; object-fit: contain; display: block; background: var(--panel-2); border-radius: 4px; }
+.proj-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.proj-meta b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-acts { display: flex; gap: 4px; }

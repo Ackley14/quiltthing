@@ -126,7 +126,7 @@ function welcome() {
     <div class="actions welcome-actions"><button class="btn" data-act="welcomeBlank">Start blank</button><button class="btn" data-act="welcomeClassic">Start from a classic block</button><button class="btn primary" data-act="closeModal">Explore the sample</button></div>`, () => { ui.seenTour = true; saveUi(); });
 }
 function startBlank() {
-  doc = newDoc();
+  doc = newDoc(); ui.projectId = null;
   addBlockToDoc(newDrawnBlock('My first block'));
   ui.view = 'block'; ui.tool = 'rect'; ui.fabric = doc.fabrics[1].id;
   resetHistory(); saveNow(); render();
