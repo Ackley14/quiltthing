@@ -31,11 +31,12 @@ Views.block = {
         <button class="tool" data-act="toggleSeamLines" aria-pressed="${ui.showSeamLines !== false}" title="Show or hide the red seam lines you've added">Seam lines</button>
         <button class="tool" data-act="toggleUi" data-arg="showPieces" aria-pressed="${!!ui.showPieces}" title="Outline each piece you'll actually cut — overlapping shapes are cut apart where they meet">Show pieces</button>
         <button class="tool" data-act="toggleUi" data-arg="showCentre" aria-pressed="${!!ui.showCentre}" title="Show the block's centre lines (across and down the middle)">Centre lines</button>
+        <span class="zoom-ctl"><button class="tool" data-act="edZoomBy" data-arg="out" title="Zoom out (−)" aria-label="Zoom out">−</button><button class="tool" id="ed-zoom" data-act="edZoomBy" data-arg="fit" title="Show the whole block (0)">${Math.round(edZoom() * 100)}%</button><button class="tool" data-act="edZoomBy" data-arg="in" title="Zoom in (+). Ctrl + scroll zooms where you point; when zoomed in, scroll or Space-drag to move around." aria-label="Zoom in">+</button></span>
         <button class="tool" data-act="toggleSnap" aria-pressed="${!ui.snapOff}" title="Snap points to the grid. Turn off to place points anywhere — corners of other shapes still pull points in so pieces meet.">Snap</button>
         ${refImgs[b.id] ? `<button class="tool" data-act="refAdjustToggle" aria-pressed="${!!ui.refAdjust}" title="Drag to move the tracing picture, scroll to resize it">✥ Picture</button>` : ''}
         <div class="spacer"></div><span id="seam-tool-slot"></span>
       </div>
-      <div class="canvas-wrap"><svg id="editor" class="editor tool-${ui.refAdjust && refImgs[b.id] ? 'ref' : ui.tool}" viewBox="${-m} ${-m} ${S + 2 * m} ${S + 2 * m}" aria-label="Block editor"><g id="ed-c">${editorShapes(b)}</g><g id="ed-ref" pointer-events="none">${refImageSvg(b, S)}</g><g id="ed-g">${editorGuides(b)}</g><g id="ed-ov" pointer-events="none"></g></svg>
+      <div class="canvas-wrap"><svg id="editor" class="editor tool-${ui.refAdjust && refImgs[b.id] ? 'ref' : ui.tool}" viewBox="${edViewBox(S).map(v => round(v, 4)).join(' ')}" aria-label="Block editor"><g id="ed-c">${editorShapes(b)}</g><g id="ed-ref" pointer-events="none">${refImageSvg(b, S)}</g><g id="ed-g">${editorGuides(b)}</g><g id="ed-ov" pointer-events="none"></g></svg>
         <div id="sel-bar" class="sel-bar" hidden></div><div id="seam-card" class="seam-card" hidden></div></div>
       <div class="status-bar" id="ed-status">${blockStatus(b)}</div></div>`;
   },
@@ -51,6 +52,7 @@ Views.block = {
     svg.addEventListener('dblclick', edDbl);
     svg.addEventListener('contextmenu', edContext);
     svg.addEventListener('wheel', edWheel, { passive: false });
+    svg.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });   // no autoscroll on middle-drag
     if (ui.tool === 'text') ensureFont();
     scheduleSeamCheck();
     positionSelBar();
@@ -108,7 +110,7 @@ function evtGrid(e, b) { const [x, y] = svgPoint($('#editor'), e); const k = gri
 /* ---------- rendering ---------- */
 // Block shapes (plus the area outside a hexagon greyed out).
 function editorShapes(b) {
-  const S = blockFrameSize(b), hair = S * 0.003;
+  const S = blockFrameSize(b), u = S / edZoom(), hair = u * 0.003;
   let s = blockSvg(b, S, S, { ids: true });
   if (isHexBlock(b)) {
     const hx = blockOutline(b, S);
@@ -132,12 +134,12 @@ function refImageSvg(b, S) {
 function refreshRef() { const b = activeBlock(), g = $('#ed-ref'); if (g && b) g.innerHTML = refImageSvg(b, blockFrameSize(b)); }
 // Grid, seam lines, problem highlights, selection and handles.
 function editorGuides(b) {
-  const S = blockFrameSize(b), k = gridScale(b), hair = S * 0.003;
+  const S = blockFrameSize(b), k = gridScale(b), u = S / edZoom(), hair = u * 0.003;
   let s = '';
   // grid
   if (b.lattice === 'tri' || isHexBlock(b)) {
     const dots = latticeDots(b);
-    for (const [x, y] of dots) s += `<circle class="dot" cx="${x * k}" cy="${y * k}" r="${S * 0.006}" stroke-width="${hair * .6}" opacity=".55"/>`;
+    for (const [x, y] of dots) s += `<circle class="dot" cx="${x * k}" cy="${y * k}" r="${u * 0.006}" stroke-width="${hair * .6}" opacity=".55"/>`;
   } else {
     for (let i = 0; i <= b.n; i++) {
       s += `<line class="gridline" x1="${i * k}" y1="0" x2="${i * k}" y2="${S}" stroke-width="${hair * (i === 0 || i === b.n ? 1.4 : .8)}"/>`;
@@ -149,12 +151,12 @@ function editorGuides(b) {
     const c = S / 2, ink = 'stroke="#d6336c" stroke-linecap="round" pointer-events="none"';
     s += `<line x1="${c}" y1="0" x2="${c}" y2="${S}" ${ink} stroke-width="${hair * 1.8}" stroke-dasharray="${hair * 10} ${hair * 4}"/>
       <line x1="0" y1="${c}" x2="${S}" y2="${c}" ${ink} stroke-width="${hair * 1.8}" stroke-dasharray="${hair * 10} ${hair * 4}"/>
-      <circle cx="${c}" cy="${c}" r="${S * 0.012}" fill="#d6336c" pointer-events="none"/>`;
+      <circle cx="${c}" cy="${c}" r="${u * 0.012}" fill="#d6336c" pointer-events="none"/>`;
   }
   // seams (always shown while the seam tool is active, so they can be clicked to remove)
   if (ui.showSeamLines !== false || ui.tool === 'seam') (b.seams || []).forEach(([A, B], i) => {
     s += `<line class="seam-line" x1="${A[0] * k}" y1="${A[1] * k}" x2="${B[0] * k}" y2="${B[1] * k}" stroke-width="${hair * 1.6}"/>`;
-    if (ui.tool === 'seam') s += `<line data-seam="${i}" x1="${A[0] * k}" y1="${A[1] * k}" x2="${B[0] * k}" y2="${B[1] * k}" stroke="transparent" stroke-width="${S * 0.025}" style="cursor:pointer"/>`;
+    if (ui.tool === 'seam') s += `<line data-seam="${i}" x1="${A[0] * k}" y1="${A[1] * k}" x2="${B[0] * k}" y2="${B[1] * k}" stroke="transparent" stroke-width="${u * 0.025}" style="cursor:pointer"/>`;
   });
   if (ui.showPieces) {
     for (const p of blockPieces(b, S, S)) s += `<path d="${polyToPath(p.pts)}" fill="none" stroke="rgba(20,30,40,.75)" stroke-width="${hair * 1.4}" stroke-dasharray="${hair * 5} ${hair * 3}" pointer-events="none"/>`;
@@ -169,23 +171,23 @@ function editorGuides(b) {
       const nb = r.pts[(i + 1) % r.pts.length];
       const bl = r.b?.[i] || 0;
       const mid = bl ? arcInfo([q[0] * k, q[1] * k], [nb[0] * k, nb[1] * k], bl).apex : [(q[0] + nb[0]) / 2 * k, (q[1] + nb[1]) / 2 * k];
-      s += `<rect class="eh${bl ? ' curved' : ''}" data-eh="${i}" x="${mid[0] - S * .011}" y="${mid[1] - S * .011}" width="${S * .022}" height="${S * .022}" rx="${S * .004}" stroke-width="${hair}"><title>Drag to curve this edge · double-click to straighten · Alt-click to add a corner here</title></rect>`;
+      s += `<rect class="eh${bl ? ' curved' : ''}" data-eh="${i}" x="${mid[0] - u * .011}" y="${mid[1] - u * .011}" width="${u * .022}" height="${u * .022}" rx="${u * .004}" stroke-width="${hair}"><title>Drag to curve this edge · double-click to straighten · Alt-click to add a corner here</title></rect>`;
     });
-    r.pts.forEach((q, i) => { s += `<circle class="vh" data-vh="${i}" cx="${q[0] * k}" cy="${q[1] * k}" r="${S * .014}" stroke-width="${hair * 1.2}"><title>Drag to move this corner · double-click to remove it</title></circle>`; });
+    r.pts.forEach((q, i) => { s += `<circle class="vh" data-vh="${i}" cx="${q[0] * k}" cy="${q[1] * k}" r="${u * .014}" stroke-width="${hair * 1.2}"><title>Drag to move this corner · double-click to remove it</title></circle>`; });
   }
   return s;
 }
 function drawOverlay() {
   const ov = $('#ed-ov'), b = activeBlock();
   if (!ov || !b || b.kind !== 'drawn') return;
-  const S = blockFrameSize(b), k = gridScale(b), hair = S * 0.003;
+  const S = blockFrameSize(b), k = gridScale(b), u = S / edZoom(), hair = u * 0.003;
   let s = '';
   const dr = ui.drawing;
   const h = ed.hover;
   if (ui.tool === 'polygon' && dr.length) {
     const pts = [...dr, ...(h ? [h] : [])].map(([x, y]) => `${x * k},${y * k}`).join(' ');
     s += `<polyline points="${pts}" fill="rgba(242,177,52,.25)" stroke="#c98a1f" stroke-width="${hair * 2.2}" stroke-dasharray="${hair * 5} ${hair * 3}"/>`;
-    dr.forEach((q, i) => s += `<circle cx="${q[0] * k}" cy="${q[1] * k}" r="${S * (i === 0 && dr.length >= 3 ? .018 : .011)}" fill="${i === 0 ? '#f2b134' : '#fff'}" stroke="#1f3a5f" stroke-width="${hair}"/>`);
+    dr.forEach((q, i) => s += `<circle cx="${q[0] * k}" cy="${q[1] * k}" r="${u * (i === 0 && dr.length >= 3 ? .018 : .011)}" fill="${i === 0 ? '#f2b134' : '#fff'}" stroke="#1f3a5f" stroke-width="${hair}"/>`);
   }
   if (ui.tool === 'rect' && dr.length === 1 && h) {
     const [a, c] = [dr[0], h];
@@ -197,7 +199,7 @@ function drawOverlay() {
     const t = textAtOrigin(b);
     if (t) for (const r of t.regions) s += `<path d="${polyToPath(r.pts.map(([x, y]) => [(x + h[0]) * k, (y + h[1]) * k]), 4)}" fill="${fabricFill(textFabric())}" fill-opacity=".75" stroke="#c98a1f" stroke-width="${hair}"/>`;
   }
-  if (h && ['polygon', 'rect', 'seam'].includes(ui.tool)) s += `<circle cx="${h[0] * k}" cy="${h[1] * k}" r="${S * .016}" fill="#f2b134" stroke="#1f3a5f" stroke-width="${hair}"/>`;
+  if (h && ['polygon', 'rect', 'seam'].includes(ui.tool)) s += `<circle cx="${h[0] * k}" cy="${h[1] * k}" r="${u * .016}" fill="#f2b134" stroke="#1f3a5f" stroke-width="${hair}"/>`;
   if (ed.drag?.kind === 'marquee' && ed.drag.cur) {
     const a = ed.drag.start, c = ed.drag.cur;
     s += `<rect x="${Math.min(a[0], c[0]) * k}" y="${Math.min(a[1], c[1]) * k}" width="${Math.abs(c[0] - a[0]) * k}" height="${Math.abs(c[1] - a[1]) * k}" fill="rgba(44,79,124,.08)" stroke="#2c4f7c" stroke-width="${hair}" stroke-dasharray="${hair * 4} ${hair * 3}"/>`;
@@ -286,6 +288,12 @@ function edDown(e) {
   const svg = e.currentTarget;
   const p = evtGrid(e, b), fine = e.shiftKey;
   const tool = ui.tool;
+  if (e.button === 1 || (ed.space && e.button === 0)) {
+    e.preventDefault();
+    svg.setPointerCapture(e.pointerId);
+    ed.drag = { kind: 'pan', x: e.clientX, y: e.clientY, cx: ed.cx, cy: ed.cy, px: 1 / svg.getScreenCTM().a };
+    return;
+  }
   if (ui.refAdjust && refImgs[b.id] && e.button === 0) {
     const r = refImgs[b.id];
     svg.setPointerCapture(e.pointerId);
@@ -368,6 +376,12 @@ function edMove(e) {
   const p = evtGrid(e, b), fine = e.shiftKey;
   const dr = ed.drag;
   if (dr?.kind === 'paint') { paintAt(e, b); return; }
+  if (dr?.kind === 'pan') {
+    if (edZoom() <= 1) return;
+    ed.cx = dr.cx - (e.clientX - dr.x) * dr.px; ed.cy = dr.cy - (e.clientY - dr.y) * dr.px;
+    applyView();
+    return;
+  }
   if (dr?.kind === 'ref') {
     const r = refImgs[b.id]; if (!r) return;
     r.dx = round(dr.dx + (p[0] - dr.start[0]) / b.n, 4); r.dy = round(dr.dy + (p[1] - dr.start[1]) / b.n, 4);
@@ -425,6 +439,7 @@ function edUp(e) {
   if (!b || !dr) return;
   if (dr.kind === 'paint') { if (dr.changed) commit(); return; }
   if (dr.kind === 'ref') { saveRefsSoon(); return; }
+  if (dr.kind === 'pan') return;
   if (dr.kind === 'vertex' || dr.kind === 'edge') { if (dr.moved) { cleanupRegion(b.regions[ui.selRegion]); commit(); } else { positionSelBar(); refreshEditor(); } return; }
   if (dr.kind === 'move') {
     if (dr.moved) { commit(); return; }
@@ -573,6 +588,9 @@ function blockViewKey(e) {
   if (ctrl && k === 'v') { e.preventDefault(); Actions.selPaste(); return; }
   if (ctrl && k === 'd' && sel.length) { e.preventDefault(); Actions.selDup(); return; }
   if (ctrl) return;
+  if (e.key === '+' || e.key === '=') { Actions.edZoomBy('in'); return; }
+  if (e.key === '-' || e.key === '_') { Actions.edZoomBy('out'); return; }
+  if (e.key === '0') { Actions.edZoomBy('fit'); return; }
   if ((e.key === 'Delete' || e.key === 'Backspace') && sel.length) { e.preventDefault(); Actions.selDelete(); return; }
   if (sel.length && e.key.startsWith('Arrow')) {
     e.preventDefault();
@@ -963,12 +981,58 @@ Actions.refFit = () => { const r = curRef(); if (r) { Object.assign(r, { sc: 1, 
 Actions.refAdjustToggle = () => { ui.refAdjust = !ui.refAdjust; saveUi(); renderView(); };
 Actions.refRemove = () => { const b = activeBlock(); if (b && refImgs[b.id]) { delete refImgs[b.id]; ui.refAdjust = false; saveRefs(); renderView(); } };
 function edWheel(e) {
-  const r = curRef();
-  if (!ui.refAdjust || !r) return;
-  e.preventDefault();
-  r.sc = clamp((r.sc || 1) * (e.deltaY < 0 ? 1.06 : 1 / 1.06), 0.05, 20);
-  refreshRef(); saveRefsSoon();
+  const r = curRef(), svg = $('#editor');
+  if (ui.refAdjust && r) {
+    e.preventDefault();
+    r.sc = clamp((r.sc || 1) * (e.deltaY < 0 ? 1.06 : 1 / 1.06), 0.05, 20);
+    refreshRef(); saveRefsSoon();
+    return;
+  }
+  if (e.ctrlKey || e.metaKey) { e.preventDefault(); setZoom(edZoom() * (e.deltaY < 0 ? 1.2 : 1 / 1.2), svgPoint(svg, e)); return; }
+  if (edZoom() > 1) {
+    e.preventDefault();
+    const px = 1 / svg.getScreenCTM().a;
+    ed.cx += (e.shiftKey ? e.deltaY : e.deltaX) * px; ed.cy += (e.shiftKey ? 0 : e.deltaY) * px;
+    applyView();
+  }
 }
+
+/* ---------- zoom & pan ----------
+   The view is the editor's viewBox: zoom 1 shows the whole block and its margin. Handles and
+   lines are drawn at a constant on-screen size (see `u` in editorGuides), so zooming in gives
+   finer control rather than fatter handles. */
+function edZoom() { return ed.zoomBlock === ui.activeBlock ? ed.zoom || 1 : 1; }
+function edViewBox(S) {
+  const m = S * 0.07, full = S + 2 * m, z = edZoom(), w = full / z;
+  if (z <= 1) return [-m, -m, full, full];
+  ed.cx = clamp(ed.cx ?? S / 2, -m + w / 2, S + m - w / 2);
+  ed.cy = clamp(ed.cy ?? S / 2, -m + w / 2, S + m - w / 2);
+  return [ed.cx - w / 2, ed.cy - w / 2, w, w];
+}
+// Zoom to z, keeping the point `at` (frame units) where it is on screen.
+function setZoom(z, at) {
+  const b = activeBlock(); if (!b || b.kind !== 'drawn') return;
+  const S = blockFrameSize(b), old = edViewBox(S);
+  if (ed.zoomBlock !== b.id) { ed.zoomBlock = b.id; ed.cx = ed.cy = null; }
+  z = clamp(z, 1, 16);
+  const w = S * 1.14 / z, p = at || [old[0] + old[2] / 2, old[1] + old[3] / 2];
+  const fx = (p[0] - old[0]) / old[2], fy = (p[1] - old[1]) / old[3];
+  ed.zoom = z; ed.cx = p[0] - fx * w + w / 2; ed.cy = p[1] - fy * w + w / 2;
+  applyView();
+}
+function applyView() {
+  const b = activeBlock(), svg = $('#editor'); if (!svg || !b) return;
+  svg.setAttribute('viewBox', edViewBox(blockFrameSize(b)).map(v => round(v, 4)).join(' '));
+  refreshEditor(false);
+  const z = $('#ed-zoom'); if (z) z.textContent = `${Math.round(edZoom() * 100)}%`;
+}
+Actions.edZoomBy = dir => setZoom(dir === 'fit' ? 1 : edZoom() * (dir === 'in' ? 1.5 : 1 / 1.5));
+for (const type of ['keydown', 'keyup']) document.addEventListener(type, e => {
+  if (e.key !== ' ' || ui.view !== 'block' || e.target.closest?.('input, textarea, select, button')) return;
+  e.preventDefault();
+  ed.space = type === 'keydown';
+  $('#editor')?.classList.toggle('pan', ed.space);
+});
 function refSection(b) {
   const r = refImgs[b.id];
   if (!r) return section('Tracing picture', `<p class="hint" style="margin-top:0">Put a photo or drawing over the block to trace — a quilt you saw, a sketch, a logo. It's a guide only and isn't printed.</p><div class="btn-row"><button class="btn small" data-act="refAdd">Choose picture…</button></div>`, { key: 'ref' });

@@ -169,6 +169,13 @@ input[type=color] { width: 36px; height: 30px; padding: 0 2px; border: 1px solid
 .canvas-wrap svg.editor { width: min(100%, calc(100vh - 150px)); aspect-ratio: 1; background: transparent; filter: none; touch-action: none; user-select: none; -webkit-user-select: none; }
 .canvas-wrap svg.quilt-svg { touch-action: none; }
 .grayscale .canvas-wrap svg, .grayscale .blk svg { filter: grayscale(1) drop-shadow(0 3px 10px rgba(31,41,51,.18)); }
+.zoom-ctl { display: inline-flex; }
+.zoom-ctl .tool { border-radius: 0; margin: 0; min-width: 30px; justify-content: center; }
+.zoom-ctl .tool:first-child { border-radius: 7px 0 0 7px; }
+.zoom-ctl .tool:last-child { border-radius: 0 7px 7px 0; }
+.zoom-ctl .tool + .tool { margin-left: -1px; }
+.zoom-ctl #ed-zoom { min-width: 52px; font-variant-numeric: tabular-nums; }
+.editor.pan, .editor.pan * { cursor: grab !important; }
 .status-bar { padding: 6px 14px 10px; color: var(--ink-2); font-size: 12px; text-align: center; min-height: 28px; }
 .status-bar b { color: var(--ink); }
 

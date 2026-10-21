@@ -14,6 +14,7 @@ const TEXT_FONTS = [
   { key: 'poppins', label: 'Poppins Bold', group: 'Sans serif' },
   { key: 'oswald', label: 'Oswald (narrow)', group: 'Sans serif' },
   { key: 'bebas', label: 'Bebas Neue (tall capitals)', group: 'Sans serif' },
+  { key: 'anton', label: 'Anton (tall, heavy)', group: 'Sans serif' },
   { key: 'lilita', label: 'Lilita One', group: 'Rounded' },
   { key: 'comfortaa', label: 'Comfortaa Bold', group: 'Rounded' },
   { key: 'slab', label: 'Alfa Slab One', group: 'Serif' },
