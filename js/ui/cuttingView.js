@@ -1,64 +1,48 @@
-/* Cutting view: per-fabric cutting instructions with strip diagrams and templates. */
+/* Cutting plan: per-fabric cutting instructions with strip diagrams and templates. */
 
-Views.cutting = {
-  main() {
-    const Q = Qnow(), plan = cuttingPlan(Q);
-    let h = `<div class="docview wide"><h2>Cutting plan</h2>
-      <p class="sub">Each fabric gets a numbered cutting order and a to-scale map of the fabric — any pieces from your stash first, then the yardage you'll buy (${fmtLen(doc.cutting.wof)} wide, top to bottom in the order you cut). Sizes include ${fmtLen(doc.cutting.seam)} seam allowances and are rounded up to the nearest ⅛". Hover a step to find it on the map.</p>`;
-    if (!plan.fabrics.length) return h + `<div class="callout">Nothing to cut yet — place some blocks or shapes in the <a href="#" data-act="view" data-arg="layout">Layout</a>.</div></div>`;
-    let tid = 0;
-    for (const f of plan.fabrics) {
-      const sheet = fabricSheet(f);
-      let steps = '';
-      sheet.rows.forEach((row, i) => {
-        const n = i + 1;
-        const rec = row.group?.recipes || (row.a ? [row.a] : row.r ? [row.r] : []);
-        const icons = rec.map(r => cutIconSvg(r.recipe, f.fab)).join('');
-        const uses = [];
-        for (const r of rec) for (const u of r.uses?.values() || []) if (!uses.some(x => (x.b || x.kind) === (u.b || u.kind))) uses.push(u);
-        if (row.kind === 'joined') uses.push({ kind: row.j.src });
-        let extra = '';
-        if (row.kind === 'template') {
-          tid++;
-          extra = `<div class="tpl-grid"><div class="tpl-card" data-act="tplDetail" data-arg="${f.fab}|${esc(row.r.recipe.key)}">${templateThumb(row.r.recipe, f.fab, 80)}T${tid} · see true-size template</div></div>`;
-        }
-        steps += `<li data-step="${n}"><span class="stepno">${n}</span><div class="step-main"><div class="head">${row.head}</div>
-          <div class="parts">${row.parts.map(esc).join('<br>')}</div>${extra}
-          ${uses.length ? `<div class="uses"><span class="muted">Used for</span> ${uses.map(u => usageThumbSvg(u, 44)).join('')}</div>` : ''}</div>
-          <div class="step-icons">${icons}</div></li>`;
-      });
-      const st = stashUseText(f);
-      const maps = fabricSheets(f).map((sh, i) => `<div class="hint" style="margin:${i ? '12px' : 0} 0 4px">${sh.src.kind === 'stash' ? `Your ${esc(sh.src.name.toLowerCase())} — ${piecesText(sh.src.pieces)}` : sh.src.kind === 'precut' ? `${esc(sh.src.name)} — ${piecesText(sh.src.pieces)}` : sh.src.fallback ? `Yardage for the larger cuts — ${fmtYards(f.buyIn)}` : st ? `Yardage for the rest — ${fmtYards(f.buyIn)}` : `Cutting map — ${fmtYards(f.buyIn)} of ${esc(formatLabel(f.format))}`}</div>${fabricSheetSvg(sh, f.fab, { width: 380, idp: 'cv' + i, title: sh.title })}`).join('');
-      h += `<div class="fabcard" id="cut-${f.fab}"><div class="fabcard-h">${swatchHtml(f.fab, 26)}<h3>${fabricLetter(f.fab)} · ${esc(fabricLabel(f.fab))}</h3>
-        <div class="meta"><span class="pill">${f.pieces} pieces</span>${f.lengthIn > 0 ? `<span class="pill">${fmtYards(f.lengthIn)} used</span>` : ''}<span class="pill info">buy ${buyText(f)}</span>${st ? `<span class="pill ok">uses ${esc(st)}</span>` : f.fq ? '<span class="pill ok">fits a fat quarter</span>' : ''}</div></div>
-        ${hasStashFor(f.fab) ? `<label class="check" style="margin:-4px 0 8px"><input type="checkbox" data-change="toggleStashUse" data-arg="${f.fab}" ${fabricById(f.fab).skipStash ? '' : 'checked'}> Cut from my stash first</label>` : ''}
-        <div class="cut-grid"><ol class="cutsteps">${steps}</ol>
-        ${ui.cutDiagrams !== false ? `<div class="sheet-wrap">${maps}</div>` : ''}</div></div>`;
-    }
-    return h + '</div>';
-  },
-  afterMain(el) {
-    // hovering a step lights up its cuts on the map, and vice versa
-    const set = (card, n) => { for (const x of card.querySelectorAll('[data-step]')) x.classList.toggle('hl', n != null && x.dataset.step === n); };
-    el.addEventListener('mouseover', e => { const t = e.target.closest('[data-step]'), card = e.target.closest('.fabcard'); if (card) set(card, t?.dataset.step); });
-    el.addEventListener('mouseleave', () => $$('.fabcard [data-step].hl').forEach(x => x.classList.remove('hl')));
-  },
-  inspector() {
-    const plan = cuttingPlan(Qnow());
-    let h = section('Settings', `<dl class="kv"><dt>Seam allowance</dt><dd>${fmtLen(doc.cutting.seam)}</dd><dt>Fabric comes as</dt><dd>${esc(formatLabel(defaultFormat()))}</dd><dt>Extra</dt><dd>${doc.cutting.extra}%</dd></dl>
-      <div class="btn-row"><button class="btn small" data-act="view" data-arg="fabric">Change in Fabric →</button></div>
-      <label class="check"><input type="checkbox" ${ui.cutDiagrams !== false ? 'checked' : ''} data-change="cutDiagrams"> Show cutting diagrams</label>
-      ${doc.layout.mode === 'tess' && doc.layout.tess.edge === 'trim' ? `<label class="check"><input type="checkbox" data-bind="layout.tess.cutEdges" data-type="bool" ${doc.layout.tess.cutEdges ? 'checked' : ''}> Cut edge pieces to their exact shape</label>` : ''}
-      <dl class="kv" style="margin-top:8px"><dt>Fabric to buy</dt><dd><b>${fmtYards(sum(plan.fabrics, f => f.buyIn))}</b>${precutSummary(plan.fabrics) ? ` + ${esc(precutSummary(plan.fabrics))}` : ''}${doc.stash.length ? ' <span class="muted">after stash</span>' : ''}</dd><dt>Pieces to cut</dt><dd>${plan.totalPieces}</dd><dt>Templates</dt><dd>${sum(plan.fabrics, f => f.templates.length)}</dd></dl>
-      <p class="hint">Flip settings and watch these totals to compare options. Backing isn't included.</p>`, { key: 'cutsettings' });
-    h += section('Fabrics', plan.fabrics.map(f => `<div class="region-row" data-act="jumpFab" data-arg="${f.fab}">${swatchHtml(f.fab, 18)}<span class="nm"><b>${fabricLetter(f.fab)}</b> ${esc(fabricLabel(f.fab))}</span><span class="muted">${buyText(f)}</span></div>`).join('') || '<p class="hint">Nothing to cut yet.</p>', { key: 'cutfabs' });
-    h += section('Tips', `<p class="hint" style="margin-top:0">Press fabric before cutting. Square up the fabric edge first, then cut the widest strips. Label each stack with its fabric letter and size. Directional prints keep their orientation in these plans.</p>`, { key: 'cuttips' });
-    return h;
-  },
-};
+// The cutting plan pane of Fabric & cutting: per fabric, a numbered cutting order beside a
+// to-scale map of each piece of fabric (stash first, then what you buy).
+function cuttingPlanHtml(plan) {
+  let h = `<p class="hint" style="margin:-8px 0 12px">Sizes include ${fmtLen(doc.cutting.seam)} seams. Point at a step to find it on the map.</p>`;
+  let tid = 0;
+  for (const f of plan.fabrics) {
+    const sheet = fabricSheet(f);
+    let steps = '';
+    sheet.rows.forEach((row, i) => {
+      const n = i + 1;
+      const rec = row.group?.recipes || (row.a ? [row.a] : row.r ? [row.r] : []);
+      const icons = rec.map(r => cutIconSvg(r.recipe, f.fab)).join('');
+      const uses = [];
+      for (const r of rec) for (const u of r.uses?.values() || []) if (!uses.some(x => (x.b || x.kind) === (u.b || u.kind))) uses.push(u);
+      if (row.kind === 'joined') uses.push({ kind: row.j.src });
+      let extra = '';
+      if (row.kind === 'template') {
+        tid++;
+        extra = `<div class="tpl-grid"><div class="tpl-card" data-act="tplDetail" data-arg="${f.fab}|${esc(row.r.recipe.key)}">${templateThumb(row.r.recipe, f.fab, 80)}Template T${tid}</div></div>`;
+      }
+      steps += `<li data-step="${n}"><span class="stepno">${n}</span><div class="step-main"><div class="head">${row.head}</div>
+        <div class="parts">${row.parts.map(esc).join('<br>')}</div>${extra}
+        ${uses.length ? `<div class="uses"><span class="muted">For</span> ${uses.map(u => usageThumbSvg(u, 44)).join('')}</div>` : ''}</div>
+        <div class="step-icons">${icons}</div></li>`;
+    });
+    const st = stashUseText(f);
+    const maps = fabricSheets(f).map((sh, i) => `<div class="hint" style="margin:${i ? '12px' : 0} 0 4px">${sh.src.kind === 'stash' ? `Your ${esc(sh.src.name.toLowerCase())}: ${piecesText(sh.src.pieces)}` : sh.src.kind === 'precut' ? `${esc(sh.src.name)}: ${piecesText(sh.src.pieces)}` : sh.src.fallback ? `Yardage ${esc(f.yardFor || 'for the larger cuts')}: ${fmtYards(f.buyIn)}` : st ? `Yardage for the rest: ${fmtYards(f.buyIn)}` : `${fmtYards(f.buyIn)} of ${esc(formatLabel(f.format))}`}</div>${fabricSheetSvg(sh, f.fab, { width: 380, idp: 'cv' + i, title: sh.title })}`).join('');
+    h += `<div class="fabcard" id="cut-${f.fab}"><div class="fabcard-h">${swatchHtml(f.fab, 26)}<h3>${fabricLetter(f.fab)} ${esc(fabricLabel(f.fab))}</h3>
+      <div class="meta">${plural(f.pieces, 'piece')} · buy ${buyText(f)}${st ? ` · uses ${esc(st)}` : ''}</div></div>
+      ${hasStashFor(f.fab) ? `<label class="check" style="margin:-4px 0 8px"><input type="checkbox" data-change="toggleStashUse" data-arg="${f.fab}" ${fabricById(f.fab).skipStash ? '' : 'checked'}> Cut from my stash first</label>` : ''}
+      <div class="cut-grid"><ol class="cutsteps">${steps}</ol>
+      ${ui.cutDiagrams !== false ? `<div class="sheet-wrap">${maps}</div>` : ''}</div></div>`;
+  }
+  return h;
+}
+// Pointing at a step lights up its cuts on the map, and the other way round.
+function cuttingAfterMain(el) {
+  const set = (card, n) => { for (const x of card.querySelectorAll('[data-step]')) x.classList.toggle('hl', n != null && x.dataset.step === n); };
+  el.addEventListener('mouseover', e => { const t = e.target.closest('[data-step]'), card = e.target.closest('.fabcard'); if (card) set(card, t?.dataset.step); });
+  el.addEventListener('mouseleave', () => $$('.fabcard [data-step].hl').forEach(x => x.classList.remove('hl')));
+}
 Actions.toggleStashUse = (v, el) => { const fb = doc.fabrics.find(x => x.id === el.dataset.arg); if (fb) { if (v) delete fb.skipStash; else fb.skipStash = true; commit(); } };
 Actions.cutDiagrams = v => { ui.cutDiagrams = !!v; saveUi(); render(); };
-Actions.jumpFab = id => $(`#cut-${CSS.escape(id)}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
 function templateThumb(recipe, fab, px) {
   const g = templateGeom(recipe), out = g.cut, bb = bounds(out);
@@ -92,8 +76,8 @@ Actions.tplDetail = arg => {
   }
   s += '</svg>';
   openModal(`<h2>${esc(r.recipe.makes)} template</h2>
-    <p class="muted">Fabric ${fabricLetter(fab)} · cut ${r.units} · finished ${fmtSize(bounds(pts).w, bounds(pts).h)} · cut box ${fmtSize(r.recipe.w, r.recipe.h, 'up')}</p>
+    <p class="muted">Fabric ${fabricLetter(fab)} · cut ${r.units} · finished ${fmtSize(bounds(pts).w, bounds(pts).h)} · fits in ${fmtSize(r.recipe.w, r.recipe.h, 'up')}</p>
     <div style="text-align:center">${s}</div>
-    <p class="hint">${g.fusible ? 'Fusible appliqué: shown reversed, the way you trace it onto the paper side of fusible web — cut on the line, no allowance.' : `Solid line = sewing line (blue numbers: finished side lengths, red: angles). Dashed line = cutting line with ${fmtLen(sa)} ${r.recipe.applique ? 'turn-under' : 'seam'} allowance.`} The Pattern view prints this at true size.</p>
-    <div class="actions"><button class="btn" data-act="closeModal">Close</button><button class="btn primary" data-act="view" data-arg="pattern">Go to pattern</button></div>`);
+    <p class="hint">${g.fusible ? 'Shown reversed, ready to trace onto fusible web. Cut on the line.' : `Solid line: sewing line, with finished lengths in blue and angles in red. Dashed line: cutting line, ${fmtLen(sa)} outside.`} The pattern prints it at full size.</p>
+    <div class="actions"><button class="btn primary" data-act="closeModal">Close</button></div>`);
 };

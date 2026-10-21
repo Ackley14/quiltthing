@@ -4,13 +4,14 @@
    the sidebar. */
 
 const BLOCK_TOOLS = [
-  { key: 'paint', label: 'Paint', kb: 'V', icon: '🖌' },
-  { key: 'select', label: 'Select', kb: 'S', icon: '⬚' },
-  { key: 'polygon', label: 'Shape', kb: 'P', icon: '⬠' },
-  { key: 'rect', label: 'Rectangle', kb: 'R', icon: '▭' },
-  { key: 'tri', label: 'Triangle', kb: 'T', icon: '◩' },
-  { key: 'seam', label: 'Seam', kb: 'K', icon: '✂' },
-  { key: 'text', label: 'Text', kb: 'L', icon: 'A' },
+  { key: 'paint', label: 'Paint', kb: 'V', icon: 'paint' },
+  { key: 'select', label: 'Select', kb: 'S', icon: 'select' },
+  { key: 'polygon', label: 'Shape', kb: 'P', icon: 'shape' },
+  { key: 'rect', label: 'Rectangle', kb: 'R', icon: 'rect' },
+  { key: 'tri', label: 'Triangle', kb: 'T', icon: 'tri' },
+  { key: 'arc', label: 'Quarter circle', kb: 'C', icon: 'arc' },
+  { key: 'seam', label: 'Seam line', kb: 'K', icon: 'seam' },
+  { key: 'text', label: 'Text', kb: 'L', icon: 'text' },
 ];
 
 const ed = { drag: null, hover: null, shift: false };
@@ -18,25 +19,23 @@ const ed = { drag: null, hover: null, shift: false };
 Views.block = {
   main() {
     const b = activeBlock();
-    if (!b) return `<div class="stage"><div class="canvas-wrap"><div class="docview" style="text-align:center"><h2>No block selected</h2><p class="sub">Draw a new block or pick one from the library on the left.</p><div class="btn-row" style="justify-content:center"><button class="btn primary" data-act="newBlock">Draw a block</button><button class="btn" data-act="newCompound">Combine blocks</button></div></div></div></div>`;
+    if (!b) return `<div class="stage"><div class="canvas-wrap"><div class="empty-state big"><h2>Start with a block</h2><p>Draw on a grid, or start from a classic.</p><div class="btn-row" style="justify-content:center"><button class="btn primary" data-act="libraryPicker">Browse classic blocks</button><button class="btn" data-act="newBlock">Draw a block</button></div></div></div></div>`;
     const S = b.kind === 'drawn' ? blockFrameSize(b) : doc.layout.blockSize, m = S * 0.07;   // margin doubles as room to start a box-select
     if (b.kind === 'compound') {
-      return `<div class="stage"><div class="toolbar"><b>${esc(b.name)}</b><span class="muted">· combination block</span><div class="spacer"></div>
-          <button class="tool" data-act="toggleUi" data-arg="showPieces" aria-pressed="${!!ui.showPieces}">Cut pieces</button></div>
+      return `<div class="stage"><div class="toolbar"><span class="ed-name" style="margin-left:0">Editing <b>${esc(b.name)}</b>, a combination block</span><div class="spacer"></div>
+          <button class="tool" data-act="toggleUi" data-arg="showPieces" aria-pressed="${!!ui.showPieces}">Show pieces</button></div>
         <div class="canvas-wrap"><svg id="editor" class="editor" viewBox="${-m} ${-m} ${S + 2 * m} ${S + 2 * m}">${blockSvg(b, S, S, { slots: true, activeSlot: ui.activeSlot, pieces: ui.showPieces })}</svg></div>
-        <div class="status-bar">${ui.activeSlot != null ? `<b>Slot ${ui.activeSlot + 1} selected</b> — pick a block from <b>My blocks</b> or the <b>library</b> to fill it.` : 'Click a slot, then pick the block to put in it. Rotate or mirror slots on the right.'}</div></div>`;
+        <div class="status-bar">${ui.activeSlot != null ? `Pick a block on the left for slot ${ui.activeSlot + 1}.` : 'Click a slot, then pick a block for it.'}</div></div>`;
     }
-    const tools = BLOCK_TOOLS.map(t => `<button class="tool" data-act="blockTool" data-arg="${t.key}" aria-pressed="${ui.tool === t.key}" title="${t.label} (${t.kb})">${t.icon} ${t.label} <kbd>${t.kb}</kbd></button>`).join('');
+    const tools = BLOCK_TOOLS.map(t => `<button class="tool icon-only" data-act="blockTool" data-arg="${t.key}" aria-pressed="${ui.tool === t.key}" title="${t.label} (${t.kb})" aria-label="${t.label}">${icon(t.icon)}</button>`).join('');
     return `<div class="stage"><div class="toolbar">${tools}<span class="sep"></span>
-        <button class="tool" data-act="toggleSeamLines" aria-pressed="${ui.showSeamLines !== false}" title="Show or hide the red seam lines you've added">Seam lines</button>
-        <button class="tool" data-act="toggleUi" data-arg="showPieces" aria-pressed="${!!ui.showPieces}" title="Outline each piece you'll actually cut — overlapping shapes are cut apart where they meet">Show pieces</button>
-        <button class="tool" data-act="toggleUi" data-arg="showCentre" aria-pressed="${!!ui.showCentre}" title="Show the block's centre lines (across and down the middle)">Centre lines</button>
-        <span class="zoom-ctl"><button class="tool" data-act="edZoomBy" data-arg="out" title="Zoom out (−)" aria-label="Zoom out">−</button><button class="tool" id="ed-zoom" data-act="edZoomBy" data-arg="fit" title="Show the whole block (0)">${Math.round(edZoom() * 100)}%</button><button class="tool" data-act="edZoomBy" data-arg="in" title="Zoom in (+). Ctrl + scroll zooms where you point; when zoomed in, scroll or Space-drag to move around." aria-label="Zoom in">+</button></span>
-        <button class="tool" data-act="toggleSnap" aria-pressed="${!ui.snapOff}" title="Snap points to the grid. Turn off to place points anywhere — corners of other shapes still pull points in so pieces meet.">Snap</button>
-        ${refImgs[b.id] ? `<button class="tool" data-act="refAdjustToggle" aria-pressed="${!!ui.refAdjust}" title="Drag to move the tracing picture, scroll to resize it">✥ Picture</button>` : ''}
-        <div class="spacer"></div><span id="seam-tool-slot"></span><span class="ed-name" title="The block you're editing — pick another in My blocks">Editing <b>${esc(b.name)}</b></span>
+        <button class="tool" data-act="blockViewMenu" aria-haspopup="menu">View ${icon('down', 14)}</button>
+        <button class="tool" data-act="toggleSnap" aria-pressed="${!ui.snapOff}" title="Snap points to the grid">Snap</button>
+        ${refImgs[b.id] ? `<button class="tool" data-act="refAdjustToggle" aria-pressed="${!!ui.refAdjust}" title="Drag to move the tracing picture, scroll to resize it">Move picture</button>` : ''}
+        <span class="zoom-ctl"><button class="tool" data-act="edZoomBy" data-arg="out" title="Zoom out (−)" aria-label="Zoom out">−</button><button class="tool" id="ed-zoom" data-act="edZoomBy" data-arg="fit" title="Fit (0)">${Math.round(edZoom() * 100)}%</button><button class="tool" data-act="edZoomBy" data-arg="in" title="Zoom in (+)" aria-label="Zoom in">+</button></span>
+        <div class="spacer"></div><span id="seam-tool-slot"></span><span class="ed-name">Editing <b>${esc(b.name)}</b></span>
       </div>
-      <div class="canvas-wrap"><svg id="editor" class="editor tool-${ui.refAdjust && refImgs[b.id] ? 'ref' : ui.tool}" viewBox="${edViewBox(S).map(v => round(v, 4)).join(' ')}" aria-label="Block editor"><g id="ed-c">${editorShapes(b)}</g><g id="ed-ref" pointer-events="none">${refImageSvg(b, S)}</g><g id="ed-g">${editorGuides(b)}</g><g id="ed-ov" pointer-events="none"></g></svg>
+      <div class="canvas-wrap"><svg id="editor" class="editor tool-${ui.refAdjust && refImgs[b.id] ? 'ref' : ui.tool}" viewBox="${edViewBox(S).map(v => round(v, 4)).join(' ')}" aria-label="Block editor"><g ${edTurn(b, S)}><g id="ed-c">${editorShapes(b)}</g></g><g id="ed-ref" pointer-events="none">${refImageSvg(b, S)}</g><g ${edTurn(b, S)}><g id="ed-g">${editorGuides(b)}</g><g id="ed-ov" pointer-events="none"></g></g></svg>
         <div id="sel-bar" class="sel-bar" hidden></div><div id="seam-card" class="seam-card" hidden></div></div>
       <div class="status-bar" id="ed-status">${blockStatus(b)}</div></div>`;
   },
@@ -105,7 +104,12 @@ function snapDot(b, p, fine, skip) {
   return best ? [best[0], best[1]] : best;
 }
 const samePt = (a, b) => a && b && Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6;
-function evtGrid(e, b) { const [x, y] = svgPoint($('#editor'), e); const k = gridScale(b); return [x / k, y / k]; }
+function evtGrid(e, b) { const [x, y] = svgPoint($('#ed-c'), e); const k = gridScale(b); return [x / k, y / k]; }
+// The tracing picture isn't turned with the block, so it moves in screen-aligned (view) units.
+function evtView(e, b) { const [x, y] = svgPoint($('#editor'), e); const k = gridScale(b); return [x / k, y / k]; }
+// The editor shows hexagon blocks the way they sit in the quilt (the tracing picture stays upright).
+const edAngle = hexViewAngle;
+function edTurn(b, S) { const a = edAngle(b); return a ? `transform="rotate(${a} ${S / 2} ${S / 2})"` : ''; }
 
 /* ---------- rendering ---------- */
 // Block shapes (plus the area outside a hexagon greyed out).
@@ -114,7 +118,7 @@ function editorShapes(b) {
   let s = blockSvg(b, S, S, { ids: true });
   if (isHexBlock(b)) {
     const hx = blockOutline(b, S);
-    s += `<path d="M0,0H${S}V${S}H0Z${polyToPath(hx)}" fill="rgba(110,120,135,.16)" fill-rule="evenodd" pointer-events="none"/>
+    s += `<path d="M${-S},${-S}H${2 * S}V${2 * S}H${-S}Z${polyToPath(hx)}" fill="rgba(110,120,135,.16)" fill-rule="evenodd" pointer-events="none"/>
       <path d="${polyToPath(hx)}" fill="none" stroke="#8a95a3" stroke-width="${hair * 1.4}" pointer-events="none"/>`;
   }
   return s;
@@ -195,6 +199,7 @@ function drawOverlay() {
   }
   if (ui.tool === 'seam' && dr.length === 1 && h) s += `<line x1="${dr[0][0] * k}" y1="${dr[0][1] * k}" x2="${h[0] * k}" y2="${h[1] * k}" stroke="#b5482f" stroke-width="${hair * 2}" stroke-dasharray="${hair * 4} ${hair * 2}"/>`;
   if (ui.tool === 'tri' && ed.triPreview) s += `<path d="${polyToPath(ed.triPreview.map(([x, y]) => [x * k, y * k]))}" fill="${fabricFill(ui.fabric)}" fill-opacity=".75" stroke="#c98a1f" stroke-width="${hair * 2}"/>`;
+  if (ui.tool === 'arc' && ed.triPreview?.pts) s += `<path d="${regionPathD(ed.triPreview, k)}" fill="${fabricFill(ui.fabric)}" fill-opacity=".75" stroke="#c98a1f" stroke-width="${hair * 2}"/>`;
   if (ui.tool === 'text' && h) {
     const t = textAtOrigin(b);
     if (t) for (const r of t.regions) s += `<path d="${polyToPath(r.pts.map(([x, y]) => [(x + h[0]) * k, (y + h[1]) * k]), 4)}" fill="${fabricFill(textFabric())}" fill-opacity=".75" stroke="#c98a1f" stroke-width="${hair}"/>`;
@@ -213,19 +218,20 @@ function drawOverlay() {
   ov.innerHTML = s;
 }
 function blockStatus(b) {
-  const fab = ui.fabric === BG ? 'quilt background' : esc(fabricLabel(ui.fabric));
+  const fab = ui.fabric === BG ? 'background' : esc(fabricLabel(ui.fabric));
   switch (ui.tool) {
-    case 'paint': return `Click a piece to paint it with <b>${fab}</b> — drag across pieces to paint several. Alt-click picks up a piece's fabric. Right-click a shape for more options.`;
+    case 'paint': return `<b>Paint</b> with ${fab}: click or drag across pieces. Alt-click picks up a fabric.`;
     case 'select': {
       const n = selList().length;
-      if (!n) return 'Click a shape to select it · Shift-click to add more · Ctrl-drag (or drag from outside the block) to box-select · right-click for options.';
-      return `<b>${plural(n, 'shape')} selected</b> — drag to move (Shift = half steps) · arrow keys nudge · <b>Delete</b> removes · Ctrl+D duplicates · Q/E rotate · X/Y mirror${n === 1 ? ' · drag white corners to reshape' : ''}`;
+      if (!n) return '<b>Select</b>: click a shape. Shift-click or drag a box for more.';
+      return `<b>${plural(n, 'shape')}</b>: drag to move, arrows to nudge, Delete to remove.${n === 1 ? ' Drag the white corners to reshape.' : ''}`;
     }
-    case 'polygon': return ui.drawing.length ? `<b>${ui.drawing.length} points</b> — click the first point or press <b>Enter</b> to finish · <b>Backspace</b> undo point · <b>Esc</b> cancel` : 'Click grid points to draw a shape. Hold <b>Shift</b> for the half grid.';
-    case 'rect': return 'Drag from one grid point to another to add a rectangle (or click both corners).';
-    case 'text': return loadedFont(textOpts().font) ? 'Click where the words should go (type them on the right). Each letter becomes an appliqué shape you can move, rotate and recolour.' : 'Loading the font…';
-    case 'tri': return b.lattice === 'tri' || isHexBlock(b) ? 'Click inside a lattice triangle to fill it. Hold <b>Shift</b> for half-size triangles.' : 'Click near a corner of a grid square to add a half-square triangle covering that corner. Hold <b>Shift</b> for half-size squares.';
-    case 'seam': return ui.drawing.length ? 'Click the other end of the seam line.' : 'Seam lines split pieces so every piece can be sewn with straight seams. Click two grid points. Click an existing seam to remove it.';
+    case 'polygon': return ui.drawing.length ? `<b>${ui.drawing.length} points</b>: click the first point or press Enter to finish. Esc cancels.` : '<b>Shape</b>: click grid points. Shift for half steps.';
+    case 'rect': return '<b>Rectangle</b>: drag from corner to corner.';
+    case 'text': return loadedFont(textOpts().font) ? '<b>Text</b>: click where the words go. Type them on the right.' : 'Loading the font…';
+    case 'arc': return isHexBlock(b) || b.lattice === 'tri' ? 'Quarter circles need a square grid.' : '<b>Quarter circle</b>: click a square, or drag from a corner for a bigger one.';
+    case 'tri': return b.lattice === 'tri' || isHexBlock(b) ? '<b>Triangle</b>: click inside a lattice triangle. Shift for half size.' : '<b>Triangle</b>: click near a corner of a square. Shift for half size.';
+    case 'seam': return ui.drawing.length ? 'Click the other end of the seam line.' : '<b>Seam line</b>: click two grid points. Click a seam to remove it.';
   }
   return '';
 }
@@ -260,15 +266,16 @@ function positionSelBar() {
   const sel = selList();
   if (ui.tool !== 'select' || !sel.length || ed.drag) { bar.hidden = true; return; }
   const k = gridScale(b), bb = selBounds(b, sel);
-  const ctm = svg.getScreenCTM(), wr = wrap.getBoundingClientRect();
-  const tl = new DOMPoint(bb.minX * k, bb.minY * k).matrixTransform(ctm), br = new DOMPoint(bb.maxX * k, bb.maxY * k).matrixTransform(ctm);
+  const ctm = $('#ed-c').getScreenCTM(), wr = wrap.getBoundingClientRect();
+  const cs = [[bb.minX, bb.minY], [bb.maxX, bb.minY], [bb.maxX, bb.maxY], [bb.minX, bb.maxY]].map(([x, y]) => new DOMPoint(x * k, y * k).matrixTransform(ctm));
+  const tl = { x: Math.min(...cs.map(q => q.x)), y: Math.min(...cs.map(q => q.y)) }, br = { x: Math.max(...cs.map(q => q.x)), y: Math.max(...cs.map(q => q.y)) };
   bar.innerHTML = `<span class="sb-count">${sel.length > 1 ? sel.length : ''}</span>
     <button data-act="selPaint" title="Paint with ${esc(fabricLabel(ui.fabric))}">${swatchHtml(ui.fabric === BG ? doc.layout.background : ui.fabric, 16)}</button>
-    <button data-act="selDup" title="Duplicate (Ctrl+D)">⧉</button>
-    <button data-act="selRotate" data-arg="cw" title="Rotate 90° (E)">↻</button>
-    <button data-act="selMirror" data-arg="h" title="Mirror left–right (X)">⇋</button>
-    <button data-act="selOrder" data-arg="front" title="Bring to front">⤒</button>
-    <button data-act="selOrder" data-arg="back" title="Send to back">⤓</button>
+    <button data-act="selDup" title="Duplicate (Ctrl+D)" aria-label="Duplicate">${icon('dup')}</button>
+    <button data-act="selRotate" data-arg="cw" title="Turn 90° (E)" aria-label="Turn">${icon('rotate')}</button>
+    <button data-act="selMirror" data-arg="h" title="Mirror (X)" aria-label="Mirror">${icon('mirror')}</button>
+    <button data-act="selOrder" data-arg="front" title="To front" aria-label="To front">${icon('front')}</button>
+    <button data-act="selOrder" data-arg="back" title="To back" aria-label="To back">${icon('back')}</button>
     <button data-act="selDelete" class="danger" title="Delete (Del)" aria-label="Delete"><svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2.5 4h11M6 4V2.5h4V4M4 4l.8 9.5h6.4L12 4M6.8 6.5v5M9.2 6.5v5"/></svg></button>`;
   bar.hidden = false;
   const bw = bar.offsetWidth, bh = bar.offsetHeight;
@@ -297,7 +304,7 @@ function edDown(e) {
   if (ui.refAdjust && refImgs[b.id] && e.button === 0) {
     const r = refImgs[b.id];
     svg.setPointerCapture(e.pointerId);
-    ed.drag = { kind: 'ref', start: p, dx: r.dx || 0, dy: r.dy || 0 };
+    ed.drag = { kind: 'ref', start: evtView(e, b), dx: r.dx || 0, dy: r.dy || 0 };
     return;
   }
   if (tool === 'text') { if (e.button === 0) placeText(b, ui.snapOff ? p : snapDot(b, p, fine)); return; }
@@ -358,6 +365,14 @@ function edDown(e) {
     if (tri) addOrRepaint(b, tri);
     return;
   }
+  if (tool === 'arc' && !isHexBlock(b) && b.lattice !== 'tri') {
+    // click: a quarter circle filling one grid square; drag from a corner: any radius
+    svg.setPointerCapture(e.pointerId);
+    ed.drag = { kind: 'arc', start: snapDot(b, p, fine), p0: p };
+    ed.triPreview = pieAt(b, p, fine);
+    drawOverlay();
+    return;
+  }
   if (tool === 'seam') {
     const sl = e.target.closest('[data-seam]');
     if (sl && !ui.drawing.length) { b.seams.splice(+sl.dataset.seam, 1); commit(); toast('Seam removed', 1200); return; }
@@ -384,6 +399,7 @@ function edMove(e) {
   }
   if (dr?.kind === 'ref') {
     const r = refImgs[b.id]; if (!r) return;
+    const p = evtView(e, b);
     r.dx = round(dr.dx + (p[0] - dr.start[0]) / b.n, 4); r.dy = round(dr.dy + (p[1] - dr.start[1]) / b.n, 4);
     refreshRef();
     return;
@@ -416,12 +432,18 @@ function edMove(e) {
     if (e.shiftKey) bl = ARC_SNAPS.reduce((a, c) => Math.abs(c - bl) < Math.abs(a - bl) ? c : a);   // Shift: common arcs (and straight)
     else for (const snapTo of [0, QUARTER_BULGE, -QUARTER_BULGE, 1, -1]) if (Math.abs(bl - snapTo) < 0.05) bl = snapTo;
     const st = $('#ed-status');
-    if (st) st.innerHTML = `${bl ? `<b>${arcLabel(bl)}</b>` : '<b>Straight</b>'} — hold <b>Shift</b> to snap to straight, 30°, 45°, 60°, 90° (quarter circle), 120° or 180° (half circle)`;
+    if (st) st.innerHTML = `${bl ? `<b>${arcLabel(bl)}</b>` : '<b>Straight</b>'}. Hold Shift to snap to common curves.`;
     if (!r.b) r.b = r.pts.map(() => 0);
     while (r.b.length < r.pts.length) r.b.push(0);
     r.b[dr.i] = round(bl, 4);
     dr.moved = true;
     refreshEditor(false);
+    return;
+  }
+  if (dr?.kind === 'arc') {
+    const cur = snapDot(b, p, e.shiftKey);
+    ed.triPreview = samePt(cur, dr.start) ? pieAt(b, dr.p0, e.shiftKey) : pieFrom(dr.start, cur);
+    drawOverlay();
     return;
   }
   // hover feedback
@@ -431,6 +453,9 @@ function edMove(e) {
     if (!samePt(d, ed.hover)) { ed.hover = d; drawOverlay(); }
   } else if (ui.tool === 'tri') {
     ed.triPreview = triangleAt(b, p, fine);
+    drawOverlay();
+  } else if (ui.tool === 'arc') {
+    ed.triPreview = pieAt(b, p, fine);
     drawOverlay();
   }
 }
@@ -455,6 +480,11 @@ function edUp(e) {
     const inside = b.regions.map((r, i) => ({ i, bb: bounds(r.pts) })).filter(({ bb }) => bb.minX >= box.minX - 1e-6 && bb.maxX <= box.maxX + 1e-6 && bb.minY >= box.minY - 1e-6 && bb.maxY <= box.maxY + 1e-6).map(x => x.i);
     setSel([...dr.base, ...inside]);
     refreshEditor(); renderInspector();
+    return;
+  }
+  if (dr.kind === 'arc') {
+    const pie = ed.triPreview;
+    if (pie?.pts) { b.regions.push({ pts: pie.pts, fab: ui.fabric, b: pie.b }); commit(); }
     return;
   }
   if (dr.kind === 'rect') {
@@ -484,6 +514,18 @@ function edDbl(e) {
 }
 function paintAt(e, b) {
   const ri = regionAtEvent(e);
+  // seam lines split shapes into pieces you can paint one by one
+  if ((b.seams || []).length && !(ri != null && b.regions[ri].app) && b.kind === 'drawn') {
+    const p = evtGrid(e, b), inPiece = q => !q.app && pointInPoly(p, q.pts) && !q.holes.some(h => pointInPoly(p, h));
+    const piece = blockPieces(b, b.n, b.n).find(inPiece), whole = blockPieces({ ...b, seams: [] }, b.n, b.n).find(inPiece);
+    if (piece && whole && !piece.holes.length && Math.abs(polyArea(piece.pts) - polyArea(whole.pts)) > 1e-3) {
+      if (resolveFab(piece.fab) !== resolveFab(ui.fabric)) {
+        b.regions.push({ pts: cleanPoly(piece.pts.map(q => [round(q[0], 4), round(q[1], 4)])), fab: ui.fabric });
+        ed.drag.changed = true; refreshEditor(false);
+      }
+      return;
+    }
+  }
   if (ri == null) {
     // painting the bare background gives this block its own background fabric
     if (!ed.drag.bgDone && ui.fabric !== BG && e.type === 'pointerdown') {
@@ -525,6 +567,25 @@ function addOrRepaint(b, pts) {
   if (hit >= 0) { b.regions[hit].fab = ui.fabric; const [r] = b.regions.splice(hit, 1); b.regions.push(r); }
   else b.regions.push({ pts, fab: ui.fabric });
   commit();
+}
+// A quarter circle ("pie") centred on corner o, radius r, opening toward (sx, sy).
+function pieShape(o, sx, sy, r) {
+  const A = [round(o[0] + sx * r, 6), o[1]], B = [o[0], round(o[1] + sy * r, 6)];
+  const nx = -(B[1] - A[1]), ny = B[0] - A[0], mx = (A[0] + B[0]) / 2 - o[0], my = (A[1] + B[1]) / 2 - o[1];
+  return { pts: [o, A, B], b: [0, nx * mx + ny * my > 0 ? QUARTER_BULGE : -QUARTER_BULGE, 0] };
+}
+// The quarter circle filling the grid square under p, centred on the square's nearest corner.
+function pieAt(b, p, fine) {
+  if (p[0] < 0 || p[1] < 0 || p[0] > b.n || p[1] > b.n || isHexBlock(b) || b.lattice === 'tri') return null;
+  const st = fine ? 0.5 : 1;
+  const cx = Math.min(Math.floor(p[0] / st) * st, b.n - st), cy = Math.min(Math.floor(p[1] / st) * st, b.n - st);
+  const left = p[0] - cx < st / 2, top = p[1] - cy < st / 2;
+  return pieShape([left ? cx : cx + st, top ? cy : cy + st], left ? 1 : -1, top ? 1 : -1, st);
+}
+// Dragged from a corner: the radius is the longer side of the drag.
+function pieFrom(o, cur) {
+  const dx = cur[0] - o[0], dy = cur[1] - o[1], r = Math.max(Math.abs(dx), Math.abs(dy));
+  return r > 0 ? pieShape(o, dx < 0 ? -1 : 1, dy < 0 ? -1 : 1, r) : null;
 }
 function triangleAt(b, p, fine) {
   if (p[0] < 0 || p[1] < 0 || p[0] > b.n || p[1] > b.n) return null;
@@ -613,8 +674,28 @@ function blockViewKey(e) {
 }
 
 /* ---------- actions ---------- */
+Actions.blockMenu = (a, el) => {
+  const b = activeBlock(); if (!b) return;
+  openMenu(el, [
+    ...(b.kind === 'drawn' ? [{ label: `Turn ${isHexBlock(b) ? 60 : 90}°`, act: 'blockRotate' }, { label: 'Mirror', act: 'blockMirror' }] : []),
+    { label: 'Duplicate', act: 'blockDuplicate' },
+    { label: 'Export…', act: 'exportBlocks', arg: 'one' },
+    '-',
+    ...(b.kind === 'drawn' ? [{ label: 'Clear all shapes', act: 'blockClear' }] : []),
+    { label: 'Delete block', act: 'blockDelete', danger: true },
+  ]);
+};
+Actions.blockViewMenu = (a, el) => {
+  const on = v => v ? icon('check', 14) : '<span class="ic-gap"></span>';
+  openMenu(el, [
+    { label: `${on(ui.showSeamLines !== false)} Seam lines`, act: 'toggleSeamLines' },
+    { label: `${on(!!ui.showPieces)} Cut pieces`, act: 'toggleUi', arg: 'showPieces' },
+    { label: `${on(!!ui.showCentre)} Centre lines`, act: 'toggleUi', arg: 'showCentre' },
+    { label: `${on(!!ui.grayscale)} Value view`, act: 'toggleUi', arg: 'grayscale', kb: 'G' },
+  ]);
+};
 Actions.blockTool = t => { ui.tool = t; ui.drawing = []; ed.triPreview = null; ed.hover = null; if (t !== 'select') ui.selEdge = null; saveUi(); renderView(); };
-Actions.toggleSnap = () => { ui.snapOff = !ui.snapOff; saveUi(); renderView(); toast(ui.snapOff ? 'Snap off — points go anywhere; nearby corners still attract' : 'Snap on', 1600); };
+Actions.toggleSnap = () => { ui.snapOff = !ui.snapOff; saveUi(); renderView(); toast(ui.snapOff ? 'Snap off' : 'Snap on', 1400); };
 // Arc snaps for Shift-dragging an edge: bulge = tan(sweep / 4)
 const ARC_SNAPS = [0, 30, 45, 60, 90, 120, 180].flatMap(d => d ? [Math.tan(d * Math.PI / 720), -Math.tan(d * Math.PI / 720)] : [0]);
 function arcLabel(bl) {
@@ -640,18 +721,18 @@ function showSeamCard() {
   if (!card || !b) return;
   const sg = _seamState.s;
   const has = sg && (sg.required.length || sg.optional.length);
-  if (slot) slot.innerHTML = has && seamDismissed(b) ? `<button class="tool" data-act="undismissSeams" title="Show the piecing suggestions again">💡 Piecing tips</button>` : '';
+  if (slot) slot.innerHTML = has && seamDismissed(b) ? `<button class="tool" data-act="undismissSeams" title="Show the seam suggestion again">Seam suggestion</button>` : '';
   if (!has || seamDismissed(b)) { card.hidden = true; drawOverlay(); return; }
   const lines = [];
-  if (sg.required.length) lines.push(`<b>${plural(sg.reqPieces, 'piece')}</b> can't be sewn with straight seams as drawn — <b>${plural(sg.required.length, 'seam line')}</b> fix${sg.required.length === 1 ? 'es' : ''} that.`);
-  if (sg.optional.length) lines.push(`<b>${plural(sg.optPieces, 'piece')}</b> would need a paper template — ${plural(sg.optional.length, 'more seam')} turn${sg.optional.length === 1 ? 's' : ''} ${sg.optPieces === 1 ? 'it' : 'them'} into rotary-cut shapes.`);
-  if (sg.setInAfter) lines.push('Some pieces will still meet in a set-in (Y) seam — fine for English paper piecing.');
+  if (sg.required.length) lines.push(`${plural(sg.reqPieces, 'piece')} need${sg.reqPieces === 1 ? 's' : ''} set-in seams as drawn. ${plural(sg.required.length, 'seam line')} fix${sg.required.length === 1 ? 'es' : ''} that.`);
+  if (sg.optional.length) lines.push(`${plural(sg.optPieces, 'piece')} need${sg.optPieces === 1 ? 's' : ''} a template. ${plural(sg.optional.length, 'more seam')} make${sg.optional.length === 1 ? 's' : ''} ${sg.optPieces === 1 ? 'it' : 'them'} rotary-cut.`);
+  if (sg.setInAfter) lines.push('Some pieces still meet in a set-in (Y) seam.');
   const total = sg.required.length + sg.optional.length;
-  card.innerHTML = `<div class="sc-icon">💡</div><div class="sc-body"><b>Piecing suggestion</b><br>${lines.join('<br>')}
+  card.innerHTML = `<div class="sc-body"><b>Seam suggestion</b><br>${lines.join('<br>')}
     <div class="btn-row"><button class="btn small" data-act="seamPreview">${ui.seamPreview ? 'Hide preview' : 'Preview'}</button>
     <button class="btn small primary" data-act="applySeams" data-arg="all">Add ${total === 1 ? 'seam' : `${total} seams`}</button>
     ${sg.required.length && sg.optional.length ? '<button class="btn small" data-act="applySeams" data-arg="required">Only the required ones</button>' : ''}
-    <button class="btn small ghost" data-act="dismissSeams">Not now</button></div></div>`;
+    <button class="btn small quiet" data-act="dismissSeams">Dismiss</button></div></div>`;
   card.hidden = false;
   drawOverlay();
 }
@@ -667,11 +748,11 @@ Actions.applySeams = mode => {
   ui.seamPreview = false;
   commit();
   const an = analyzeBlock(b, blockFrameSize(b));
-  toast(an.setIn ? `Added ${plural(add.length, 'seam')} — some pieces still meet in a Y-seam` : `Added ${plural(add.length, 'seam')} — the block now sews with straight seams`);
+  toast(an.setIn ? `Added ${plural(add.length, 'seam')}. Some Y-seams remain.` : `Added ${plural(add.length, 'seam')}`);
 };
 Actions.autoSeams = () => {
   const sg = seamSuggestions(activeBlock());
-  if (!sg.required.length && !sg.optional.length) { toast(sg.unresolved ? "Couldn't find straight seams for those pieces — they may need appliqué or set-in seams" : 'Nothing to improve — every piece is already a rotary-cut shape'); return; }
+  if (!sg.required.length && !sg.optional.length) { toast(sg.unresolved ? 'No straight seams found for those pieces' : 'Every piece is already rotary-cut'); return; }
   Actions.applySeams('all');
 };
 Actions.clearSeams = () => { const b = activeBlock(); b.seams = []; commit(); };
@@ -801,7 +882,7 @@ function insertCorner(b, i) {
   r.pts.splice(i + 1, 0, m);
   if (r.b) { r.b[i] = 0; r.b.splice(i + 1, 0, 0); }
   commit();
-  toast('Corner added — drag it to reshape', 1400);
+  toast('Corner added', 1400);
 }
 // Right-click a shape (any tool) for quick actions.
 function edContext(e) {
@@ -861,8 +942,12 @@ let _textCache = { key: null, res: null };
 function textAtOrigin(b) {
   const o = textOpts(), font = loadedFont(o.font);
   if (!font || !o.str.trim()) return null;
-  const capH = o.h / gridScale(b), key = `${o.font}|${o.str}|${capH}`;
-  if (_textCache.key !== key) _textCache = { key, res: textRegions(font, o.str, capH, [0, 0], null) };
+  const capH = o.h / gridScale(b), ang = -edAngle(b), key = `${o.font}|${o.str}|${capH}|${ang}`;
+  if (_textCache.key !== key) {
+    const res = textRegions(font, o.str, capH, [0, 0], null);
+    if (ang) res.regions = res.regions.map(r => ({ ...r, pts: rotatePoly(r.pts, ang * Math.PI / 180) }));   // level as seen
+    _textCache = { key, res };
+  }
   return _textCache.res;
 }
 function ensureFont() {
@@ -872,17 +957,17 @@ function ensureFont() {
 }
 function placeText(b, at) {
   const t = textAtOrigin(b);
-  if (!t) { ensureFont(); toast(loadedFont(textOpts().font) ? 'Type some words on the right first' : 'Still loading the font — try again in a moment'); return; }
+  if (!t) { ensureFont(); toast(loadedFont(textOpts().font) ? 'Type the words on the right first' : 'The font is still loading'); return; }
   const fab = textFabric(), start = b.regions.length, outline = blockOutline(b, b.n);
   const o = textOpts(), tid = uid('t');
-  b.texts = { ...(b.texts || {}), [tid]: { str: o.str, font: o.font, h: o.h } };
+  b.texts = { ...(b.texts || {}), [tid]: { str: o.str, font: o.font, h: o.h, ...(edAngle(b) ? { ang: -edAngle(b) } : {}) } };
   const regs = t.regions.map(r => ({ ...r, fab, txt: tid, pts: r.pts.map(([x, y]) => [round(x + at[0], 4), round(y + at[1], 4)]) }));
   b.regions.push(...regs);
   setSel(regs.map((_, i) => start + i));
   ui.tool = 'select'; ed.hover = null;
   commit();
   const off = regs.some(r => r.pts.some(q => !pointInPoly(q, outline)));
-  toast(`Added ${plural(regs.length, 'appliqué shape')}${t.lost ? ` (${t.lost} without ${t.lost === 1 ? 'its' : 'their'} holes)` : ''} — drag to position${off ? '. Part of it runs past the block edge and will be trimmed.' : ''}`, 4000);
+  toast(`Added ${plural(regs.length, 'letter')}${t.lost ? `, ${t.lost} without ${t.lost === 1 ? 'its' : 'their'} holes` : ''}${off ? '. Part runs past the edge and will be trimmed.' : ''}`, 3000);
 }
 Actions.textStr = v => { ui.textStr = v; saveUi(); drawOverlay(); };
 Actions.textFont = v => { ui.textFont = v; saveUi(); ensureFont(); drawOverlay(); };
@@ -892,7 +977,7 @@ function textToolSection() {
   return section('Text', `<label class="f">Words<textarea rows="2" data-input="textStr" spellcheck="false">${esc(o.str)}</textarea></label>
     <div class="f-row"><label class="f">Font<select data-change="textFont">${fontOptions(o.font)}</select></label>
       <label class="f">Capital height<input type="text" inputmode="decimal" value="${esc(inputLen(o.h))}" data-change="textH"></label></div>
-    <p class="hint">${loadedFont(o.font) ? '' : '<b>Loading the font…</b> '}Uses the fabric selected in the sidebar. Click the block to place the words; each letter becomes an appliqué shape (holes included) that you can move, rotate, mirror or recolour. Click placed words with <b>Select</b> to change them later. Turned-edge appliqué is easiest with letters 1½–2" tall or more; fusible appliqué (Fabric → Cutting settings) copes with smaller.</p>`, { key: 'text' });
+    <p class="hint">${loadedFont(o.font) ? '' : 'Loading the font… '}Each letter becomes an appliqué shape in the selected fabric. For turned-edge appliqué, keep letters 1½" tall or more.</p>`, { key: 'text' });
 }
 
 /* ---------- editing placed text ----------
@@ -918,7 +1003,8 @@ function rebuildText(b, tid, changes) {
     b.texts[tid] = next;
     const bb = bounds(idx.flatMap(i => b.regions[i].pts)), at = [(bb.minX + bb.maxX) / 2, (bb.minY + bb.maxY) / 2];
     const fab = b.regions[idx[0]].fab, first = idx[0];
-    const fresh = next.str.trim() ? textRegions(font, next.str, next.h / gridScale(b), at, fab).regions.map(r => ({ ...r, txt: tid })) : [];
+    const fresh = next.str.trim() ? textRegions(font, next.str, next.h / gridScale(b), at, fab).regions
+      .map(r => ({ ...r, txt: tid, ...(next.ang ? { pts: rotatePoly(r.pts, next.ang * Math.PI / 180, ...at).map(q => q.map(v => round(v, 4))) } : {}) })) : [];
     b.regions = b.regions.filter(r => r.txt !== tid);
     b.regions.splice(first, 0, ...fresh);
     if (!fresh.length) delete b.texts[tid];
@@ -944,7 +1030,7 @@ function textEditSection(b, tid) {
   return section('Text', `<label class="f">Words<textarea rows="2" data-change="textEditStr" data-arg="${tid}" spellcheck="false">${esc(t.str)}</textarea></label>
     <div class="f-row"><label class="f">Font<select data-change="textEditFont" data-arg="${tid}">${fontOptions(t.font)}</select></label>
       <label class="f">Capital height<input type="text" inputmode="decimal" value="${esc(inputLen(t.h))}" data-change="textEditH" data-arg="${tid}"></label></div>
-    <p class="hint">Changes rebuild the letters where they are now, in the first letter's fabric (turns and mirroring are reset). Click a selected word again to pick out a single letter.</p>
+    <p class="hint">Click a selected word again to pick out one letter.</p>
     <div class="btn-row"><button class="btn small" data-act="textToShapes" data-arg="${tid}" title="Stop treating these letters as editable text">Make plain shapes</button></div>`, { key: 'textedit' });
 }
 
@@ -967,7 +1053,7 @@ Actions.refAdd = () => {
       refImgs[b.id] = { src: c.toDataURL('image/jpeg', 0.85), ar: c.width / c.height, op: 0.5, sc: 1, dx: 0, dy: 0, on: true };
       const ok = saveRefs();
       renderView();
-      toast(ok ? 'Picture added — fade, size and move it on the right' : "Picture added for now, but the browser's storage is full — save the project file to keep it", ok ? 2600 : 7000);
+      toast(ok ? 'Picture added' : 'Picture added, but storage is full. Save the project file to keep it.', ok ? 2000 : 7000);
     };
     img.onerror = () => { URL.revokeObjectURL(url); toast("Couldn't read that picture"); };
     img.src = url;
@@ -1037,14 +1123,14 @@ for (const type of ['keydown', 'keyup']) document.addEventListener(type, e => {
 });
 function refSection(b) {
   const r = refImgs[b.id];
-  if (!r) return section('Tracing picture', `<p class="hint" style="margin-top:0">Put a photo or drawing over the block to trace — a quilt you saw, a sketch, a logo. It's a guide only and isn't printed.</p><div class="btn-row"><button class="btn small" data-act="refAdd">Choose picture…</button></div>`, { key: 'ref' });
+  if (!r) return section('Tracing picture', `<p class="hint">Trace over a photo or sketch. Not printed.</p><div class="btn-row"><button class="btn small" data-act="refAdd">Choose picture…</button></div>`, { key: 'ref', closed: true });
   const op = Math.round((r.op ?? 0.5) * 100), sc = Math.round((r.sc || 1) * 100);
-  return section('Tracing picture', `<label class="check" style="margin-top:0"><input type="checkbox" data-change="refShow" ${r.on !== false ? 'checked' : ''}> Show picture</label>
+  return section('Tracing picture', `<label class="check"><input type="checkbox" data-change="refShow" ${r.on !== false ? 'checked' : ''}> Show picture</label>
     <label class="f">Strength <span class="muted">${op}%</span><input type="range" min="10" max="100" step="5" value="${op}" data-input="refOpacityLive" data-change="refSliderDone"></label>
     <label class="f">Size <span class="muted">${sc}%</span><input type="range" min="20" max="400" step="5" value="${Math.min(400, sc)}" data-input="refScaleLive" data-change="refSliderDone"></label>
-    <div class="btn-row"><button class="btn small" data-act="refAdjustToggle" aria-pressed="${!!ui.refAdjust}">${ui.refAdjust ? '✓ Done moving' : '✥ Move picture'}</button><button class="btn small" data-act="refFit">Fit to block</button></div>
-    <div class="btn-row"><button class="btn small" data-act="refAdd">Replace…</button><button class="btn small danger" data-act="refRemove">Remove</button></div>
-    <p class="hint">${ui.refAdjust ? 'Drag the picture to move it and scroll to resize it. Click <b>Done moving</b> (or press Esc) to get back to drawing.' : "Kept in this browser and inside project files you save. It isn't printed."}</p>`, { key: 'ref' });
+    <div class="btn-row"><button class="btn small" data-act="refAdjustToggle" aria-pressed="${!!ui.refAdjust}">${ui.refAdjust ? 'Done moving' : 'Move picture'}</button><button class="btn small" data-act="refFit">Fit to block</button></div>
+    <div class="btn-row"><button class="btn small" data-act="refAdd">Replace…</button><button class="btn small quiet danger" data-act="refRemove">Remove</button></div>
+    ${ui.refAdjust ? '<p class="hint">Drag to move, scroll to resize. Esc when done.</p>' : '<p class="hint">Not printed.</p>'}`, { key: 'ref' });
 }
 
 /* ---------- compound actions ---------- */
@@ -1069,39 +1155,33 @@ Actions.slotFlip = (v, el) => { const s = activeBlock().slots[+el.dataset.arg]; 
 /* ---------- inspector ---------- */
 function blockInspector() {
   const b = activeBlock();
-  if (!b) return section('Block', '<p class="hint">Select or create a block.</p>');
+  if (!b) return section('Block', '<p class="hint">Pick a block on the left, or add one.</p>');
   const S = b.kind === 'drawn' ? blockFrameSize(b) : doc.layout.blockSize;
   const hex = isHexBlock(b);
   const hexGrids = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24].concat(b.n).filter((v, i, a) => a.indexOf(v) === i).sort((x, y) => x - y);
   let h = (b.kind === 'drawn' && ui.tool === 'text') ? textToolSection() : '';
+  const more = `<button class="icon-btn sm" data-act="blockMenu" aria-haspopup="menu" aria-label="More block actions" title="More">${icon('more')}</button>`;
   h += section('Block', `
     <label class="f">Name<input type="text" value="${esc(b.name)}" data-change="blockName"></label>
-    ${hex ? `<div class="f-row"><label class="f">Lattice<select data-change="blockGrid">${hexGrids.map(v => `<option value="${v}" ${v === b.n ? 'selected' : ''}>${v} triangles across</option>`).join('')}</select></label></div>
-      <p class="hint">Hexagon block — finished ${blockSizeText(b, S)}; one lattice triangle = ${fmtLen(S / b.n)} a side. The size follows <b>Layout → Tessellation → Side length</b>${doc.layout.mode === 'tess' && doc.layout.tess.shape === 'hex' ? '' : '; use it in a <b>Hexagons</b> tessellation'}.</p>` : ''}
+    ${hex ? `<label class="f">Lattice<select data-change="blockGrid">${hexGrids.map(v => `<option value="${v}" ${v === b.n ? 'selected' : ''}>${v} triangles across</option>`).join('')}</select></label>
+      <p class="hint">${blockSizeText(b, S)}. Set the size in Layout.</p>` : ''}
     ${b.kind === 'drawn' && !hex ? `<div class="f-row">
       <label class="f">Grid<select data-change="blockGrid">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 24, 32].concat(b.n).filter((v, i, a) => a.indexOf(v) === i).sort((x, y) => x - y).map(v => `<option value="${v}" ${v === b.n ? 'selected' : ''}>${v} × ${v}</option>`).join('')}</select></label>
-      <label class="f">Lattice<select data-change="blockLattice"><option value="square" ${b.lattice !== 'tri' ? 'selected' : ''}>Square</option><option value="tri" ${b.lattice === 'tri' ? 'selected' : ''}>Triangle (60°)</option></select></label></div>
-      <p class="hint">Finished ${fmtSize(S, S)} · one grid square = ${fmtLen(S / b.n)}. Change the block size in Layout.</p>` : ''}
-    <div class="btn-row">
-      ${b.kind === 'drawn' ? `<button class="btn small" data-act="blockRotate" title="Rotate the design ${hex ? 60 : 90}°">↻ Rotate</button><button class="btn small" data-act="blockMirror" title="Mirror left–right">⇋ Mirror</button>` : ''}
-      <button class="btn small" data-act="blockDuplicate">Duplicate</button>
-      <button class="btn small" data-act="exportBlocks" data-arg="one" title="Save this block to a file you can import into another project">Export</button>
-      ${b.kind === 'drawn' ? '<button class="btn small" data-act="blockClear">Clear</button>' : ''}
-      <button class="btn small danger" data-act="blockDelete">Delete</button>
-    </div>`, { key: 'block' });
+      <label class="f">Lattice<select data-change="blockLattice"><option value="square" ${b.lattice !== 'tri' ? 'selected' : ''}>Square</option><option value="tri" ${b.lattice === 'tri' ? 'selected' : ''}>Triangle, 60°</option></select></label></div>
+      <p class="hint">${fmtSize(S, S)} finished, ${fmtLen(S / b.n)} squares. Set the size in Layout.</p>` : ''}`, { key: 'block', right: more });
 
   if (b.kind === 'compound') {
     let slots = `<label class="f">Arrangement<select data-change="compoundSub">${SUB_PRESETS.map(p => `<option value="${p.key}" ${subKey(b.sub) === p.key ? 'selected' : ''}>${p.label}</option>`).join('')}</select></label>`;
     b.slots.forEach((s, i) => {
-      const opts = ['<option value="">— empty —</option>', ...doc.blockOrder.filter(id => id !== b.id && !wouldCycle(b.id, id) && !isHexBlock(doc.blocks[id])).map(id => `<option value="${id}" ${s?.b === id ? 'selected' : ''}>${esc(doc.blocks[id].name)}</option>`)].join('');
-      slots += `<div class="list-item" style="${ui.activeSlot === i ? 'border-color:var(--sel)' : ''}"><div class="li-h"><b>Slot ${i + 1}</b><button class="btn small ghost" data-act="slotPick" data-arg="${i}">Select</button></div>
+      const opts = ['<option value="">Empty</option>', ...doc.blockOrder.filter(id => id !== b.id && !wouldCycle(b.id, id) && !isHexBlock(doc.blocks[id])).map(id => `<option value="${id}" ${s?.b === id ? 'selected' : ''}>${esc(doc.blocks[id].name)}</option>`)].join('');
+      slots += `<div class="list-item"><div class="li-h"><b${ui.activeSlot === i ? ' style="color:var(--sel)"' : ''}>Slot ${i + 1}</b><button class="btn small quiet" data-act="slotPick" data-arg="${i}">Select</button></div>
         <select data-change="slotBlock" data-arg="${i}" style="width:100%;margin-top:4px">${opts}</select>
-        ${s ? `<div class="f-row"><label class="f">Rotate<select data-change="slotRot" data-arg="${i}">${[0, 1, 2, 3].map(r => `<option value="${r}" ${(s.r || 0) === r ? 'selected' : ''}>${r * 90}°</option>`).join('')}</select></label>
+        ${s ? `<div class="f-row"><label class="f">Turn<select data-change="slotRot" data-arg="${i}">${[0, 1, 2, 3].map(r => `<option value="${r}" ${(s.r || 0) === r ? 'selected' : ''}>${r * 90}°</option>`).join('')}</select></label>
         <label class="check" style="margin-top:24px"><input type="checkbox" data-change="slotFlip" data-arg="${i}" ${s.f ? 'checked' : ''}> Mirror</label></div>` : ''}</div>`;
     });
     h += section('Slots', slots, { key: 'slots' });
     h += constructionSection(b, S);
-    return h;
+    return h + nextStep('layout', 'Layout');
   }
 
   const sel = selList();
@@ -1109,49 +1189,54 @@ function blockInspector() {
   if (tsel) h += textEditSection(b, tsel);
   if (sel.length > 1) {
     const fabs = uniq(sel.map(i => b.regions[i].fab));
-    h += section(`${sel.length} shapes selected`, `<div class="hint" style="margin-top:0">Fabric (applies to all)</div>${fabricPicker(fabs.length === 1 ? fabs[0] : null, 'regionFab', { allowBg: true })}
-      <div class="btn-row"><button class="btn small" data-act="selRotate" data-arg="cw">↻ Rotate</button><button class="btn small" data-act="selMirror" data-arg="h">⇋ Mirror</button><button class="btn small" data-act="selDup">Duplicate</button></div>
-      <div class="btn-row"><button class="btn small" data-act="selOrder" data-arg="front">⤒ Front</button><button class="btn small" data-act="selOrder" data-arg="back">⤓ Back</button><button class="btn small danger" data-act="selDelete">Delete ${sel.length}</button></div>`, { key: 'shape' });
+    h += section(`${sel.length} shapes`, `<label class="f">Fabric</label>${fabricPicker(fabs.length === 1 ? fabs[0] : null, 'regionFab', { allowBg: true })}
+      <div class="btn-row"><button class="btn small" data-act="selRotate" data-arg="cw">Turn</button><button class="btn small" data-act="selMirror" data-arg="h">Mirror</button><button class="btn small" data-act="selDup">Duplicate</button></div>
+      <div class="btn-row"><button class="btn small" data-act="selOrder" data-arg="front">To front</button><button class="btn small" data-act="selOrder" data-arg="back">To back</button><button class="btn small quiet danger" data-act="selDelete">Delete</button></div>`, { key: 'shape' });
   }
   const r = sel.length === 1 ? b.regions[sel[0]] : null;
   if (r) {
-    const i = sel[0];
-    let body = `<div class="hint" style="margin-top:0">Fabric</div>${fabricPicker(r.fab, 'regionFab', { allowBg: true })}
-      <label class="check"><input type="checkbox" data-change="regionApp" ${r.app ? 'checked' : ''}> Appliqué (sewn on top, doesn't cut the pieces below)</label>
-      <div class="btn-row"><button class="btn small" data-act="regionOrder" data-arg="back" title="Send to back">⤓ Back</button><button class="btn small" data-act="regionOrder" data-arg="down">↓</button><button class="btn small" data-act="regionOrder" data-arg="up">↑</button><button class="btn small" data-act="regionOrder" data-arg="front" title="Bring to front">⤒ Front</button></div>
-      <h4>Make copies around the centre</h4>
-      <div class="btn-row">${(hex ? [['rot2', '½ turn'], ['rot3', '3 × ⅓ turn'], ['rot6', '6 × ⅙ turn']] : [['rot2', '½ turn'], ['rot4', '4 × ¼ turn'], ['rot8', '8 ×']]).map(([k, l]) => `<button class="btn small" data-act="regionCopies" data-arg="${k}">${l}</button>`).join('')}</div>
-      <div class="btn-row"><button class="btn small" data-act="regionCopies" data-arg="h">Mirror ⇋</button><button class="btn small" data-act="regionCopies" data-arg="v">Mirror ⇵</button><button class="btn small" data-act="regionCopies" data-arg="4">4-way</button></div>
-      <div class="btn-row"><button class="btn small danger" data-act="regionDelete">Delete shape</button></div>`;
-    h += section(`Shape ${i + 1}`, body, { key: 'shape' });
+    h += section('Shape', `<label class="f">Fabric</label>${fabricPicker(r.fab, 'regionFab', { allowBg: true })}
+      <label class="check" title="Sewn on top; doesn't cut the pieces underneath"><input type="checkbox" data-change="regionApp" ${r.app ? 'checked' : ''}> Appliqué</label>
+      <label class="f">Order</label><div class="btn-row" style="margin-top:3px"><button class="btn small" data-act="regionOrder" data-arg="back">To back</button><button class="btn small" data-act="regionOrder" data-arg="down" aria-label="Back one">${icon('down', 14)}</button><button class="btn small" data-act="regionOrder" data-arg="up" aria-label="Forward one">${icon('up', 14)}</button><button class="btn small" data-act="regionOrder" data-arg="front">To front</button></div>
+      <label class="f">Copies around the centre</label>
+      <div class="btn-row" style="margin-top:3px">${(hex ? [['rot2', '2'], ['rot3', '3'], ['rot6', '6']] : [['rot2', '2'], ['rot4', '4'], ['rot8', '8']]).map(([k, l]) => `<button class="btn small" data-act="regionCopies" data-arg="${k}">${l}</button>`).join('')}<button class="btn small" data-act="regionCopies" data-arg="h">Mirror across</button><button class="btn small" data-act="regionCopies" data-arg="v">Mirror down</button><button class="btn small" data-act="regionCopies" data-arg="4">4-way</button></div>
+      <div class="btn-row"><button class="btn small quiet danger" data-act="regionDelete">Delete shape</button></div>`, { key: 'shape' });
   }
 
   // shapes list
   let list = '';
   for (let i = b.regions.length - 1; i >= 0; i--) {
     const reg = b.regions[i];
-    list += `<div class="region-row" aria-pressed="${sel.includes(i)}" data-act="selectRegion" data-arg="${i}">${reg.fab === BG ? '<span class="sw" style="background:repeating-linear-gradient(45deg,#faf7f1,#faf7f1 3px,#e9e1d2 3px,#e9e1d2 6px)"></span>' : swatchHtml(reg.fab, 16)}<span class="nm">${reg.txt && b.texts?.[reg.txt] ? `Letter of “${esc(b.texts[reg.txt].str.slice(0, 16))}”` : reg.pts.length === 2 ? 'Ellipse' : reg.pts.length === 3 ? 'Triangle' : reg.pts.length === 4 ? 'Quad' : reg.pts.length + '-sided'} · ${esc(reg.fab === BG ? 'Quilt background' : fabricLabel(reg.fab))}${reg.app ? ' · appliqué' : ''}${reg.b?.some(x => x) ? ' · curved' : ''}</span></div>`;
+    list += `<div class="region-row" aria-pressed="${sel.includes(i)}" data-act="selectRegion" data-arg="${i}">${reg.fab === BG ? '<span class="sw" style="background:repeating-linear-gradient(45deg,#fafafa,#fafafa 3px,#e6e6e3 3px,#e6e6e3 6px)"></span>' : swatchHtml(reg.fab, 16)}<span class="nm">${esc(regionName(b, reg))} <span class="muted">${esc(reg.fab === BG ? 'background' : fabricLabel(reg.fab))}${reg.app ? ' · appliqué' : ''}</span></span></div>`;
   }
-  h += section(`Shapes (${b.regions.length})`, list ? `<p class="hint" style="margin-top:0">Top of the list is in front. Shift-click to select several.</p>${list}` : '<p class="hint">No shapes yet — the whole block is quilt background. Use the tools above the canvas to draw.</p>', { key: 'shapes' });
+  h += section(`Shapes <span class="muted">${b.regions.length}</span>`, list ? `${list}<p class="hint">Top of the list is in front.</p>` : '<p class="hint">Empty block. Draw with the tools above.</p>', { key: 'shapes', closed: true });
   h += refSection(b);
-  h += section('Seams', `<p class="hint" style="margin-top:0">${b.seams?.length ? `${plural(b.seams.length, 'seam line')} split this block's pieces.` : 'No extra seam lines.'} Use the ✂ Seam tool to add more.</p>
-    <div class="btn-row"><button class="btn small" data-act="autoSeams">Add suggested seams</button>${b.seams?.length ? '<button class="btn small" data-act="clearSeams">Remove all</button>' : ''}</div>`, { key: 'seams' });
+  h += section(`Seams${b.seams?.length ? ` <span class="muted">${b.seams.length}</span>` : ''}`, `<p class="hint">Seam lines split pieces so they sew with straight seams.</p>
+    <div class="btn-row"><button class="btn small" data-act="autoSeams">Add suggested seams</button>${b.seams?.length ? '<button class="btn small quiet" data-act="clearSeams">Remove all</button>' : ''}</div>`, { key: 'seams', closed: true });
   h += constructionSection(b, S);
-  return h;
+  return h + nextStep('layout', 'Layout');
+}
+// A shape's name in the shapes list, in quilting words.
+function regionName(b, reg) {
+  if (reg.txt && b.texts?.[reg.txt]) return `Letter of ${b.texts[reg.txt].str.slice(0, 16)}`;
+  const curved = reg.b?.some(x => x);
+  if (reg.pts.length === 3 && curved && reg.b.filter(x => x).length === 1 && Math.abs(Math.abs(reg.b.find(x => x)) - QUARTER_BULGE) < 1e-3) return 'Quarter circle';
+  if (reg.pts.length === 2) return 'Circle';
+  const cls = classifyPiece(reg.pts);
+  return shapeName(cls) + (curved ? ', curved' : '');
 }
 function constructionSection(b, S) {
   const pieces = blockPieces(b, S, S);
   const an = analyzeBlock(b, S);
   const counts = {};
-  for (const p of pieces) { const k = shapeName(p.cls) + (p.app ? ' (appliqué)' : ''); counts[k] = (counts[k] || 0) + 1; }
+  for (const p of pieces) { const k = shapeName(p.cls) + (p.app ? ', appliqué' : ''); counts[k] = (counts[k] || 0) + 1; }
   const units = {};
   for (const u of an.units) if (u.unit.type !== 'piece') units[u.unit.type] = (units[u.unit.type] || 0) + 1;
   const probs = pieceProblems(b, S);
-  let body = `<dl class="kv"><dt>Pieces to cut</dt><dd>${pieces.length}</dd>${Object.entries(counts).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>`;
-  if (Object.keys(units).length) body += `<dl class="kv" style="margin-top:8px">${Object.entries(units).map(([k, v]) => `<dt>${esc(UNIT_NAMES[k] || k)}</dt><dd>${v}</dd>`).join('')}</dl>`;
-  body += an.setIn
-    ? `<div class="callout bad">Some pieces meet in set-in (Y) seams. That's fine for English paper piecing or careful machine piecing — the pattern explains how. Add seam lines if you'd rather sew straight seams.</div>`
-    : pieces.length > 1 ? `<div class="callout ok">${an.height ? `Sews together in ${plural(an.height, 'step')}${an.units.some(u => u.unit.type === 'curved') ? ', including curved seams' : ' with straight seams'}.` : 'Sews together as one unit — the pattern shows how.'}</div>` : '';
-  for (const p of probs) body += `<div class="callout${p.kind === 'tiny' ? '' : ' bad'}" style="margin-top:6px">${esc(p.msg)}</div>`;
-  return section('Construction', body, { key: 'construct' });
+  const how = an.setIn ? 'Has set-in (Y) seams. Add seam lines to avoid them.'
+    : pieces.length > 1 ? (an.height ? `Sews in ${plural(an.height, 'step')}${an.units.some(u => u.unit.type === 'curved') ? ', with curved seams' : ''}.` : 'Sews as one unit.') : 'One piece.';
+  let body = `<p class="${an.setIn ? 'hint warn' : 'hint'}">${plural(pieces.length, 'piece')} to cut. ${how}</p>
+    <dl class="kv">${Object.entries(counts).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}${Object.entries(units).map(([k, v]) => `<dt>${esc(UNIT_NAMES[k] || k)}</dt><dd>${v}</dd>`).join('')}</dl>`;
+  for (const p of probs) body += `<p class="hint${p.kind === 'tiny' ? '' : ' warn'}">${esc(p.msg)}</p>`;
+  return section('Construction', body, { key: 'construct', closed: !an.setIn && !probs.some(p => p.kind !== 'tiny') });
 }

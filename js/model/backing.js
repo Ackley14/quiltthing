@@ -112,8 +112,10 @@ function computeBacking(Q) {
   const BW = Q.W + 2 * oh, BH = Q.H + 2 * oh;
   const options = backingOptions(BW, BH);
   const want = doc.layout.backing?.method;
-  // automatic: your own pieces first (simplest), otherwise the least to buy (panels on a tie)
-  const rank = o => [o.from === 'stash' ? 0 : 1, o.from === 'stash' ? ['piece', 'piece-panels', 'pair', 'slide'].indexOf(o.kind) : o.buyIn, o.kind === 'slide' ? 1 : 0];
+  // automatic: your own pieces first (simplest), otherwise the least to buy. A bought cut & slide
+  // (a long bias seam) only wins when it saves at least ½ yd, and never on a beginner pattern.
+  const slideCost = doc.meta.skill === 'Beginner' ? Infinity : 18;
+  const rank = o => [o.from === 'stash' ? 0 : 1, o.from === 'stash' ? ['piece', 'piece-panels', 'pair', 'slide'].indexOf(o.kind) : o.buyIn + (o.kind === 'slide' ? slideCost : 0), o.kind === 'slide' ? 1 : 0];
   const auto = options.slice().sort((a, b) => { const x = rank(a), y = rank(b); return x[0] - y[0] || x[1] - y[1] || x[2] - y[2]; })[0];
   const chosen = options.find(o => o.id === want) || auto;
   return { w: BW, h: BH, fabricWidth: doc.cutting.backingWidth || 42, options, chosen, auto, buyIn: chosen.buyIn,
@@ -173,4 +175,15 @@ function panelsDiagramSvg(o, BW, BH, fab, opts = {}) {
 function backingDiagramSvg(bk, opt = bk.chosen, opts = {}) {
   const fab = doc.layout.backing?.fabric || doc.layout.background;
   return opt.ana && opt.kind !== 'piece-panels' ? slideDiagramSvg(opt.ana, fab, opts) : panelsDiagramSvg(opt, bk.w, bk.h, fab, opts);
+}
+
+/* ---------- batting ---------- */
+// Standard packaged sizes, then batting sold by the yard off wide rolls.
+const BATTING_PACKS = [['Crib', 45, 60], ['Throw', 60, 60], ['Twin', 72, 90], ['Full', 81, 96], ['Queen', 90, 108], ['King', 120, 120]];
+function battingBuy(w, h) {
+  const fits = (a, b) => (a >= w && b >= h) || (a >= h && b >= w);
+  const pack = BATTING_PACKS.find(([, a, b]) => fits(a, b));
+  const roll = [90, 96, 120].find(r => r >= Math.min(w, h));
+  const byYard = roll ? `${fmtYards(roundYardIn(Math.max(w, h), 'eighth'))} of ${roll}"-wide batting` : '';
+  return { pack: pack && `a ${pack[0].toLowerCase()} size package (${pack[1]}" × ${pack[2]}")`, byYard };
 }

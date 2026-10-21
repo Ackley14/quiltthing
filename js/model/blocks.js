@@ -23,6 +23,9 @@ function hexFrame(n) {
   const c = n / 2, h = n * TRI_H / 2;
   return [[0, c], [n / 4, c - h], [3 * n / 4, c - h], [n, c], [3 * n / 4, c + h], [n / 4, c + h]].map(([x, y]) => [round(x, 6), round(y, 6)]);
 }
+// Hexagon blocks are stored flat-topped; in pointy-topped hexagon quilts they sit turned 30°,
+// and the editor and thumbnails show them that way.
+function hexViewAngle(b) { return isHexBlock(b) && doc.layout.tess.orient !== 1 ? 30 : 0; }
 // The block's outline in a w×h frame.
 function blockOutline(b, w, h = w) {
   if (!isHexBlock(b)) return [[0, 0], [w, 0], [w, h], [0, h]];
@@ -42,7 +45,7 @@ function newCompoundBlock(name = 'New compound') {
 function addBlockToDoc(block, select = true) {
   doc.blocks[block.id] = block;
   doc.blockOrder.push(block.id);
-  if (select) ui.activeBlock = block.id;
+  if (select) ui.activeBlock = ui.placeBlock = block.id;
   return block.id;
 }
 function cloneBlock(block) {
@@ -414,8 +417,8 @@ function blockSvg(block, w, h, opts = {}, depth = 0) {
   return s;
 }
 function blockThumb(block, px = 64, cls = 'thumb') {
-  const S = 12;
-  return `<svg class="${cls}" viewBox="0 0 ${S} ${S}" width="${px}" height="${px}" aria-hidden="true">${blockSvg(block, S, S)}</svg>`;
+  const S = 12, a = hexViewAngle(block);
+  return `<svg class="${cls}" viewBox="0 0 ${S} ${S}" width="${px}" height="${px}" aria-hidden="true">${a ? `<g transform="rotate(${a} ${S / 2} ${S / 2})">` : ''}${blockSvg(block, S, S)}${a ? '</g>' : ''}</svg>`;
 }
 function blockFabrics(block, depth = 0) {
   const set = new Set();

@@ -493,7 +493,7 @@ const SHAPE_NAMES = {
   trap: 'Trapezoid',
   rect: 'Rectangle', square: 'Square', hst: 'Half-square triangle', qst: 'Quarter-square triangle',
   rtri: 'Right triangle', tri60: 'Equilateral triangle', tri: 'Triangle', para: 'Parallelogram',
-  diamond: 'Diamond', quad: 'Quadrilateral', hex: 'Hexagon', poly: 'Polygon', curved: 'Curved piece', holed: 'Shape with a hole',
+  diamond: 'Diamond', quad: 'Four-sided piece', hex: 'Hexagon', poly: 'Template piece', curved: 'Curved piece', holed: 'Ring piece',
 };
 function shapeName(cls) {
   if (cls.shape === 'rect') return Math.abs(cls.w - cls.h) < 1e-3 ? 'Square' : (Math.max(cls.w, cls.h) / Math.min(cls.w, cls.h) >= 3 ? 'Strip' : 'Rectangle');

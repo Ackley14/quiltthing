@@ -56,7 +56,7 @@ function newDoc() {
       panels: [],             // inset panels: framed squares set into the centre (any setting)
     },
     quilting: { layers: [] },
-    cutting: { seam: 0.25, wof: 42, extra: 10, roundTo: 'eighth', backingWidth: 42, overhang: 4, appMethod: 'turned', defaultFormat: { kind: 'yardage' } },
+    cutting: { seam: 0.25, wof: 40, extra: 10, roundTo: 'eighth', backingWidth: 42, overhang: 4, appMethod: 'turned', defaultFormat: { kind: 'yardage' } },
     stash: [],
   };
 }
@@ -65,9 +65,10 @@ function defaultUi() {
   return {
     view: 'block',
     units: 'in',
-    activeBlock: null,
+    activeBlock: null,      // the block open in the editor
+    placeBlock: null,       // the block Layout places (picked there without changing the editor)
     fabric: null,           // selected fabric id (paint colour)
-    tool: 'paint',
+    tool: 'select',         // opening a block shouldn't repaint it on the first click
     selRegion: null,
     selEdge: null,          // {r, e}
     drawing: [],            // in-progress polygon (grid coords)
@@ -95,6 +96,7 @@ function fabricById(id) {
 function resolveFab(id) { return id === BG ? doc.layout.background : id; }
 function fabricIndex(id) { return doc.fabrics.findIndex(f => f.id === resolveFab(id)); }
 function activeBlock() { return doc.blocks[ui.activeBlock] || null; }
+function placeBlock() { return doc.blocks[ui.placeBlock] || activeBlock(); }
 
 /* ---------- history ---------- */
 const undoStack = { past: [], future: [], current: null, max: 200 };
@@ -140,6 +142,7 @@ function redo() {
 // Keep UI references valid after undo/import/delete.
 function sanitizeUi() {
   if (!doc.blocks[ui.activeBlock]) ui.activeBlock = doc.blockOrder[0] || null;
+  if (!doc.blocks[ui.placeBlock]) ui.placeBlock = null;
   if (!doc.fabrics.some(f => f.id === ui.fabric)) ui.fabric = doc.fabrics[1]?.id || doc.fabrics[0]?.id;
   const b = activeBlock();
   if (!b || b.kind !== 'drawn' || !b.regions[ui.selRegion]) { ui.selRegion = null; ui.selEdge = null; }
@@ -158,9 +161,28 @@ function saveNow() {
     saveStatus = { at: Date.now(), ok: false };
     console.warn('save failed', e);
   }
+  saveHistory();
+}
+// The last few undo steps are kept too, so undo still works after a reload. They're optional:
+// when storage is short, fewer steps are kept (or none).
+const STORE_HIST = 'quiltthing.v3.history';
+function saveHistory() {
+  for (let n = Math.min(20, undoStack.past.length); n >= 0; n = n ? Math.floor(n / 2) : -1) {
+    try {
+      localStorage.setItem(STORE_HIST, JSON.stringify({ current: undoStack.current, past: n ? undoStack.past.slice(-n) : [], future: n ? undoStack.future.slice(-5) : [] }));
+      return;
+    } catch { localStorage.removeItem(STORE_HIST); }
+  }
+}
+// After loading the saved project: bring its undo steps back if they belong to it.
+function restoreHistory() {
+  try {
+    const h = JSON.parse(localStorage.getItem(STORE_HIST) || 'null');
+    if (h && h.current === undoStack.current) { undoStack.past = h.past || []; undoStack.future = h.future || []; }
+  } catch {}
 }
 const saveUi = debounce(() => {
-  try { localStorage.setItem(STORE_UI, JSON.stringify({ ...ui, drawing: [], grayscale: false, libSearch: '' })); } catch {}
+  try { localStorage.setItem(STORE_UI, JSON.stringify({ ...ui, drawing: [], grayscale: false, libSearch: '', fabPop: null })); } catch {}
 }, 300);
 
 /* ---------- reference pictures ----------

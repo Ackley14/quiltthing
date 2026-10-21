@@ -7,10 +7,51 @@ const VIEW_LIST = [
   { key: 'block', label: 'Blocks' },
   { key: 'layout', label: 'Layout' },
   { key: 'quilting', label: 'Quilting' },
-  { key: 'fabric', label: 'Fabric' },
-  { key: 'cutting', label: 'Cutting' },
+  { key: 'fabric', label: 'Fabric & cutting' },
   { key: 'pattern', label: 'Pattern' },
 ];
+// The fabric list and the cutting plan share one step; "cutting" opens it on the cutting plan.
+const tabOf = v => v === 'cutting' ? 'fabric' : v;
+// Steps that use the fabrics & blocks column on the left.
+const SIDEBAR_VIEWS = ['block', 'layout'];
+
+/* ---------- icons: one line-icon set, 16 px, drawn with currentColor ---------- */
+const ICON_PATHS = {
+  paint: '<path d="M10.5 2.5l3 3-5.5 5.5-3-3z"/><path d="M5 8l-1.6 1.6c-.9.9-.6 2.5-1.9 3.9 2 .3 3.6-.2 4.6-1.2L7.6 11"/>',
+  select: '<path d="M3.5 2.5l8.5 5-3.8 1-1.7 3.8z"/>',
+  shape: '<path d="M8 2.5l5.5 4-2.1 6.5H4.6L2.5 6.5z"/>',
+  rect: '<rect x="2.5" y="4" width="11" height="8" rx=".5"/>',
+  tri: '<rect x="2.5" y="2.5" width="11" height="11" rx=".5"/><path d="M2.5 13.5l11-11"/>',
+  arc: '<path d="M2.5 13.5V2.5a11 11 0 0 1 11 11z"/>',
+  seam: '<circle cx="4.5" cy="4.5" r="2"/><circle cx="4.5" cy="11.5" r="2"/><path d="M6.2 5.6L13.5 12M6.2 10.4L13.5 4"/>',
+  text: '<path d="M3 4V3h10v1M8 3v10M6 13h4"/>',
+  place: '<rect x="2.5" y="2.5" width="11" height="11" rx="1"/><path d="M8 5.5v5M5.5 8h5"/>',
+  undo: '<path d="M5.5 3.5L2.5 6.5l3 3"/><path d="M2.5 6.5h7a4 4 0 0 1 0 8h-3"/>',
+  redo: '<path d="M10.5 3.5l3 3-3 3"/><path d="M13.5 6.5h-7a4 4 0 0 0 0 8h3"/>',
+  more: '<circle cx="3.5" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="12.5" cy="8" r="1.1" fill="currentColor" stroke="none"/>',
+  help: '<circle cx="8" cy="8" r="6.2"/><path d="M6.2 6.3a1.9 1.9 0 1 1 2.6 1.8c-.6.3-.8.7-.8 1.3"/><path d="M8 11.4v.1"/>',
+  plus: '<path d="M8 3v10M3 8h10"/>',
+  trash: '<path d="M2.5 4.5h11M6.5 4.5V3h3v1.5M4.2 4.5l.7 9h6.2l.7-9M6.8 7v4M9.2 7v4"/>',
+  rotate: '<path d="M13 8a5 5 0 1 1-1.6-3.7"/><path d="M13 2.5v3h-3"/>',
+  mirror: '<path d="M8 1.5v13" stroke-dasharray="1.5 1.5"/><path d="M6 4L2.5 12H6zM10 4l3.5 8H10z"/>',
+  front: '<path d="M3 2.5h10M8 13.5V6M5 8.5l3-3 3 3"/>',
+  back: '<path d="M3 13.5h10M8 2.5V10M5 7.5l3 3 3-3"/>',
+  dup: '<rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M3 10.5V3.5a1 1 0 0 1 1-1h6.5"/>',
+  up: '<path d="M4 10l4-4 4 4"/>',
+  down: '<path d="M4 6l4 4 4-4"/>',
+  right: '<path d="M6 4l4 4-4 4"/>',
+  x: '<path d="M4 4l8 8M12 4l-8 8"/>',
+  eye: '<path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8s-2.5 4.5-6.5 4.5S1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/>',
+  print: '<path d="M4.5 6V2.5h7V6M4.5 11.5h-2v-5.5h11v5.5h-2"/><rect x="4.5" y="9.5" width="7" height="4"/>',
+  centre: '<circle cx="8" cy="8" r="3.5"/><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3"/>',
+  edit: '<path d="M10.5 2.5l3 3-8 8h-3v-3z"/>',
+  menu: '<path d="M2.5 4h11M2.5 8h11M2.5 12h11"/>',
+  sliders: '<path d="M2.5 4.5h11M2.5 11.5h11"/><circle cx="5.5" cy="4.5" r="1.6" fill="#fff"/><circle cx="10.5" cy="11.5" r="1.6" fill="#fff"/>',
+  check: '<path d="M3 8.5l3 3 7-7"/>',
+};
+function icon(name, size = 16) {
+  return `<svg class="ic" viewBox="0 0 16 16" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name] || ''}</svg>`;
+}
 
 /* ---------- rendering ---------- */
 let _Q = null;          // quilt build cached per render pass
@@ -27,12 +68,13 @@ function render() {
 }
 function renderView() {
   const V = Views[ui.view] || Views.block;
+  document.body.classList.toggle('no-side', !SIDEBAR_VIEWS.includes(ui.view));
   const main = $('#main'), insp = $('#inspector');
   preserveFocus(main, () => { main.innerHTML = V.main(); });
   V.afterMain?.(main);
   preserveFocus(insp, () => { insp.innerHTML = V.inspector(); });
   document.body.classList.toggle('grayscale', !!ui.grayscale);
-  if (ui.grayscale) main.insertAdjacentHTML('afterbegin', `<button class="gs-banner" data-act="toggleUi" data-arg="grayscale" title="Turn the value check off (G)">Value check on — showing greys · turn off</button>`);
+  if (ui.grayscale) main.insertAdjacentHTML('afterbegin', `<button class="gs-banner" data-act="toggleUi" data-arg="grayscale" title="Turn off (G)">Value view · turn off</button>`);
 }
 // Main canvas only — for live previews while a control in a side panel is being dragged.
 function renderMainOnly() {
@@ -108,16 +150,13 @@ function focusSig(el) {
 
 function renderTopbar() {
   $('#tabs').innerHTML = VIEW_LIST.map((v, i) =>
-    `<button role="tab" aria-selected="${ui.view === v.key}" data-act="view" data-arg="${v.key}" title="${v.label} (${i + 1})"><span class="n">${i + 1}</span><span class="lbl">${v.label}</span></button>`).join('');
-  const saved = saveStatus.at ? (saveStatus.ok ? 'Saved' : 'Not saved!') : '';
+    `<button role="tab" aria-selected="${tabOf(ui.view) === v.key}" data-act="view" data-arg="${v.key}" title="${v.label} (${i + 1})"><span class="n">${i + 1}</span><span class="lbl">${v.label}</span></button>`).join('');
   $('#top-actions').innerHTML = `
-    <span class="save-dot hide-sm" title="Your project is saved in this browser automatically">${saved}</span>
-    <button class="icon-btn" data-act="undo" ${undoStack.past.length ? '' : 'disabled'} aria-label="Undo" title="Undo (Ctrl+Z)">↶</button>
-    <button class="icon-btn" data-act="redo" ${undoStack.future.length ? '' : 'disabled'} aria-label="Redo" title="Redo (Ctrl+Shift+Z)">↷</button>
-    <button class="icon-btn" data-act="fileMenu" aria-haspopup="menu" title="Project, save, open, export">File ▾</button>
-    <button class="icon-btn hide-sm" data-act="toggleUnits" title="Measurements in inches or centimetres — click to switch">Units: ${ui.units === 'cm' ? 'cm' : 'in'}</button>
-    <button class="icon-btn hide-sm" data-act="help" aria-label="Help and shortcuts" title="Help & shortcuts">?</button>
-    <button class="icon-btn hide-sm" data-act="about" aria-label="About" title="About">i</button>`;
+    <span class="save-dot hide-sm">${saveStatus.at && !saveStatus.ok ? 'Not saved' : ''}</span>
+    <button class="icon-btn" data-act="undo" ${undoStack.past.length ? '' : 'disabled'} aria-label="Undo" title="Undo (Ctrl+Z)">${icon('undo')}</button>
+    <button class="icon-btn" data-act="redo" ${undoStack.future.length ? '' : 'disabled'} aria-label="Redo" title="Redo (Ctrl+Shift+Z)">${icon('redo')}</button>
+    <button class="icon-btn" data-act="fileMenu" aria-haspopup="menu">File ${icon('down', 14)}</button>
+    <button class="icon-btn hide-sm" data-act="helpMenu" aria-haspopup="menu" aria-label="Help" title="Help">${icon('help')}</button>`;
 }
 
 /* ---------- event delegation ---------- */
@@ -194,10 +233,15 @@ function fabricPicker(current, act, opts = {}) {
   for (const f of doc.fabrics) h += `<button aria-pressed="${current === f.id}" data-act="${act}" data-arg="${f.id}" title="${esc(f.name)}">${swatchHtml(f.id, 20)}</button>`;
   return h + '</div>';
 }
+// A panel section; click its heading to fold it. opts.closed: starts folded (rarely used settings).
 function section(title, body, opts = {}) {
   const key = opts.key || title;
-  const collapsed = ui.collapsed[key];
-  return `<section class="sec"><div class="sec-h"><h3>${title}</h3>${opts.right || ''}<button class="tog" data-act="toggleSec" data-arg="${esc(key)}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${esc(title)}">${collapsed ? '▸' : '▾'}</button></div>${collapsed ? '' : body}</section>`;
+  const collapsed = key in ui.collapsed ? ui.collapsed[key] : !!opts.closed;
+  return `<section class="sec${collapsed ? ' closed' : ''}"><div class="sec-h" data-act="toggleSec" data-arg="${esc(key)}" data-def="${opts.closed ? 1 : 0}" role="button" aria-expanded="${!collapsed}"><span class="tog">${icon(collapsed ? 'right' : 'down', 14)}</span><h3>${title}</h3>${opts.right ? `<span class="sec-r">${opts.right}</span>` : ''}</div>${collapsed ? '' : `<div class="sec-b">${body}</div>`}</section>`;
+}
+// The quiet link to the next step, at the foot of the right-hand panel.
+function nextStep(view, label) {
+  return `<div class="next-step"><button class="btn link" data-act="view" data-arg="${view}">Next: ${label} ${icon('right', 14)}</button></div>`;
 }
 
 /* ---------- modals, menus, toasts ---------- */
@@ -257,18 +301,12 @@ function toast(msg, ms = 2600) {
 
 /* ---------- global actions ---------- */
 Actions.view = v => {
-  // gentle reminder when leaving a block that still has unsewable pieces
-  if (ui.view === 'block' && v !== 'block' && typeof _seamState !== 'undefined') {
-    const b = activeBlock();
-    if (b && _seamState.block === b.id && _seamState.key === blockKey(b) && _seamState.s?.required.length && !seamDismissed(b)) {
-      toast(`“${b.name}” has ${plural(_seamState.s.reqPieces, 'piece')} that need seams — see the suggestion in Blocks`, 4200);
-    }
-  }
+  if (v === 'cutting') { v = 'fabric'; ui.fabPane = 'cut'; }
   ui.view = v; ui.drawing = []; saveUi(); render(); $('#main').focus({ preventScroll: true }); document.body.classList.remove('show-sidebar', 'show-inspector'); };
 Actions.undo = () => { if (!undo()) toast('Nothing to undo'); };
 Actions.redo = () => { if (!redo()) toast('Nothing to redo'); };
 Actions.toggleUnits = () => { ui.units = ui.units === 'cm' ? 'in' : 'cm'; saveUi(); render(); toast(ui.units === 'cm' ? 'Showing centimetres' : 'Showing inches'); };
-Actions.toggleSec = key => { ui.collapsed[key] = !ui.collapsed[key]; saveUi(); render(); };
+Actions.toggleSec = (key, el) => { const cur = key in ui.collapsed ? ui.collapsed[key] : el?.dataset.def === '1'; ui.collapsed[key] = !cur; saveUi(); render(); };
 Actions.toggleDrawer = which => {
   const cls = which === 'sidebar' ? 'show-sidebar' : 'show-inspector';
   const on = !document.body.classList.contains(cls);
@@ -279,9 +317,9 @@ Actions.setUi = (arg) => { const [k, v] = arg.split('='); ui[k] = v === 'true' ?
 Actions.toggleUi = k => { ui[k] = !ui[k]; saveUi(); render(); };
 
 Actions.fileMenu = (a, el) => openMenu(el, [
-  { label: 'New blank project…', act: 'newProject' },
-  { label: 'Load sample: Midnight Bullseye (straight set)…', act: 'loadSample' },
-  { label: 'Load sample: Hexie Bloom (tessellation)…', act: 'loadTessSample' },
+  { label: 'New project…', act: 'newProject' },
+  { label: 'Sample: Midnight Bullseye…', act: 'loadSample' },
+  { label: 'Sample: Hexie Bloom…', act: 'loadTessSample' },
   '-',
   { label: 'Open project file…', act: 'openProject', kb: 'Ctrl+O' },
   { label: 'Save project file', act: 'saveProject', kb: 'Ctrl+S' },
@@ -289,11 +327,16 @@ Actions.fileMenu = (a, el) => openMenu(el, [
   { label: 'Import blocks from file…', act: 'importBlocks' },
   { label: 'Export all blocks…', act: 'exportBlocks', arg: 'all' },
   '-',
-  { label: 'Export picture (PNG)…', act: 'exportPngDialog' },
-  { label: 'Export vector (SVG)', act: 'exportSvg' },
-  { label: 'Print pattern / Save as PDF', act: 'printPattern', kb: 'Ctrl+P' },
+  { label: 'Export PNG…', act: 'exportPngDialog' },
+  { label: 'Export SVG', act: 'exportSvg' },
+  { label: 'Print pattern', act: 'printPattern', kb: 'Ctrl+P' },
   '-',
-  { label: 'Help & shortcuts', act: 'help', kb: '?' },
+  { label: ui.units === 'cm' ? 'Show inches' : 'Show centimetres', act: 'toggleUnits' },
+]);
+Actions.helpMenu = (a, el) => openMenu(el, [
+  { label: 'How it works', act: 'help', kb: '?' },
+  { label: 'Keyboard shortcuts', act: 'shortcuts' },
+  '-',
   { label: 'About', act: 'about' },
 ]);
 Actions.newProject = () => confirmModal('Start a new project?', 'This replaces the current design in this browser. Save a project file first if you want to keep it.', 'Start new', () => {
@@ -370,7 +413,7 @@ Actions.exportPng = () => {
     URL.revokeObjectURL(url);
     c.toBlob(b => { downloadBlob(slugify(name) + '.png', b); toast('Picture exported'); }, 'image/png');
   };
-  img.onerror = () => { URL.revokeObjectURL(url); toast('Export failed — try SVG instead'); };
+  img.onerror = () => { URL.revokeObjectURL(url); toast('Export failed. Try SVG.'); };
   img.src = url;
 };
 
@@ -387,45 +430,51 @@ Actions.printPattern = () => { preparePrint(); setTimeout(() => window.print(), 
 window.addEventListener('beforeprint', preparePrint);
 
 /* ---------- help & about ---------- */
-Actions.help = () => openModal(`<h2>How Quilt Designer works</h2>
-  <div class="welcome-steps">
-    <div><b>1 · Blocks</b>Draw your own blocks or start from the library. Paint pieces with fabrics.</div>
-    <div><b>2 · Layout</b>Arrange blocks in a grid or on point, or build a tessellation of shapes. Add sashing, borders, binding.</div>
-    <div><b>3 · Quilting</b>Plan the stitching lines: straight, crosshatch, waves, spirals and more.</div>
-    <div><b>4 · Fabric & Cutting</b>See what to buy and exactly how to cut it — or check against fabric you already own.</div>
-    <div><b>5 · Pattern</b>Print a complete step-by-step pattern or save it as a PDF.</div>
-  </div>
-  <h3>Shortcuts</h3>
+Actions.help = () => openModal(`<h2>How it works</h2>
+  <ol class="how">
+    <li><b>Blocks.</b> Draw a block on the grid, or add a classic from the library, and paint its pieces.</li>
+    <li><b>Layout.</b> Place blocks in rows, on point or in a tessellation. Add sashing, borders and binding.</li>
+    <li><b>Quilting.</b> Choose the stitching: in the ditch, echo, meander, crosshatch and more.</li>
+    <li><b>Fabric &amp; cutting.</b> What to buy, what you already have, and how to cut every piece.</li>
+    <li><b>Pattern.</b> Print the full pattern or save it as a PDF.</li>
+  </ol>
+  <p class="hint">Your work saves in this browser. To keep a copy, use File, Save project file.</p>
+  <div class="actions"><button class="btn" data-act="shortcuts">Keyboard shortcuts</button><button class="btn primary" data-act="closeModal">Close</button></div>`);
+Actions.shortcuts = () => openModal(`<h2>Keyboard shortcuts</h2>
   <div class="shortcuts">
     <h4>Everywhere</h4>
-    <div><kbd>1</kbd>–<kbd>6</kbd> switch view</div>
+    <div><kbd>1</kbd>–<kbd>5</kbd> go to a step</div>
     <div><kbd>Ctrl Z</kbd> undo · <kbd>Ctrl Shift Z</kbd> redo</div>
     <div><kbd>Ctrl S</kbd> save project file</div>
     <div><kbd>Ctrl P</kbd> print pattern</div>
-    <div><kbd>G</kbd> value check (grayscale)</div>
-    <h4>Block editor</h4>
+    <div><kbd>G</kbd> value view</div>
+    <h4>Blocks</h4>
     <div><kbd>V</kbd> paint · <kbd>S</kbd> select</div>
-    <div><kbd>P</kbd> polygon · <kbd>R</kbd> rectangle</div>
-    <div><kbd>T</kbd> half-square triangle · <kbd>K</kbd> seam</div>
-    <div><kbd>Enter</kbd> close shape · <kbd>Backspace</kbd> undo point</div>
+    <div><kbd>P</kbd> shape · <kbd>R</kbd> rectangle</div>
+    <div><kbd>T</kbd> triangle · <kbd>C</kbd> quarter circle</div>
+    <div><kbd>K</kbd> seam · <kbd>L</kbd> text</div>
+    <div><kbd>Enter</kbd> finish a shape · <kbd>Backspace</kbd> remove last point</div>
     <div><kbd>Esc</kbd> cancel · <kbd>Delete</kbd> delete selected</div>
-    <div>Drag a shape to move it · arrows nudge</div>
-    <div><kbd>Shift</kbd>-click / <kbd>Ctrl</kbd>-drag select several</div>
-    <div><kbd>Ctrl D</kbd> duplicate · <kbd>Ctrl C</kbd>/<kbd>V</kbd> copy, paste</div>
-    <div><kbd>Q</kbd>/<kbd>E</kbd> rotate · <kbd>X</kbd>/<kbd>Y</kbd> mirror</div>
-    <div>Right-click a shape for options</div>
-    <div>Double-click a corner to remove it · <kbd>Alt</kbd>-click an edge handle to add one</div>
-    <div><kbd>Shift</kbd> snap to half grid · <kbd>Alt</kbd>-click pick fabric</div>
+    <div>Arrow keys nudge the selection</div>
+    <div><kbd>Shift</kbd>-click or <kbd>Ctrl</kbd>-drag to select several</div>
+    <div><kbd>Ctrl D</kbd> duplicate · <kbd>Ctrl C</kbd> <kbd>Ctrl V</kbd> copy, paste</div>
+    <div><kbd>Q</kbd> <kbd>E</kbd> rotate · <kbd>X</kbd> <kbd>Y</kbd> mirror</div>
+    <div>Right-click a shape for more</div>
+    <div>Double-click a corner to remove it</div>
+    <div><kbd>Alt</kbd>-click an edge handle to add a corner</div>
+    <div><kbd>Shift</kbd> half-grid steps · <kbd>Alt</kbd>-click picks up a fabric</div>
     <h4>Layout</h4>
-    <div>Click / drag to place · right-click to clear</div>
-    <div><kbd>R</kbd> rotate · <kbd>F</kbd> mirror selected</div>
-    <div>Click a placed block again to rotate it</div>
-    <div><kbd>Shift</kbd> place mirrored · <kbd>Shift</kbd>-click flips a placed block</div>
+    <div><kbd>B</kbd> place · <kbd>V</kbd> paint · <kbd>S</kbd> select</div>
+    <div><kbd>R</kbd> turn · <kbd>F</kbd> mirror the selected block</div>
+    <div>Click or drag to place · right-click to clear</div>
+    <div>Click a placed block again to turn it</div>
+    <div><kbd>Shift</kbd> places it mirrored</div>
+    <div>Drag a block from My blocks onto the quilt</div>
   </div>
-  <div class="actions"><button class="btn primary" data-act="closeModal">Got it</button></div>`);
+  <div class="actions"><button class="btn primary" data-act="closeModal">Close</button></div>`);
 Actions.about = () => openModal(`<h2>Quilt Designer ${APP_VERSION}</h2>
-  <p>A free tool to design blocks, lay out quilts, calculate fabric and cutting, plan quilting, and print complete patterns.</p>
-  <p>Your project is saved automatically in this browser. Use <b>File → Save project file</b> to keep a copy or move it to another computer.</p>
+  <p>Design blocks, lay out a quilt, work out fabric and cutting, plan the quilting and print the pattern. Free.</p>
+  <p>Your project saves in this browser. To keep a copy or move it to another computer, use File, Save project file.</p>
   <p><a href="https://github.com/Ackley14/quiltthing" target="_blank" rel="noopener">Source code on GitHub</a> · MIT licence · Uses <a href="https://github.com/mfogel/polygon-clipping" target="_blank" rel="noopener">polygon-clipping</a> (MIT).</p>
   <div class="actions"><button class="btn primary" data-act="closeModal">Close</button></div>`);
 
@@ -436,6 +485,7 @@ document.addEventListener('keydown', e => {
   const ctrl = e.ctrlKey || e.metaKey;
   if (e.key === 'Escape') {
     if (closeMenu() || closeModal()) return;
+    if (ui.fabPop) { Actions.closeFabricPopover(); return; }
     Views[ui.view]?.key?.(e);
     return;
   }
@@ -450,7 +500,7 @@ document.addEventListener('keydown', e => {
   if (ctrl && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); e.shiftKey ? Actions.redo() : Actions.undo(); return; }
   if (ctrl && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); Actions.redo(); return; }
   if ($('#modal-root').innerHTML) return;
-  if (!ctrl && !e.altKey && /^[1-6]$/.test(e.key)) { e.preventDefault(); Actions.view(VIEW_LIST[+e.key - 1].key); return; }
+  if (!ctrl && !e.altKey && /^[1-5]$/.test(e.key)) { e.preventDefault(); Actions.view(VIEW_LIST[+e.key - 1].key); return; }
   if (!ctrl && (e.key === 'g' || e.key === 'G')) { Actions.toggleUi('grayscale'); return; }
   if (e.key === '?') { Actions.help(); return; }
   Views[ui.view]?.key?.(e);

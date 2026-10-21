@@ -2,9 +2,9 @@
    borders, binding and background. */
 
 const LAYOUT_TOOLS = [
-  { key: 'place', label: 'Place block', kb: 'B', icon: '▦' },
-  { key: 'paintcell', label: 'Paint fabric', kb: 'V', icon: '🖌' },
-  { key: 'select', label: 'Select', kb: 'S', icon: '⬚' },
+  { key: 'place', label: 'Place', kb: 'B', icon: 'place' },
+  { key: 'paintcell', label: 'Paint', kb: 'V', icon: 'paint' },
+  { key: 'select', label: 'Select', kb: 'S', icon: 'select' },
 ];
 const lay = { drag: null };
 const hasPanels = () => (doc.layout.panels || []).length > 0;
@@ -21,18 +21,18 @@ Views.layout = {
   main() {
     const Q = Qnow(), tool = layoutTool();
     const tools = LAYOUT_TOOLS.filter(t => !(doc.layout.mode === 'tess' && t.key === 'place' && !tessCanPlace()))
-      .map(t => `<button class="tool" data-act="layoutTool" data-arg="${t.key}" aria-pressed="${tool === t.key}" title="${t.label} (${t.kb})">${t.icon} ${t.label} <kbd>${t.kb}</kbd></button>`).join('');
-    const b = activeBlock();
+      .map(t => `<button class="tool" data-act="layoutTool" data-arg="${t.key}" aria-pressed="${tool === t.key}" title="${t.label} (${t.kb})">${icon(t.icon)} ${t.label}</button>`).join('');
+    const b = placeBlock();
     const placing = tool === 'place'
-      ? (b ? `<span class="muted">Placing</span> ${blockThumb(b, 22, 'mini')} <b>${esc(b.name)}</b> <span class="muted">${ui.placeRot ? `↻${ui.placeRot * (isHexBlock(b) ? 60 : 90)}°` : ''}${ui.placeFlip ? ' ⇋' : ''}</span>` : '<span class="muted">Pick a block in the sidebar to place it</span>')
-      : tool === 'paintcell' ? `<span class="muted">Painting</span> ${swatchHtml(ui.fabric === BG ? doc.layout.background : ui.fabric, 18)} <b>${esc(fabricLabel(ui.fabric))}</b>` : '';
+      ? (b ? `<span class="placing">${blockThumb(b, 22, 'mini')} <b>${esc(b.name)}</b> <span class="muted">${ui.placeRot ? `${ui.placeRot * (isHexBlock(b) ? 60 : 90)}°` : ''}${ui.placeFlip ? ' mirrored' : ''}</span></span>` : '<span class="muted">Pick a block on the left</span>')
+      : tool === 'paintcell' ? `<span class="placing">${swatchHtml(ui.fabric === BG ? doc.layout.background : ui.fabric, 18)} <b>${esc(fabricLabel(ui.fabric))}</b></span>` : '';
     return `<div class="stage"><div class="toolbar">${tools}<span class="sep"></span>${placing}<div class="spacer"></div>
-        <button class="tool" data-act="toggleUi" data-arg="seamLines" aria-pressed="${!!ui.seamLines}" title="Show or hide the seam lines between pieces and blocks">Seam lines</button>
-        <button class="tool" data-act="toggleUi" data-arg="grayscale" aria-pressed="${!!ui.grayscale}" title="Check value contrast in grayscale (G)">Value</button>
+        <button class="tool" data-act="toggleUi" data-arg="seamLines" aria-pressed="${!!ui.seamLines}">Seams</button>
+        <button class="tool" data-act="toggleUi" data-arg="grayscale" aria-pressed="${!!ui.grayscale}" title="Value view (G)">Value</button>
         ${doc.quilting.layers.length ? `<button class="tool" data-act="toggleUi" data-arg="showQuilting" aria-pressed="${!!ui.showQuilting}">Quilting</button>` : ''}
       </div>
       <div class="canvas-wrap">${layoutCanvasSvg(Q)}</div>
-      <div class="status-bar">Finished quilt <b>${fmtSize(Q.W, Q.H)}</b> · ${layoutCountText(Q)}${Q.warnings.length ? ` · <span style="color:var(--danger)">${esc(Q.warnings.join(' '))}</span>` : ''}<br><span class="muted">${layoutHint(tool)}</span></div></div>`;
+      <div class="status-bar" title="${esc(layoutHint(tool))}">${Q.warnings.length ? `<span style="color:var(--danger)">${esc(Q.warnings.join(' '))}</span> · ` : ''}${layoutHint(tool)}</div></div>`;
   },
   afterMain(el) {
     const svg = el.querySelector('svg.quilt-svg');
@@ -42,6 +42,21 @@ Views.layout = {
     svg.addEventListener('pointerup', layUp);
     svg.addEventListener('pointerleave', () => { if (!lay.drag) hoverCell(null); });
     svg.addEventListener('contextmenu', e => e.preventDefault());
+    // blocks dragged in from My blocks
+    svg.addEventListener('dragover', e => {
+      const key = layTarget(e), b = doc.blocks[dragBlockId];
+      if (!b || !key || !isBlockKey(key) || !keyAcceptsBlock(key, b)) return;
+      e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; hoverCell(key);
+    });
+    svg.addEventListener('dragleave', () => hoverCell(null));
+    svg.addEventListener('drop', e => {
+      const key = layTarget(e), b = doc.blocks[dragBlockId];
+      if (!b || !key || !keyAcceptsBlock(key, b)) return;
+      e.preventDefault();
+      setCellContent(key, { b: b.id, r: 0, f: false });
+      ui.placeBlock = b.id;
+      commit();
+    });
   },
   inspector() { return layoutInspector(); },
   key(e) {
@@ -82,10 +97,10 @@ function layoutCountText(Q) {
   return `${plural(blocks, 'block')}${plain ? ` + ${plural(plain, 'plain square')}` : ''}`;
 }
 function layoutHint(tool) {
-  if (tool === 'place' && tessHexBlocks()) return 'Click or drag across hexagons to place a hexagon block · click it again to turn it 60° · Shift places it mirrored · right-click clears · draw hexagon blocks with + Hex in My blocks';
-  if (tool === 'place') return 'Click or drag to place · click the same block again to rotate it · hold Shift to place mirrored (Shift-click a placed block to flip it) · right-click clears · R / F rotate or mirror the block under the pointer';
-  if (tool === 'paintcell') return doc.layout.mode === 'tess' ? 'Click or drag across shapes to paint them · right-click resets a shape · use Fill patterns on the right for whole-quilt colourways' : 'Paint plain squares (alternate blocks) or setting triangles with the selected fabric · right-click clears';
-  return 'Click a block position to see its options on the right';
+  if (tool === 'place' && tessHexBlocks()) return 'Click or drag to place. Click again to turn. Right-click to clear.';
+  if (tool === 'place') return 'Click or drag to place. Click again to turn, Shift to mirror. Right-click to clear.';
+  if (tool === 'paintcell') return doc.layout.mode === 'tess' ? 'Click or drag to paint shapes. Right-click to reset.' : 'Paint plain squares or setting triangles. Right-click to clear.';
+  return 'Click a position to change it.';
 }
 
 /* ---------- cell operations ---------- */
@@ -120,10 +135,10 @@ function applyTool(key, first, e) {
     return true;
   }
   if (!isBlockKey(key)) return false;
-  const b = activeBlock();
+  const b = placeBlock();
   if (!b) { if (first) toast('Pick a block in the sidebar first'); return false; }
   if (!keyAcceptsBlock(key, b)) {
-    if (first) toast(isHexBlock(b) ? 'Hexagon blocks go in the hexagons of a hexagon tessellation' : 'Hexagons take hexagon blocks — draw one with + Hex in My blocks');
+    if (first) toast(isHexBlock(b) ? 'Hexagon blocks go in a hexagon tessellation' : 'Hexagons take hexagon blocks');
     return false;
   }
   const cur = cellContent(key);
@@ -163,7 +178,7 @@ function layDown(e) {
 function layMove(e) {
   if (lay.drag?.panel) {
     const d = lay.drag, [x, y] = svgPoint(e.currentTarget, e);
-    const nx = Math.round((d.dx + x - d.start[0]) * 2) / 2, ny = Math.round((d.dy + y - d.start[1]) * 2) / 2;
+    const nx = snapPanel(d.panel, Math.round((d.dx + x - d.start[0]) * 2) / 2, 'x'), ny = snapPanel(d.panel, Math.round((d.dy + y - d.start[1]) * 2) / 2, 'y');
     if (nx !== d.panel.dx || ny !== d.panel.dy) { d.panel.dx = nx; d.panel.dy = ny; d.moved = true; refreshLayoutCanvas(); }
     return;
   }
@@ -203,11 +218,11 @@ function hoverCell(key) {
     const [cx, cy] = centroid(c.full);
     c = { ...c, cx, cy, angle: 45, size: doc.layout.blockSize };
   }
-  if (layoutTool() === 'place' && c.size && keyAcceptsBlock(key, activeBlock()) && isBlockKey(key)) {
+  if (layoutTool() === 'place' && c.size && keyAcceptsBlock(key, placeBlock()) && isBlockKey(key)) {
     const cur = cellContent(key);
     // preview what a click would do: mirrored with Shift, keeping rotation when flipping in place
-    const g = lay.shift && cur?.b === activeBlock().id ? { ...c, rot: cur.r || 0, flip: !cur.f } : { ...c, rot: ui.placeRot % rotSteps(key), flip: lay.shift ? !ui.placeFlip : ui.placeFlip };
-    ghost = `<g opacity=".55" transform="${cellTransform(g)}">${blockSvg(activeBlock(), c.size, c.size)}</g>`;
+    const g = lay.shift && cur?.b === placeBlock().id ? { ...c, rot: cur.r || 0, flip: !cur.f } : { ...c, rot: ui.placeRot % rotSteps(key), flip: lay.shift ? !ui.placeFlip : ui.placeFlip };
+    ghost = `<g opacity=".55" transform="${cellTransform(g)}">${blockSvg(placeBlock(), c.size, c.size)}</g>`;
   }
   layer.innerHTML = `${ghost}<path d="${polyToPath(c.pts)}" fill="none" stroke="#f2b134" stroke-width="${w}"/>`;
 }
@@ -230,9 +245,9 @@ Actions.placeFlip = v => { ui.placeFlip = !!v; saveUi(); render(); };
 Actions.cellRotate = () => { if (ui.selCell) { rotateCell(ui.selCell); commit(); } };
 Actions.cellFlip = () => { if (ui.selCell) { flipCell(ui.selCell); commit(); } };
 Actions.cellClear = () => { if (ui.selCell) { clearCell(ui.selCell); commit(); } };
-Actions.cellEdit = () => { const c = cellContent(ui.selCell); if (c?.b) { ui.activeBlock = c.b; Actions.view('block'); } };
+Actions.cellEdit = () => { const c = cellContent(ui.selCell); if (c?.b) { ui.activeBlock = ui.placeBlock = c.b; Actions.view('block'); } };
 Actions.cellReplace = () => {
-  const b = activeBlock();
+  const b = placeBlock();
   if (!ui.selCell || !b || !isBlockKey(ui.selCell)) return;
   if (!keyAcceptsBlock(ui.selCell, b)) { toast(isHexBlock(b) ? 'Hexagon blocks go in the hexagons of a hexagon tessellation' : 'Hexagons take hexagon blocks'); return; }
   setCellContent(ui.selCell, { b: b.id, r: ui.placeRot % rotSteps(ui.selCell), f: ui.placeFlip }); commit();
@@ -245,7 +260,7 @@ function blockCellKeys() {
   return uniq(keys);
 }
 Actions.fillLayout = mode => {
-  const b = activeBlock();
+  const b = placeBlock();
   if (!b) { toast('Pick a block in the sidebar first'); return; }
   const keys = blockCellKeys().filter(k => keyAcceptsBlock(k, b));
   if (!keys.length) { toast(isHexBlock(b) ? 'Hexagon blocks go in the hexagons of a hexagon tessellation' : 'No square block positions here'); return; }
@@ -266,7 +281,7 @@ Actions.hexTurns = kind => {
   commit();
 };
 Actions.alternateWith = () => {
-  const b = activeBlock(), sel = $('#alt-with')?.value;
+  const b = placeBlock(), sel = $('#alt-with')?.value;
   if (!b || !sel) { toast('Pick a block in the sidebar, and something to alternate with'); return; }
   const second = sel.startsWith('fab:') ? { fab: sel.slice(4) } : { b: sel, r: 0, f: false };
   for (const c of Qnow().cells.filter(c => c.key[0] !== 'p')) {
@@ -323,19 +338,46 @@ Actions.cubeShade = () => {
   t.faces = t.faces || { top: F[0], left: F[Math.floor(F.length / 2)], right: F[F.length - 1] };
   t.colors = {};
   commit();
-  toast('Cubes shaded — click any diamond with Paint fabric to change it');
+  toast('Cubes shaded');
 };
 Actions.cubeOff = () => { doc.layout.tess.faces = null; commit(); };
 /* inset panels */
 const panelById = id => (doc.layout.panels || []).find(p => p.id === id);
+// In a straight set, a dragged panel's edges snap to the block seams when they come close.
+function snapPanel(p, off, axis) {
+  const L = doc.layout;
+  if (L.mode !== 'grid') return off;
+  const g = L.grid, BS = L.blockSize, sw = g.sashing.width || 0, o = g.sashing.outer ? sw : 0, pitch = BS + sw;
+  const n = axis === 'x' ? g.cols : g.rows, span = axis === 'x' ? Qnow().inner.w : Qnow().inner.h;
+  const outer = panelGeom(p, 1, 1).outer;
+  let best = off, bestD = 0.75;
+  for (let c = 0; c <= n; c++) {
+    for (const cand of [o + c * pitch + outer / 2 - span / 2, o + c * pitch - sw - outer / 2 - span / 2]) {
+      if (Math.abs(cand - off) < bestD) { bestD = Math.abs(cand - off); best = round(cand, 3); }
+    }
+  }
+  return best;
+}
+// Blocks partly covered by a panel or the edge: cut just what shows, or make them whole and trim.
+function partialToggle() {
+  return `<label class="check"><input type="checkbox" data-bind="layout.panelExact" data-type="bool" ${doc.layout.panelExact !== false ? 'checked' : ''}> Cut partial blocks to shape</label>`;
+}
 Actions.addPanel = () => {
   const L = doc.layout;
   L.panels = L.panels || [];
   const I = Qnow().inner;
-  const size = Math.max(6, Math.round(Math.min(I.w, I.h) * 0.4 / 2) * 2);
+  let size = Math.max(6, Math.round(Math.min(I.w, I.h) * 0.4 / 2) * 2), dy = L.panels.length * 4;
+  if (L.mode === 'grid' && !L.panels.length) {
+    // cover whole blocks: k × k positions, centred on block seams so no block is cut into
+    const g = L.grid, BS = L.blockSize, sw = g.sashing.width || 0, n = Math.min(g.rows, g.cols);
+    let k = Math.max(1, Math.round(n * 0.4));
+    if (k % 2 !== g.cols % 2) k = k + 1 <= n ? k + 1 : Math.max(1, k - 1);
+    size = Math.max(2, k * BS + (k - 1) * sw - 6);
+    dy = k % 2 === g.rows % 2 ? 0 : (BS + sw) / 2;
+  }
   const F = doc.fabrics.map(f => f.id);
-  const blk = ui.activeBlock && doc.blocks[ui.activeBlock] && !isHexBlock(doc.blocks[ui.activeBlock]) ? ui.activeBlock : null;
-  L.panels.push({ id: uid('p'), size, dx: 0, dy: L.panels.length * 4, b: blk, fab: blk ? null : F[0],
+  const blk = placeBlock() && !isHexBlock(placeBlock()) ? placeBlock().id : null;
+  L.panels.push({ id: uid('p'), size, dx: 0, dy, b: blk, fab: blk ? null : F[0],
     frames: [{ width: 1, fabric: F[F.length > 2 ? F.length - 1 : 1] }, { width: 1, fabric: F[3] || F[1] }, { width: 1, fabric: F[F.length > 2 ? F.length - 1 : 1] }] });
   ui.layoutTool = 'select';
   commit();
@@ -402,116 +444,115 @@ function rotIcon(r, flip) {
 }
 function layoutInspector() {
   const L = doc.layout, Q = Qnow();
+  const modeTips = { grid: 'Blocks in rows and columns', onpoint: 'Blocks turned 45° with setting triangles', tess: 'One repeating shape: hexagons, triangles, bolts and more' };
   let h = section('Setting', `<div class="seg" role="group" aria-label="Setting">
-      ${[['grid', 'Straight'], ['onpoint', 'On point'], ['tess', 'Tessellation']].map(([k, l]) => `<button aria-pressed="${L.mode === k}" data-act="layoutMode" data-arg="${k}">${l}</button>`).join('')}</div>
-    <p class="hint">${{ grid: 'Blocks in rows and columns.', onpoint: 'Blocks turned 45°, with setting triangles around the edge.', tess: 'A quilt made from one repeating shape — hexagons, triangles, lightning bolts and more. The shapes are fitted to the size you choose.' }[L.mode]}</p>
-    <dl class="kv"><dt>Finished quilt</dt><dd>${fmtSize(Q.W, Q.H)}</dd></dl>`, { key: 'setting' });
+      ${[['grid', 'Straight'], ['onpoint', 'On point'], ['tess', 'Tessellation']].map(([k, l]) => `<button aria-pressed="${L.mode === k}" data-act="layoutMode" data-arg="${k}" title="${modeTips[k]}">${l}</button>`).join('')}</div>
+    <p class="hint">Finished quilt <b>${fmtSize(Q.W, Q.H)}</b> · ${layoutCountText(Q)}</p>`, { key: 'setting' });
 
   if (L.mode === 'grid') {
     h += section('Size', `<div class="f-row">
         <label class="f">Rows<input type="number" min="1" max="40" value="${L.grid.rows}" data-change="layoutRows"></label>
         <label class="f">Columns<input type="number" min="1" max="40" value="${L.grid.cols}" data-change="layoutCols"></label></div>
-      ${lenField('Finished block size', 'layout.blockSize', { min: 1, max: 48 })}`, { key: 'size' });
+      ${lenField('Block size', 'layout.blockSize', { min: 1, max: 48 })}`, { key: 'size' });
   } else if (L.mode === 'onpoint') {
     h += section('Size', `<div class="f-row">
         ${numField('Blocks down', 'layout.onpoint.rows', { int: true, min: 1, max: 20 })}
         ${numField('Blocks across', 'layout.onpoint.cols', { int: true, min: 1, max: 20 })}</div>
-      ${lenField('Finished block size', 'layout.blockSize', { min: 1, max: 48 })}
-      <div class="hint">Setting triangles (default fabric)</div>${fabricPicker(L.onpoint.fill, 'onpointFill')}
-      <p class="hint">Use <b>Paint fabric</b> to colour individual triangles or make plain alternate squares.</p>`, { key: 'size' });
+      ${lenField('Block size', 'layout.blockSize', { min: 1, max: 48 })}
+      <label class="f">Setting triangles</label>${fabricPicker(L.onpoint.fill, 'onpointFill')}`, { key: 'size' });
   } else {
     const t = L.tess, sh = tessShape(t.shape);
     h += section('Shape', `<label class="f">Shape<select data-change="tessShape">${TESS_SHAPES.map(s => `<option value="${s.key}" ${s.key === t.shape ? 'selected' : ''}>${s.label}</option>`).join('')}</select></label>
       <div class="f-row">${lenField(t.shape === 'hex' || t.shape === 'tumbling' || t.shape === 'triangle' ? 'Side length' : 'Width', 'layout.tess.size', { min: 0.5, max: 40 })}
         <label class="f">Orientation<select data-bind="layout.tess.orient" data-type="int">${sh.orientLabels.map((l, i) => `<option value="${i}" ${t.orient === i ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
       ${['zigzag', 'brick', 'diamond'].includes(t.shape) ? `<div class="f-row">${numField('Height ÷ width', 'layout.tess.ratio', { min: 0.2, max: 4, step: 0.05 })}${t.shape === 'zigzag' ? numField('Lean ÷ width', 'layout.tess.lean', { min: 0, max: 2, step: 0.05 }) : ''}</div>` : ''}
-      <h4>Quilt centre size</h4><div class="f-row">${lenField('Width', 'layout.tess.width', { min: 2, max: 200 })}${lenField('Height', 'layout.tess.height', { min: 2, max: 200 })}</div>
+      <div class="f-row">${lenField('Centre width', 'layout.tess.width', { min: 2, max: 200 })}${lenField('Centre height', 'layout.tess.height', { min: 2, max: 200 })}</div>
       <label class="check"><input type="checkbox" data-bind="layout.tess.snap" data-type="bool" ${t.snap !== false ? 'checked' : ''}> Fit to whole shapes</label>
-      <p class="hint">${t.snap !== false ? `Adjusted to the shape repeat: <b>${fmtSize(...tessSize(t))}</b>. Untick to use your exact size (edge pieces may get thin).` : 'Using your exact size; very thin edge pieces are merged into their neighbours when filling gaps.'}</p>
-      <h4>Edges</h4><div class="seg">${[['trim', 'Trim shapes'], ['fill', 'Fill gaps']].map(([k, l]) => `<button aria-pressed="${t.edge === k}" data-act="tessEdge" data-arg="${k}">${l}</button>`).join('')}</div>
-      ${t.edge === 'trim' ? `<label class="check"><input type="checkbox" data-bind="layout.tess.cutEdges" data-type="bool" ${t.cutEdges ? 'checked' : ''}> Cut edge pieces to their exact shape</label>` : ''}
-      <p class="hint">${t.edge === 'trim' ? (t.cutEdges ? `Every shape cut off by the edge${hasPanels() ? ' or a panel' : ''} is cut to its exact outline, with its own cutting step and piece code — no trimming after assembly.` : 'Shapes run off the edge and are trimmed straight: they\'re cut whole and trimmed after the top is sewn.') : 'Partial shapes at the edge are cut from a gap-fill fabric instead:'}</p>
-      ${t.edge === 'fill' ? fabricPicker(t.fill, 'tessFill') : ''}
-      <div class="hint">Base fabric (unpainted shapes)</div>${fabricPicker(t.base, 'tessBase')}`, { key: 'shape' });
+      ${t.snap !== false ? `<p class="hint">Fitted size ${fmtSize(...tessSize(t))}.</p>` : ''}
+      <label class="f">Edges</label><div class="seg">${[['trim', 'Trim shapes'], ['fill', 'Fill gaps']].map(([k, l]) => `<button aria-pressed="${t.edge === k}" data-act="tessEdge" data-arg="${k}">${l}</button>`).join('')}</div>
+      ${t.edge === 'trim' ? `<label class="check"><input type="checkbox" data-bind="layout.tess.cutEdges" data-type="bool" ${t.cutEdges ? 'checked' : ''}> Cut edge pieces to shape</label>` : `<label class="f">Gap fabric</label>${fabricPicker(t.fill, 'tessFill')}`}
+      <label class="f">Base fabric</label>${fabricPicker(t.base, 'tessBase')}`, { key: 'shape' });
     const set = paintSet();
     if (t.shape === 'tumbling') {
       const fc = t.faces;
-      h += section('3D cubes', fc ? `<p class="hint" style="margin-top:0">Every diamond is shaded by the face it forms. Paint any diamond to override it.</p>
-        ${[['top', 'Top faces'], ['left', 'Left faces'], ['right', 'Right faces']].map(([k, l]) => `<div class="hint">${l}</div>${fabricPicker(fc[k], 'cubeFace').replace(/data-arg="([^"]+)"/g, `data-arg="${k}|$1"`)}`).join('')}
-        <div class="btn-row"><button class="btn small" data-act="cubeShade" title="Clear hand-painted diamonds and re-shade every cube">Re-shade all</button><button class="btn small" data-act="cubeOff">Turn off</button></div>`
-        : `<p class="hint" style="margin-top:0">Shade every cube automatically with a light top, medium left and dark right face — the classic 3D illusion.</p><div class="btn-row"><button class="btn small primary" data-act="cubeShade">Shade as 3D cubes</button></div>`, { key: 'cubes' });
+      h += section('3D cubes', fc ? `${[['top', 'Top faces'], ['left', 'Left faces'], ['right', 'Right faces']].map(([k, l]) => `<label class="f">${l}</label>${fabricPicker(fc[k], 'cubeFace').replace(/data-arg="([^"]+)"/g, `data-arg="${k}|$1"`)}`).join('')}
+        <div class="btn-row"><button class="btn small" data-act="cubeShade" title="Clear painted diamonds and shade every cube again">Shade again</button><button class="btn small quiet" data-act="cubeOff">Turn off</button></div>`
+        : `<p class="hint">Light tops, medium left faces and dark right faces.</p><div class="btn-row"><button class="btn small primary" data-act="cubeShade">Shade as 3D cubes</button></div>`, { key: 'cubes' });
     }
-    h += section('Fill patterns', `<p class="hint" style="margin-top:0">Choose the fabrics to use, then a pattern:</p>
+    h += section('Fill patterns', `<label class="f">Fabrics to use</label>
       <div class="fabpick">${doc.fabrics.map(f => `<button aria-pressed="${set.includes(f.id)}" data-act="tessToggleSet" data-arg="${f.id}" title="${esc(f.name)}">${swatchHtml(f.id, 20)}</button>`).join('')}</div>
       <div class="btn-row">${[['random', 'Random'], ['rows', 'Rows'], ['cols', 'Columns'], ['diag', 'Diagonals'], ['rings', 'Rings'], ['gradient', 'Gradient'], ['orient', 'By direction']].map(([k, l]) => `<button class="btn small" data-act="tessPattern" data-arg="${k}">${l}</button>`).join('')}</div>
-      <div class="btn-row"><button class="btn small" data-act="tessPattern" data-arg="shuffle">🎲 Shuffle random</button><button class="btn small" data-act="tessPattern" data-arg="solid" title="Paint every shape with the selected fabric">Fill all</button><button class="btn small danger" data-act="clearLayout">Clear</button></div>`, { key: 'tessfill' });
+      <div class="btn-row"><button class="btn small" data-act="tessPattern" data-arg="shuffle">Shuffle</button><button class="btn small" data-act="tessPattern" data-arg="solid" title="Paint every shape with the selected fabric">Fill all</button><button class="btn small quiet danger" data-act="clearLayout">Clear</button></div>`, { key: 'tessfill' });
     if (t.shape === 'hex') {
-      const hb = activeBlock() && isHexBlock(activeBlock());
+      const hb = placeBlock() && isHexBlock(placeBlock());
       const rotBtns = [0, 1, 2, 3, 4, 5].map(r => `<button aria-pressed="${ui.placeRot % 6 === r}" data-act="placeRot" data-arg="${r}" title="${r * 60}°">${r * 60}°</button>`).join('');
-      h += section('Hexagon blocks', `<p class="hint" style="margin-top:0">Fill hexagons with your own hexagon blocks — draw one with <b>+ Hex</b> in My blocks, pick it, then use <b>Place block</b>. ${hb ? '' : '<b>Pick a hexagon block in the sidebar first.</b>'} Blocks in hexagons cut off by the edge${hasPanels() ? ' or a panel' : ''} are made whole and trimmed after the top is put together.</p>
-        <div class="hint">Turn for new blocks</div><div class="seg">${rotBtns}</div>
+      h += section('Hexagon blocks', `${hb ? '' : '<p class="hint">Pick a hexagon block in My blocks, or add one with Add, Hexagon block.</p>'}
+        <label class="f">Turn new blocks</label><div class="seg">${rotBtns}</div>
         <label class="check"><input type="checkbox" ${ui.placeFlip ? 'checked' : ''} data-change="placeFlip"> Mirror new blocks</label>
         <div class="btn-row"><button class="btn small" data-act="fillLayout" data-arg="empty" ${hb ? '' : 'disabled'}>Fill plain hexagons</button><button class="btn small" data-act="fillLayout" data-arg="all" ${hb ? '' : 'disabled'}>Fill all</button></div>
-        <div class="btn-row"><button class="btn small" data-act="hexTurns" data-arg="random">🎲 Random turns</button><button class="btn small" data-act="hexTurns" data-arg="same">All upright</button></div>`, { key: 'hexblocks' });
+        <div class="btn-row"><button class="btn small" data-act="hexTurns" data-arg="random">Random turns</button><button class="btn small" data-act="hexTurns" data-arg="same">All upright</button></div>`, { key: 'hexblocks', closed: !hb });
     }
   }
 
-  {
-    const panels = L.panels || [];
-    const contentOpts = cur => ['<option value="">— empty —</option>', ...doc.blockOrder.filter(id => !isHexBlock(doc.blocks[id])).map(id => `<option value="${id}" ${cur.b === id ? 'selected' : ''}>${esc(doc.blocks[id].name)}</option>`), ...doc.fabrics.map(f => `<option value="fab:${f.id}" ${cur.fab === f.id ? 'selected' : ''}>Plain ${esc(f.name)}</option>`)].join('');
-    h += section('Inset panels', `<p class="hint" style="margin-top:0">A framed square set into the ${L.mode === 'tess' ? esc(tessShape(L.tess.shape).label.replace(/ \(.*\)$/, '').toLowerCase()) : 'blocks'} — for a centre medallion, label or logo. ${L.mode === 'tess' ? 'The shapes are trimmed around it.' : 'Blocks it partly covers are made whole and trimmed; plain squares, setting triangles and sashing are cut to fit around it.'} Drag it with <b>Select</b> to move it.</p>
-      ${panels.map((p, i) => {
-        const pi = L.panels.indexOf(p);
-        return `<div class="list-item"><div class="li-h"><b>Panel ${i + 1}</b><button class="btn small ghost" data-act="panelCentre" data-arg="${p.id}" title="Centre it">⌖</button><button class="btn small ghost" data-act="removePanel" data-arg="${p.id}" aria-label="Remove panel">✕</button></div>
-        <label class="f">Contents<select data-change="panelContent" data-arg="${p.id}">${contentOpts(p)}</select></label>
-        <div class="f-row three">${lenField('Size', `layout.panels.${pi}.size`, { min: 2, max: 120 })}${lenField('Across', `layout.panels.${pi}.dx`, { min: -200, max: 200 })}${lenField('Down', `layout.panels.${pi}.dy`, { min: -200, max: 200 })}</div>
-        <div class="hint">Frames (inside → out)</div>
-        ${(p.frames || []).map((fr, k) => `<div style="display:flex;gap:6px;align-items:center;margin-top:4px"><input type="text" inputmode="decimal" style="width:62px" data-bind="layout.panels.${pi}.frames.${k}.width" data-type="len" data-min="0" data-max="24" value="${esc(inputLen(fr.width))}" aria-label="Frame width">
-          ${fabricPicker(fr.fabric, 'panelFrameFab').replace(/data-arg="([^"]+)"/g, `data-arg="${p.id}|${k}|$1"`)}<button class="btn small ghost" data-act="panelFrameRemove" data-arg="${p.id}|${k}" aria-label="Remove frame">✕</button></div>`).join('')}
-        <div class="btn-row"><button class="btn small" data-act="panelFrameAdd" data-arg="${p.id}">+ Frame</button></div></div>`;
-      }).join('')}
-      <div class="btn-row"><button class="btn small" data-act="addPanel">+ Add panel</button></div>`, { key: 'panels' });
-  }
   if (L.mode !== 'tess') {
     const rotBtns = [0, 1, 2, 3].map(r => `<button aria-pressed="${ui.placeRot === r}" data-act="placeRot" data-arg="${r}" title="${r * 90}°">${rotIcon(r, ui.placeFlip)}</button>`).join('');
-    const altOpts = [...doc.blockOrder.filter(id => id !== ui.activeBlock && !isHexBlock(doc.blocks[id])).map(id => `<option value="${id}">${esc(doc.blocks[id].name)}</option>`), ...doc.fabrics.map(f => `<option value="fab:${f.id}">Plain ${esc(f.name)}</option>`)].join('');
-    h += section('Place blocks', `<div class="hint" style="margin-top:0">Rotation for new blocks</div><div class="rot-grid">${rotBtns}</div>
-      <label class="check"><input type="checkbox" ${ui.placeFlip ? 'checked' : ''} data-change="placeFlip"> Mirror new blocks</label>
-      <div class="btn-row"><button class="btn small" data-act="fillLayout" data-arg="empty">Fill empty</button><button class="btn small" data-act="fillLayout" data-arg="all">Fill all</button><button class="btn small danger" data-act="clearLayout">Clear</button></div>
-      <h4>Alternate with</h4><div class="row" style="display:flex;gap:6px"><select id="alt-with" style="flex:1">${altOpts}</select><button class="btn small" data-act="alternateWith">Apply</button></div>
-      <h4>Rotation pattern</h4><div class="btn-row">${[['same', 'All same'], ['alternate', 'Alternate'], ['pinwheel', 'Pinwheel'], ['quadrants', 'Quadrants'], ['random', 'Random']].map(([k, l]) => `<button class="btn small" data-act="rotPattern" data-arg="${k}">${l}</button>`).join('')}</div>`, { key: 'place' });
+    h += section('Place blocks', `<label class="f">Turn new blocks</label><div class="rot-grid">${rotBtns}</div>
+      <label class="check"><input type="checkbox" ${ui.placeFlip ? 'checked' : ''} data-change="placeFlip"> Mirror new blocks</label>`, { key: 'place' });
+    const altOpts = [...doc.blockOrder.filter(id => id !== placeBlock()?.id && !isHexBlock(doc.blocks[id])).map(id => `<option value="${id}">${esc(doc.blocks[id].name)}</option>`), ...doc.fabrics.map(f => `<option value="fab:${f.id}">Plain ${esc(f.name)}</option>`)].join('');
+    h += section('Arrange', `<div class="btn-row"><button class="btn small" data-act="fillLayout" data-arg="empty">Fill empty</button><button class="btn small" data-act="fillLayout" data-arg="all">Fill all</button><button class="btn small quiet danger" data-act="clearLayout">Clear</button></div>
+      <label class="f">Alternate with</label><div class="row" style="display:flex;gap:6px;margin-top:3px"><select id="alt-with" style="flex:1">${altOpts}</select><button class="btn small" data-act="alternateWith">Apply</button></div>
+      <label class="f">Turn the blocks</label><div class="btn-row" style="margin-top:3px">${[['same', 'All the same'], ['alternate', 'Alternate'], ['pinwheel', 'Pinwheel'], ['quadrants', 'Quadrants'], ['random', 'Random']].map(([k, l]) => `<button class="btn small" data-act="rotPattern" data-arg="${k}">${l}</button>`).join('')}</div>`, { key: 'arrange', closed: true });
   }
 
   if (ui.selCell) {
     const c = cellContent(ui.selCell);
     const cell = Q.cells.find(x => x.key === ui.selCell);
     let body;
-    if (c?.b) body = `<p class="hint" style="margin-top:0"><b>${esc(doc.blocks[c.b].name)}</b> · ${(c.r || 0) * (ui.selCell[0] === 't' ? 60 : 90)}°${c.f ? ' · mirrored' : ''}</p>
-      <div class="btn-row"><button class="btn small" data-act="cellRotate">↻ Rotate</button><button class="btn small" data-act="cellFlip">⇋ Mirror</button><button class="btn small" data-act="cellEdit">Edit block</button></div>
-      <div class="btn-row"><button class="btn small" data-act="cellReplace" ${activeBlock() ? '' : 'disabled'}>Replace with ${esc(activeBlock()?.name || 'selected')}</button><button class="btn small danger" data-act="cellClear">Clear</button></div>`;
-    else if (c?.fab) body = `<p class="hint" style="margin-top:0">Plain ${esc(fabricLabel(c.fab))}</p><div class="btn-row"><button class="btn small" data-act="cellReplace" ${cell && activeBlock() ? '' : 'disabled'}>Put ${esc(activeBlock()?.name || 'block')} here</button><button class="btn small danger" data-act="cellClear">Clear</button></div>`;
-    else body = `<p class="hint" style="margin-top:0">Empty position.</p><div class="btn-row"><button class="btn small" data-act="cellReplace" ${cell && activeBlock() ? '' : 'disabled'}>Put ${esc(activeBlock()?.name || 'block')} here</button></div>`;
-    h += section('Selected position', body, { key: 'selcell' });
+    if (c?.b) body = `<p class="hint"><b>${esc(doc.blocks[c.b].name)}</b> · ${(c.r || 0) * (ui.selCell[0] === 't' ? 60 : 90)}°${c.f ? ' · mirrored' : ''}</p>
+      <div class="btn-row"><button class="btn small" data-act="cellRotate">Turn</button><button class="btn small" data-act="cellFlip">Mirror</button><button class="btn small" data-act="cellEdit">Edit block</button></div>
+      <div class="btn-row"><button class="btn small" data-act="cellReplace" ${placeBlock() ? '' : 'disabled'}>Replace with ${esc(placeBlock()?.name || 'selected')}</button><button class="btn small quiet danger" data-act="cellClear">Clear</button></div>`;
+    else if (c?.fab) body = `<p class="hint">Plain ${esc(fabricLabel(c.fab))}</p><div class="btn-row"><button class="btn small" data-act="cellReplace" ${cell && placeBlock() ? '' : 'disabled'}>Put ${esc(placeBlock()?.name || 'block')} here</button><button class="btn small quiet danger" data-act="cellClear">Clear</button></div>`;
+    else body = `<p class="hint">Empty.</p><div class="btn-row"><button class="btn small" data-act="cellReplace" ${cell && placeBlock() ? '' : 'disabled'}>Put ${esc(placeBlock()?.name || 'block')} here</button></div>`;
+    h += section('Selected', body, { key: 'selcell' });
   }
+
+  let borders = L.borders.map((b, i) => `<div class="list-item"><div class="li-h"><b>Border ${i + 1}</b><button class="icon-btn sm" data-act="removeBorder" data-arg="${i}" aria-label="Remove border ${i + 1}" title="Remove">${icon('x', 14)}</button></div>
+      ${lenField('Width', `layout.borders.${i}.width`, { min: 0.25, max: 24 })}
+      ${fabricPicker(b.fabric, 'borderFab').replace(/data-arg="([^"]+)"/g, `data-arg="${i}|$1"`)}</div>`).join('');
+  h += section('Borders', `${borders}<div class="btn-row"><button class="btn small" data-act="addBorder">${icon('plus', 14)} Add border</button></div>`, { key: 'borders' });
+
+  const bnd = L.binding;
+  h += section('Binding', `${fabricPicker(bnd.fabric, 'bindingFab')}
+    ${bnd.fabric ? `${lenField('Strip width', 'layout.binding.width', { min: 1, max: 4 })}<div class="btn-row"><button class="btn small quiet" data-act="bindingNone">No binding</button></div>` : '<p class="hint">No binding.</p>'}`, { key: 'binding' });
 
   if (L.mode === 'grid') {
     const s = L.grid.sashing;
-    h += section('Sashing', `${lenField('Width (0 = none)', 'layout.grid.sashing.width', { min: 0, max: 12 })}
-      ${s.width > 0 ? `<div class="hint">Fabric</div>${fabricPicker(s.fabric, 'sashFab')}
-      <label class="check"><input type="checkbox" data-bind="layout.grid.sashing.outer" data-type="bool" ${s.outer ? 'checked' : ''}> Sashing around the outside too</label>
+    h += section('Sashing', `${lenField('Width', 'layout.grid.sashing.width', { min: 0, max: 12 })}
+      ${s.width > 0 ? `<label class="f">Fabric</label>${fabricPicker(s.fabric, 'sashFab')}
+      <label class="check"><input type="checkbox" data-bind="layout.grid.sashing.outer" data-type="bool" ${s.outer ? 'checked' : ''}> Around the outside too</label>
       <label class="check"><input type="checkbox" data-bind="layout.grid.sashing.cornerstones" data-type="bool" ${s.cornerstones ? 'checked' : ''}> Cornerstones</label>
-      ${s.cornerstones ? fabricPicker(s.cornerFabric, 'cornerFab') : ''}` : ''}`, { key: 'sashing' });
+      ${s.cornerstones ? fabricPicker(s.cornerFabric, 'cornerFab') : ''}` : '<p class="hint">0 for none.</p>'}`, { key: 'sashing', closed: !(s.width > 0) });
   }
 
-  let borders = L.borders.map((b, i) => `<div class="list-item"><div class="li-h"><b>Border ${i + 1}</b><button class="btn small ghost" data-act="removeBorder" data-arg="${i}" aria-label="Remove border ${i + 1}">✕</button></div>
-      ${lenField('Width', `layout.borders.${i}.width`, { min: 0.25, max: 24 })}
-      ${fabricPicker(b.fabric, 'borderFab').replace(/data-arg="([^"]+)"/g, `data-arg="${i}|$1"`)}</div>`).join('');
-  h += section('Borders', `${borders || '<p class="hint" style="margin-top:0">No borders.</p>'}<div class="btn-row"><button class="btn small" data-act="addBorder">+ Add border</button></div>`, { key: 'borders' });
+  {
+    const panels = L.panels || [];
+    const contentOpts = cur => ['<option value="">Empty</option>', ...doc.blockOrder.filter(id => !isHexBlock(doc.blocks[id])).map(id => `<option value="${id}" ${cur.b === id ? 'selected' : ''}>${esc(doc.blocks[id].name)}</option>`), ...doc.fabrics.map(f => `<option value="fab:${f.id}" ${cur.fab === f.id ? 'selected' : ''}>Plain ${esc(f.name)}</option>`)].join('');
+    h += section('Inset panel', `${panels.length ? '' : '<p class="hint">A framed square set into the quilt, for a medallion, label or logo.</p>'}
+      ${panels.map((p, i) => {
+        const pi = L.panels.indexOf(p);
+        return `<div class="list-item"><div class="li-h"><b>Panel ${i + 1}</b><button class="icon-btn sm" data-act="panelCentre" data-arg="${p.id}" title="Centre it" aria-label="Centre panel">${icon('centre', 14)}</button><button class="icon-btn sm" data-act="removePanel" data-arg="${p.id}" title="Remove" aria-label="Remove panel">${icon('x', 14)}</button></div>
+        <label class="f">Contents<select data-change="panelContent" data-arg="${p.id}">${contentOpts(p)}</select></label>
+        <div class="f-row three">${lenField('Size', `layout.panels.${pi}.size`, { min: 2, max: 120 })}${lenField('Across', `layout.panels.${pi}.dx`, { min: -200, max: 200 })}${lenField('Down', `layout.panels.${pi}.dy`, { min: -200, max: 200 })}</div>
+        <label class="f">Frames, inside first</label>
+        ${(p.frames || []).map((fr, k) => `<div style="display:flex;gap:6px;align-items:center;margin-top:4px"><input type="text" inputmode="decimal" style="width:62px" data-bind="layout.panels.${pi}.frames.${k}.width" data-type="len" data-min="0" data-max="24" value="${esc(inputLen(fr.width))}" aria-label="Frame width">
+          ${fabricPicker(fr.fabric, 'panelFrameFab').replace(/data-arg="([^"]+)"/g, `data-arg="${p.id}|${k}|$1"`)}<button class="icon-btn sm" data-act="panelFrameRemove" data-arg="${p.id}|${k}" aria-label="Remove frame" title="Remove frame">${icon('x', 14)}</button></div>`).join('')}
+        <div class="btn-row"><button class="btn small" data-act="panelFrameAdd" data-arg="${p.id}">${icon('plus', 14)} Frame</button></div></div>`;
+      }).join('')}
+      <div class="btn-row"><button class="btn small" data-act="addPanel">${icon('plus', 14)} Add panel</button></div>
+      ${panels.length ? '<p class="hint">Drag it with Select. Its edges snap to the block seams.</p>' : ''}
+      ${L.mode !== 'tess' && Q.cells.some(c => c.b && c.clip) ? partialToggle() : ''}`, { key: 'panels', closed: !panels.length });
+  }
 
-  const bnd = L.binding;
-  h += section('Binding & background', `<div class="hint" style="margin-top:0">Binding fabric</div>${fabricPicker(bnd.fabric, 'bindingFab')}
-    <div class="btn-row"><button class="btn small" data-act="bindingNone" ${bnd.fabric ? '' : 'disabled'}>No binding</button></div>
-    ${bnd.fabric ? lenField('Binding strip width (cut)', 'layout.binding.width', { min: 1, max: 4 }) : ''}
-    <div class="hint" style="margin-top:12px">Quilt background — used by every block piece set to “Quilt BG”</div>${fabricPicker(L.background, 'bgFab')}`, { key: 'binding' });
-  return h;
+  h += section('Background', `${fabricPicker(L.background, 'bgFab')}<p class="hint">Block pieces painted BG use this fabric.</p>`, { key: 'bgfab', closed: true });
+  return h + nextStep('quilting', 'Quilting');
 }

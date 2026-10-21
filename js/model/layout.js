@@ -295,7 +295,7 @@ function buildQuilt() {
   Q.W = cw + 2 * off; Q.H = ch + 2 * off;
   Q.outer = { x: 0, y: 0, w: Q.W, h: Q.H };
   const empty = Q.cells.filter(c => !c.b && !c.fab).length;
-  if (empty) Q.warnings.push(`${plural(empty, 'empty block position')} — fill them before cutting.`);
+  if (empty) Q.warnings.push(`${plural(empty, 'empty position')}. Fill them before cutting.`);
   return Q;
 }
 

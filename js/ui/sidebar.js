@@ -1,89 +1,101 @@
-/* Left sidebar: fabric palette (with editor) and blocks (mine + library). */
+/* Left column (Blocks and Layout only): the fabric swatches and My blocks. A fabric is edited in
+   a popover from its swatch; the block library opens as a picker. */
 
 function renderSidebar() {
-  preserveFocus($('#sidebar'), () => {
-    $('#sidebar').innerHTML = fabricsSection() + myBlocksSection() + librarySection();
-  });
+  if (SIDEBAR_VIEWS.includes(ui.view)) preserveFocus($('#sidebar'), () => { $('#sidebar').innerHTML = fabricsSection() + myBlocksSection(); });
+  else $('#sidebar').innerHTML = '';
+  renderFabricPopover();
 }
 
 /* ---------- fabrics ---------- */
-const PRINT_LABELS = { solid: 'Solid', dots: 'Polka dot', speckle: 'Speckle', stripes: 'Stripe', gingham: 'Gingham', mottled: 'Mottled / batik', floral: 'Small floral' };
+const PRINT_LABELS = { solid: 'Solid', dots: 'Polka dot', speckle: 'Speckle', stripes: 'Stripe', gingham: 'Gingham', mottled: 'Mottled or batik', floral: 'Small floral' };
 
 function fabricsSection() {
   const bgId = doc.layout.background;
   let chips = '';
   doc.fabrics.forEach((f, i) => {
-    chips += `<button class="fab-chip" aria-pressed="${ui.fabric === f.id}" data-act="pickFabric" data-arg="${f.id}" title="${esc(f.name)} (${letterFor(i)}) · ${valueClass(f.color)} value">
-      ${swatchHtml(f.id, 40)}<span class="lt" style="color:${inkOn(f.color)};text-shadow:0 0 2px ${inkOn(f.color) === "#ffffff" ? "rgba(0,0,0,.6)" : "rgba(255,255,255,.9)"}">${letterFor(i)}</span><span class="val">${valueLetter(f.color)}</span>${f.id === bgId ? '<span class="bgtag">BG</span>' : ''}</button>`;
+    chips += `<button class="fab-chip${f.id === bgId ? ' is-bg' : ''}" aria-pressed="${ui.fabric === f.id}" data-act="pickFabric" data-arg="${f.id}" title="${esc(f.name)} (${letterFor(i)})${f.id === bgId ? ' · background' : ''}. Double-click to edit.">
+      ${swatchHtml(f.id, 40)}<span class="lt" style="color:${inkOn(f.color)};text-shadow:0 0 2px ${inkOn(f.color) === '#ffffff' ? 'rgba(0,0,0,.6)' : 'rgba(255,255,255,.9)'}">${letterFor(i)}</span>${ui.grayscale ? `<span class="val">${valueLetter(f.color)}</span>` : ''}</button>`;
   });
-  chips += `<button class="fab-chip add" data-act="addFabric" title="Add a fabric" aria-label="Add a fabric">+</button>`;
-  // last, so the fabric swatches sit in the same place on every tab
-  if (ui.view === 'block') chips += `<button class="fab-chip bgpaint" aria-pressed="${ui.fabric === BG}" data-act="pickFabric" data-arg="${BG}" title="Quilt background — follows whatever fabric is set as the background">Quilt<br>BG</button>`;
-  const sorted = doc.fabrics.slice().sort((a, b) => hexToLab(b.color)[0] - hexToLab(a.color)[0]);
-  const valueBar = `<div class="valuebar" title="Your fabrics from lightest to darkest — good quilts usually have a spread of values">${sorted.map(f => `<span style="background:${f.color}" title="${esc(f.name)}"></span>`).join('')}</div>`;
-  const body = `<div class="fabrics">${chips}</div>${valueBar}${fabricEditor()}`;
-  return section('Fabrics', body, { key: 'fabrics' });
+  chips += `<button class="fab-chip add" data-act="addFabric" title="Add a fabric" aria-label="Add a fabric">${icon('plus', 18)}</button>`;
+  // painting with "Background" lets pieces follow whatever the quilt background is
+  if (ui.view === 'block') chips += `<button class="fab-chip bgpaint" aria-pressed="${ui.fabric === BG}" data-act="pickFabric" data-arg="${BG}" title="Background: pieces follow the quilt's background fabric">BG</button>`;
+  const f = selFabric();
+  const right = f ? `<button class="icon-btn sm" data-act="fabricPopover" data-arg="${f.id}" title="Edit ${esc(f.name)}" aria-label="Edit ${esc(f.name)}">${icon('edit', 14)}</button>` : '';
+  return section('Fabrics', `<div class="fabrics">${chips}</div>`, { key: 'fabrics', right });
 }
 
 // How this fabric comes (its own width, precuts, or pieces of a set size); default = the shared setting.
 function fabricFormatFields(f) {
   const i = doc.fabrics.indexOf(f), fm = f.format;
-  // the extra fields share one fixed-height slot so the panels below don't jump
-  return `<label class="f">Comes as<select data-change="fabFormat">${formatOptionsHtml(fm, true)}</select></label>
-    <div class="fmt-extra">${fm?.kind === 'yardage' ? lenField('Usable width', `fabrics.${i}.format.width`, { min: 5, max: 140 }) : ''}
-    ${fm?.kind === 'piece' ? `<div class="f-row">${lenField('Piece width', `fabrics.${i}.format.w`, { min: 1, max: 140 })}${lenField('Piece length', `fabrics.${i}.format.h`, { min: 1, max: 400 })}</div>` : ''}
-    ${!fm ? '<p class="hint" style="margin:6px 0 0">How you buy this fabric. The default is set in Fabric → Cutting settings; fabric you already own goes in Your stash.</p>' : fm.kind === 'precut' ? '<p class="hint" style="margin:6px 0 0">Bought as precut pieces — cuts too big for them come from yardage.</p>' : ''}</div>`;
+  return `<label class="f">Bought as<select data-change="fabFormat">${formatOptionsHtml(fm, true)}</select></label>
+    ${fm?.kind === 'yardage' ? lenField('Usable width', `fabrics.${i}.format.width`, { min: 5, max: 140 }) : ''}
+    ${fm?.kind === 'piece' ? `<div class="f-row">${lenField('Piece width', `fabrics.${i}.format.w`, { min: 1, max: 140 })}${lenField('Piece length', `fabrics.${i}.format.h`, { min: 1, max: 400 })}</div>` : ''}`;
 }
 Actions.fabFormat = v => {
-  const f = doc.fabrics.find(x => x.id === ui.fabric); if (!f) return;
+  const f = doc.fabrics.find(x => x.id === (ui.fabPop || ui.fabric)); if (!f) return;
   const fm = formatFromChoice(v, f.format);
   if (fm) f.format = fm; else delete f.format;
   commit();
 };
 
-function fabricEditor() {
-  const f = doc.fabrics.find(x => x.id === ui.fabric);
-  if (!f) {
-    if (ui.fabric === BG) return `<p class="hint fab-edit">Painting with <b>Quilt background</b>: pieces follow the quilt's background fabric (<b>${esc(fabricLabel(BG))}</b>), so you can change it for every block at once.</p>`;
-    return '';
-  }
+// The fabric popover: everything about one fabric, opened from its swatch.
+function fabricEditor(f) {
   const p = f.print || { kind: 'solid' };
   const isBg = f.id === doc.layout.background;
   const contrast = contrastRatio(f.color, fabricHex(BG));
-  return `<div class="fab-edit">
+  return `<div class="pop-h"><b>Fabric ${letterFor(doc.fabrics.indexOf(f))}</b><button class="icon-btn sm" data-act="closeFabricPopover" aria-label="Close">${icon('x', 14)}</button></div>
     <div class="row"><input type="text" value="${esc(f.name)}" data-change="fabName" aria-label="Fabric name">
-      <input type="color" value="${f.color}" data-input="fabColorLive" data-change="fabColor" aria-label="Fabric colour" title="Pick colour"></div>
+      <input type="color" value="${f.color}" data-input="fabColorLive" data-change="fabColor" aria-label="Colour"></div>
     <div class="f-row">
       <label class="f">Hex<input type="text" value="${f.color}" data-change="fabHex" maxlength="7" spellcheck="false"></label>
       <label class="f">Print<select data-change="fabPrint">${PRINT_KINDS.map(k => `<option value="${k}" ${p.kind === k ? 'selected' : ''}>${PRINT_LABELS[k]}</option>`).join('')}</select></label>
     </div>
-    <div class="f-row${p.kind === 'solid' ? ' off' : ''}" ${p.kind === 'solid' ? 'title="Choose a print above to set these"' : ''}>
-      <label class="f">Print colour<input type="color" value="${p.color2 || '#ffffff'}" data-input="fabColor2Live" data-change="fabColor2" ${p.kind === 'solid' ? 'disabled' : ''}></label>
-      <label class="f">Print scale<input type="range" min="0.3" max="3" step="0.1" value="${p.scale || 1}" data-input="fabScaleLive" data-change="fabScale" ${p.kind === 'solid' ? 'disabled' : ''}></label>
-    </div>
-    <label class="check"><input type="checkbox" ${f.directional ? 'checked' : ''} data-change="fabDir"> Directional print (don't rotate when cutting)</label>
+    ${p.kind !== 'solid' ? `<div class="f-row">
+      <label class="f">Print colour<input type="color" value="${p.color2 || '#ffffff'}" data-input="fabColor2Live" data-change="fabColor2"></label>
+      <label class="f">Print scale<input type="range" min="0.3" max="3" step="0.1" value="${p.scale || 1}" data-input="fabScaleLive" data-change="fabScale"></label>
+    </div>` : ''}
+    <label class="check"><input type="checkbox" ${f.directional ? 'checked' : ''} data-change="fabDir"> Directional print</label>
     ${fabricFormatFields(f)}
-    <p class="hint">${esc(colorName(f.color))} · <b>${valueClass(f.color)}</b> value${isBg ? ' · <b>quilt background</b>' : ` · contrast with background ${contrast.toFixed(1)}:1${contrast < 1.6 ? ' — <b>low</b>, may blend in' : ''}`}</p>
-    <div class="hint" style="margin-top:8px">Suggestions — click to add:</div>
-    <div class="harm">${harmonies(f.color).map(h => `<button style="background:${h.hex}" data-act="addFabricColor" data-arg="${h.hex}" title="${h.label} · ${colorName(h.hex)}" aria-label="Add ${h.label}"></button>`).join('')}</div>
+    ${!isBg && contrast < 1.6 ? '<p class="hint warn">Low contrast with the background.</p>' : ''}
+    <div class="sub-h">Goes well with</div>
+    <div class="harm">${harmonies(f.color).map(h => `<button style="background:${h.hex}" data-act="addFabricColor" data-arg="${h.hex}" title="Add ${colorName(h.hex)}" aria-label="Add ${h.label}"></button>`).join('')}</div>
     <div class="btn-row">
-      ${isBg ? '' : `<button class="btn small" data-act="setBackground" data-arg="${f.id}" title="Make this the quilt background fabric">Use as background</button>`}
+      ${isBg ? '<span class="muted">Quilt background</span>' : `<button class="btn small" data-act="setBackground" data-arg="${f.id}">Use as background</button>`}
       <button class="btn small" data-act="dupFabric" data-arg="${f.id}">Duplicate</button>
-      <button class="btn small danger" data-act="deleteFabric" data-arg="${f.id}">Delete</button>
-    </div>
-  </div>`;
+      <button class="btn small quiet danger" data-act="deleteFabric" data-arg="${f.id}">Delete</button>
+    </div>`;
 }
+function renderFabricPopover() {
+  let pop = $('#fab-pop');
+  const f = ui.fabPop && doc.fabrics.find(x => x.id === ui.fabPop);
+  if (!f) { pop?.remove(); ui.fabPop = null; return; }
+  if (!pop) { pop = document.createElement('div'); pop.id = 'fab-pop'; pop.className = 'popover'; pop.setAttribute('role', 'dialog'); pop.setAttribute('aria-label', 'Edit fabric'); document.body.appendChild(pop); }
+  preserveFocus(pop, () => { pop.innerHTML = fabricEditor(f); });
+  // beside its swatch when the swatches are showing, otherwise near the top left of the page
+  const chip = $(`#sidebar .fab-chip[data-arg="${CSS.escape(f.id)}"]`), side = $('#sidebar').getBoundingClientRect();
+  const top = chip ? chip.getBoundingClientRect().top - 8 : 70;
+  pop.style.left = `${chip ? side.right + 8 : 24}px`;
+  pop.style.top = `${clamp(top, 60, window.innerHeight - pop.offsetHeight - 12)}px`;
+}
+Actions.fabricPopover = id => { ui.fabPop = ui.fabPop === id ? null : id; if (ui.fabPop) ui.fabric = id; renderSidebar(); };
+Actions.closeFabricPopover = () => { ui.fabPop = null; renderFabricPopover(); };
+document.addEventListener('dblclick', e => { const c = e.target.closest?.('.fab-chip[data-act="pickFabric"]'); if (c && c.dataset.arg !== BG) Actions.fabricPopover(c.dataset.arg); });
+document.addEventListener('pointerdown', e => {
+  if (!ui?.fabPop || e.target.closest?.('#fab-pop, .fab-chip, .menu, #modal-root .modal, [data-act="fabricPopover"]')) return;
+  ui.fabPop = null; renderFabricPopover();
+}, true);
 
 const selFabric = () => doc.fabrics.find(x => x.id === ui.fabric);
-Actions.pickFabric = id => { ui.fabric = id; saveUi(); Views[ui.view]?.onFabricPick?.(id); render(); };
+Actions.pickFabric = id => { ui.fabric = id; if (ui.fabPop && id !== BG) ui.fabPop = id; saveUi(); Views[ui.view]?.onFabricPick?.(id); render(); };
 Actions.addFabric = () => {
   const base = selFabric()?.color || '#1f3a5f';
   const [h, s, l] = hexToHsl(base);
   const f = makeFabric(hslToHex([h + 137.5, clamp(s, 0.35, 0.7), clamp(l, 0.35, 0.65)]));
-  doc.fabrics.push(f); ui.fabric = f.id; commit();
+  doc.fabrics.push(f); ui.fabric = ui.fabPop = f.id; commit();
 };
-Actions.addFabricColor = hex => { const f = makeFabric(hex); doc.fabrics.push(f); ui.fabric = f.id; commit(); toast(`Added ${f.name}`); };
-Actions.dupFabric = id => { const f = { ...JSON.parse(JSON.stringify(fabricById(id))), id: uid('f') }; f.name += ' 2'; doc.fabrics.splice(fabricIndex(id) + 1, 0, f); ui.fabric = f.id; commit(); };
+Actions.addFabricColor = hex => { const f = makeFabric(hex); doc.fabrics.push(f); ui.fabric = f.id; if (ui.fabPop) ui.fabPop = f.id; commit(); toast(`Added ${f.name}`); };
+Actions.dupFabric = id => { const f = { ...JSON.parse(JSON.stringify(fabricById(id))), id: uid('f') }; f.name += ' 2'; doc.fabrics.splice(fabricIndex(id) + 1, 0, f); ui.fabric = f.id; if (ui.fabPop) ui.fabPop = f.id; commit(); };
 Actions.fabName = v => { const f = selFabric(); if (f) { f.name = v.trim() || colorName(f.color); commit(); } };
 Actions.fabColorLive = v => { const f = selFabric(); if (f && normHex(v)) { f.color = normHex(v); updateFabricDefs(); renderMainOnly(); } };
 Actions.fabColor = v => {
@@ -160,6 +172,13 @@ function blockUseCount(id) {
   for (const b of Object.values(doc.blocks)) if (b.kind === 'compound') n += b.slots.filter(s => s?.b === id).length;
   return n;
 }
+let dragBlockId = null;   // a My blocks thumbnail being dragged onto the layout
+document.addEventListener('dragstart', e => {
+  const el = e.target.closest?.('.blk[data-act="pickBlock"]');
+  dragBlockId = el?.dataset.arg || null;
+  if (dragBlockId) { e.dataTransfer.setData('text/plain', doc.blocks[dragBlockId]?.name || ''); e.dataTransfer.effectAllowed = 'copy'; }
+});
+document.addEventListener('dragend', () => { dragBlockId = null; });
 function myBlocksSection() {
   const fillingSlot = ui.view === 'block' && activeBlock()?.kind === 'compound' && ui.activeSlot != null;
   let grid = '';
@@ -168,13 +187,23 @@ function myBlocksSection() {
     if (!b) continue;
     const n = blockUseCount(id);
     const target = fillingSlot && id !== ui.activeBlock && !wouldCycle(ui.activeBlock, id) && !isHexBlock(b);
-    grid += `<button class="blk${target ? ' target' : ''}" aria-pressed="${ui.activeBlock === id}" data-act="pickBlock" data-arg="${id}" title="${esc(b.name)}${n ? ` — used ${n}×` : ''}">
-      ${blockThumb(b, 72)}<div class="nm">${esc(b.name)}</div>${n ? `<span class="use">${n}</span>` : ''}</button>`;
+    grid += `<button class="blk${target ? ' target' : ''}" draggable="${ui.view === 'layout'}" aria-pressed="${(ui.view === 'layout' ? placeBlock()?.id : ui.activeBlock) === id}" data-act="pickBlock" data-arg="${id}" title="${esc(b.name)}${n ? ` · used ${n}×` : ''}">
+      ${blockThumb(b, 72)}<div class="nm">${esc(b.name)}</div></button>`;
   }
-  const right = `<button class="btn small ghost" data-act="newBlock" title="Draw a new block">+ New</button><button class="btn small ghost" data-act="newHexBlock" title="A hexagon block for hexagon tessellations">+ Hex</button><button class="btn small ghost" data-act="newCompound" title="A block made of other blocks">+ Combo</button><button class="btn small ghost" data-act="blockFileMenu" title="Import or export blocks" aria-label="Import or export blocks">⇅</button>`;
-  const hint = fillingSlot ? `<div class="callout">Pick a block to put in slot ${ui.activeSlot + 1}.</div>` : '';
-  return section('My blocks', `${hint}${grid ? `<div class="blocks">${grid}</div>` : '<p class="empty">No blocks yet. Draw one, or pick from the library below.</p>'}`, { key: 'myblocks', right });
+  const right = `<button class="btn small" data-act="addBlockMenu" aria-haspopup="menu">${icon('plus', 14)} Add</button>`;
+  const hint = fillingSlot ? `<p class="hint">Pick a block for slot ${ui.activeSlot + 1}.</p>` : '';
+  return section('My blocks', `${hint}${grid ? `<div class="blocks">${grid}</div>` : `<div class="empty-state"><p>No blocks yet.</p><button class="btn primary" data-act="libraryPicker">Browse classic blocks</button></div>`}`, { key: 'myblocks', right });
 }
+Actions.addBlockMenu = (a, el) => openMenu(el, [
+  { label: 'Classic block from the library…', act: 'libraryPicker' },
+  { label: 'Draw a new block', act: 'newBlock' },
+  { label: 'Hexagon block', act: 'newHexBlock' },
+  { label: 'Combination of blocks', act: 'newCompound' },
+  '-',
+  { label: 'Import blocks…', act: 'importBlocks' },
+  ...(activeBlock() ? [{ label: `Export ${esc(activeBlock().name)}…`, act: 'exportBlocks', arg: 'one' }] : []),
+  ...(doc.blockOrder.length > 1 ? [{ label: `Export all ${doc.blockOrder.length} blocks…`, act: 'exportBlocks', arg: 'all' }] : []),
+]);
 Actions.pickBlock = id => {
   const host = activeBlock();
   if (ui.view === 'block' && host?.kind === 'compound' && ui.activeSlot != null && id !== host.id) {
@@ -185,8 +214,10 @@ Actions.pickBlock = id => {
     commit();
     return;
   }
-  ui.activeBlock = id; ui.selRegion = null; ui.selEdge = null; ui.drawing = []; ui.activeSlot = null;
-  if (ui.view !== 'layout' && ui.view !== 'block') ui.view = 'block';
+  // in Layout a pick only chooses what to place; the editor keeps its block
+  if (ui.view === 'layout') { ui.placeBlock = id; saveUi(); render(); return; }
+  ui.activeBlock = ui.placeBlock = id; ui.selRegion = null; ui.selEdge = null; ui.drawing = []; ui.activeSlot = null;
+  if (ui.view !== 'block') ui.view = 'block';
   saveUi(); render();
 };
 function nextEmptySlot(host, from) {
@@ -211,11 +242,6 @@ function blockBundle(ids) {
   const refs = refsFor(blocks.map(b => b.id));
   return { app: 'quiltthing', kind: 'blocks', version: 3, blocks, fabrics: doc.fabrics.filter(f => fabIds.has(f.id)), ...(Object.keys(refs).length ? { refImages: refs } : {}) };
 }
-Actions.blockFileMenu = (a, el) => openMenu(el, [
-  ...(activeBlock() ? [{ label: `Export “${esc(activeBlock().name)}”…`, act: 'exportBlocks', arg: 'one' }] : []),
-  { label: `Export all my blocks (${doc.blockOrder.length})`, act: 'exportBlocks', arg: 'all' },
-  { label: 'Import blocks from file…', act: 'importBlocks' },
-]);
 Actions.exportBlocks = which => {
   const ids = which === 'one' && activeBlock() ? [activeBlock().id] : doc.blockOrder.slice();
   if (!ids.length) { toast('No blocks to export'); return; }
@@ -272,25 +298,22 @@ Actions.newHexBlock = () => {
 };
 Actions.newCompound = () => { addBlockToDoc(newCompoundBlock(`Combo ${doc.blockOrder.length + 1}`)); ui.view = 'block'; ui.activeSlot = 0; commit(); };
 
-/* ---------- library ---------- */
-function librarySection() {
+/* ---------- library picker ---------- */
+function libraryGrid() {
   const q = ui.libSearch.trim().toLowerCase();
   const list = LIBRARY.filter(p => (ui.libCat === 'all' || p.cat === ui.libCat) && (!q || p.name.toLowerCase().includes(q)));
-  const tools = `<div class="lib-tools"><input type="text" placeholder="Search blocks…" value="${esc(ui.libSearch)}" data-input="libSearch" aria-label="Search library">
-    <select data-change="libCat" aria-label="Category">${LIB_CATEGORIES.map(([k, l]) => `<option value="${k}" ${ui.libCat === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`;
-  const grid = list.length ? `<div class="blocks" id="lib-grid">${list.map(p => `<button class="blk" data-act="useLibrary" data-arg="${p.id}" title="Add ${esc(p.name)} to My blocks">${blockThumb(presetPreviewBlock(p), 72)}<div class="nm">${esc(p.name)}</div></button>`).join('')}</div>` : `<p class="empty">No blocks match.</p>`;
-  return section('Block library', `${tools}${grid}<p class="hint">Click a block to copy it into My blocks — it picks up your fabrics, and you can edit it freely.</p>`, { key: 'library' });
+  return list.length ? list.map(p => `<button class="blk" data-act="useLibrary" data-arg="${p.id}" title="${esc(p.name)}">${blockThumb(presetPreviewBlock(p), 84)}<div class="nm">${esc(p.name)}</div></button>`).join('') : '<p class="empty">No blocks match.</p>';
 }
-Actions.libSearch = v => {
-  ui.libSearch = v; saveUi();
-  const sec = $('#lib-grid')?.closest('.sec') || $$('#sidebar .sec').pop();
-  // hold the section's height while filtering so the column (and the box being typed in) doesn't move
-  sec.style.minHeight = v.trim() ? `${Math.max(sec.offsetHeight, parseFloat(sec.style.minHeight) || 0)}px` : '';
-  const tmp = document.createElement('div');
-  tmp.innerHTML = librarySection();
-  preserveFocus(sec, () => { sec.innerHTML = tmp.firstElementChild.innerHTML; });
+Actions.libraryPicker = () => {
+  openModal(`<h2>Classic blocks</h2>
+    <div class="lib-tools"><input type="text" placeholder="Search" value="${esc(ui.libSearch)}" data-input="libSearch" aria-label="Search blocks">
+      <select data-change="libCat" aria-label="Category">${LIB_CATEGORIES.map(([k, l]) => `<option value="${k}" ${ui.libCat === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    <div class="blocks lib-grid" id="lib-grid">${libraryGrid()}</div>
+    <p class="hint">Added blocks use your fabrics and can be edited.</p>`);
+  $('#modal-root .modal').classList.add('wide');
 };
-Actions.libCat = v => { ui.libCat = v; saveUi(); renderSidebar(); };
+Actions.libSearch = v => { ui.libSearch = v; const g = $('#lib-grid'); if (g) g.innerHTML = libraryGrid(); };
+Actions.libCat = v => { ui.libCat = v; saveUi(); const g = $('#lib-grid'); if (g) g.innerHTML = libraryGrid(); };
 Actions.useLibrary = pid => {
   const p = LIBRARY.find(x => x.id === pid);
   if (!p) return;
@@ -301,9 +324,10 @@ Actions.useLibrary = pid => {
     host.slots[ui.activeSlot] = { b: b.id, r: 0, f: false };
     ui.activeSlot = nextEmptySlot(host, ui.activeSlot);
   } else {
-    ui.activeBlock = b.id; ui.selRegion = null; ui.drawing = [];
-    if (ui.view !== 'layout') ui.view = 'block';
+    ui.placeBlock = b.id;
+    if (ui.view !== 'layout') { ui.activeBlock = b.id; ui.selRegion = null; ui.drawing = []; ui.view = 'block'; }
   }
+  closeModal();
   commit();
-  toast(`${p.name} added to My blocks`);
+  toast(`${p.name} added`);
 };

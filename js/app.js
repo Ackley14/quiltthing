@@ -46,7 +46,7 @@ function loadSampleProject() {
     { ...newQuiltLayer('wavy'), area: 'borders', spacing: 1.25, amp: 0.5, wave: 3, color: '#f3ead8' },
   ];
   doc.meta = { title: 'Midnight Bullseye', designer: '', description: 'A curved-pieced bullseye in rust, mustard and cream glows in a midnight sky, ringed by sawtooth stars in two colourways with LeMoyne stars in the corners. Concentric quilting ripples out from the centre.', skill: 'auto' };
-  ui.activeBlock = quarter.id; ui.fabric = mustard; ui.view = 'layout'; ui.layoutTool = 'place';
+  ui.activeBlock = ui.placeBlock = quarter.id; ui.fabric = mustard; ui.view = 'layout'; ui.layoutTool = 'place';
   ui.selCell = null; ui.selRegion = null;
   resetHistory(); saveNow(); render();
 }
@@ -116,47 +116,48 @@ async function loadTessSample() {
     { ...newQuiltLayer('zigzag'), area: 'borders', spacing: 1, amp: 0.4, wave: 2, color: '#2f7f86' },
   ];
   doc.meta = { title: 'Hexie Bloom', designer: '', description: 'Hexagons ripple out in rings of teal, sage and peach from a framed "Bloom" panel, sprinkled with pieced hexie stars and 3D cubes. The edge pieces are cut to shape, and the panel and the hexagons are quilted differently.', skill: 'auto' };
-  ui.activeBlock = star.id; ui.fabric = coral; ui.view = 'layout'; ui.layoutTool = 'place'; ui.selCell = null; ui.selRegion = null;
+  ui.activeBlock = ui.placeBlock = star.id; ui.fabric = coral; ui.view = 'layout'; ui.layoutTool = 'place'; ui.selCell = null; ui.selRegion = null;
   resetHistory(); saveNow(); render();
 }
 
 function welcome() {
-  openModal(`<h2>Welcome to Quilt Designer</h2>
-    <p>Design a quilt from first block to printed pattern. Everything is saved in this browser as you go.</p>
-    <div class="welcome-steps">
-      <div><b>Blocks</b>Draw blocks on a grid or start from 40+ classics.</div>
-      <div><b>Layout</b>Grid, on point, or tessellated shapes like hexagons and lightning bolts.</div>
-      <div><b>Quilting</b>Plan stitching lines — crosshatch, waves, spirals…</div>
-      <div><b>Fabric & cutting</b>Yardage, cutting charts and stash checks.</div>
-      <div><b>Pattern</b>Print a full step-by-step PDF pattern.</div>
-    </div>
-    <p class="hint">We've loaded a sample quilt to explore. Press <b>?</b> any time for help and shortcuts.</p>
-    <div class="actions"><button class="btn" data-act="welcomeBlank">Start blank</button><button class="btn primary" data-act="closeModal">Explore the sample</button></div>`, () => { ui.seenTour = true; saveUi(); });
+  openModal(`<h2>Quilt Designer</h2>
+    <p>Design blocks, lay out a quilt and print the pattern. Your work saves in this browser.</p>
+    <div class="actions welcome-actions"><button class="btn" data-act="welcomeBlank">Start blank</button><button class="btn" data-act="welcomeClassic">Start from a classic block</button><button class="btn primary" data-act="closeModal">Explore the sample</button></div>`, () => { ui.seenTour = true; saveUi(); });
 }
-Actions.welcomeBlank = () => {
-  closeModal();
+function startBlank() {
   doc = newDoc();
   addBlockToDoc(newDrawnBlock('My first block'));
   ui.view = 'block'; ui.tool = 'rect'; ui.fabric = doc.fabrics[1].id;
   resetHistory(); saveNow(); render();
+}
+Actions.welcomeBlank = () => { closeModal(); startBlank(); };
+// A new project that starts with a block from the library.
+Actions.welcomeClassic = () => {
+  closeModal();
+  doc = newDoc(); ui.activeBlock = ui.placeBlock = null; ui.view = 'block'; ui.fabric = doc.fabrics[1].id;
+  resetHistory(); saveNow(); render();
+  Actions.libraryPicker();
 };
 
 function init() {
   const { d, u } = loadStored();
   ui = { ...defaultUi(), ...(u || {}), drawing: [] };
+  if (ui.view === 'cutting') { ui.view = 'fabric'; ui.fabPane = 'cut'; }   // Cutting is now part of Fabric & cutting
   if (!Views[ui.view]) ui.view = 'layout';
   onDocChanged = () => { _Q = null; render(); };
   if (d) {
     doc = upgradeDoc(d);
     sanitizeUi();
     resetHistory();
+    restoreHistory();
     render();
   } else {
     loadSampleProject();
   }
   if (!ui.seenTour) welcome();
   // keep the "Saved" indicator fresh after debounced saves
-  setInterval(() => { const el = $('.save-dot'); if (el && saveStatus.at) el.textContent = saveStatus.ok ? 'Saved' : 'Not saved!'; }, 1500);
+  setInterval(() => { const el = $('.save-dot'); if (el && saveStatus.at) el.textContent = saveStatus.ok ? '' : 'Not saved'; }, 1500);
   window.addEventListener('resize', debounce(() => { if (ui.view === 'pattern') Views.pattern.afterMain($('#main')); }, 150));
 }
 

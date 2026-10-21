@@ -19,20 +19,22 @@ function roundYardIn(inches, mode) {
    A fabric is bought as yardage of some width, or as precut pieces (fat quarters, charm
    squares…) or same-size pieces of your own choosing. There's a default for all fabrics
    (Fabric → Cutting settings); any fabric can override it. */
+// w × h is the size sold; use is what's left to cut from after trimming selvages and squaring up
+// (precut squares are cut exactly, so they're used whole).
 const PRECUTS = [
-  { key: 'fq', name: 'Fat quarter', w: 21, h: 18 },
-  { key: 'f8', name: 'Fat eighth', w: 21, h: 9 },
-  { key: 'lq', name: 'Long quarter', w: 42, h: 9 },
+  { key: 'fq', name: 'Fat quarter', w: 21, h: 18, use: [20, 17.5] },
+  { key: 'f8', name: 'Fat eighth', w: 21, h: 9, use: [20, 8.5] },
+  { key: 'lq', name: 'Long quarter', w: 42, h: 9, use: [40, 8.5] },
   { key: 'layer', name: 'Layer cake square', w: 10, h: 10 },
   { key: 'charm', name: 'Charm square', w: 5, h: 5 },
   { key: 'mini', name: 'Mini charm', w: 2.5, h: 2.5 },
-  { key: 'jelly', name: 'Jelly roll strip', w: 42, h: 2.5 },
+  { key: 'jelly', name: 'Jelly roll strip', w: 42, h: 2.5, use: [40, 2.5] },
 ];
 // A format setting ({ kind: 'yardage', width } | { kind: 'precut', key } | { kind: 'piece', w, h })
 // resolved to { yardage: true, width } or { yardage: false, name, W, H } (W = the longer side).
 function resolveFormat(fm) {
   if (fm?.kind === 'yardage' && fm.width > 0) return { yardage: true, width: fm.width };
-  if (fm?.kind === 'precut') { const pc = PRECUTS.find(x => x.key === fm.key); if (pc) return { yardage: false, name: pc.name, W: Math.max(pc.w, pc.h), H: Math.min(pc.w, pc.h) }; }
+  if (fm?.kind === 'precut') { const pc = PRECUTS.find(x => x.key === fm.key), [w, h] = pc?.use || [pc?.w, pc?.h]; if (pc) return { yardage: false, name: pc.name, W: Math.max(w, h), H: Math.min(w, h), sold: [pc.w, pc.h] }; }
   if (fm?.kind === 'piece' && fm.w > 0 && fm.h > 0) return { yardage: false, name: 'Piece', W: Math.max(fm.w, fm.h), H: Math.min(fm.w, fm.h) };
   return null;
 }
@@ -41,7 +43,7 @@ function fabricFormat(fab) { return resolveFormat(fabricById(fab)?.format) || de
 // The longest strip a fabric gives without joining: its width, or the long side of its pieces.
 // Pieces bigger than a precut fall back to the default yardage, so recipes may use that too.
 function fabricRun(fab) { const fm = fabricFormat(fab); return fm.yardage ? fm.width : Math.max(fm.W, doc.cutting.wof); }
-function formatLabel(fm) { return fm.yardage ? `yardage, ${fmtLen(fm.width)} wide` : `${fm.name.toLowerCase()}s (${fmtSize(fm.W, fm.H)})`; }
+function formatLabel(fm) { return fm.yardage ? `yardage, ${fmtLen(fm.width)} wide` : `${fm.name.toLowerCase()}s (${fm.sold ? fmtSize(...fm.sold) : fmtSize(fm.W, fm.H)})`; }
 
 /* ---------- recipes ---------- */
 function recipeFor(cls, sa, opts = {}) {
@@ -124,11 +126,30 @@ function recipeStitchCorner(leg, sa) {
   return { key: `sf:${q}`, method: 'strip', w: q, sub: q, yield: 1, cut: 'stitch', unitName: 'square', unitLabel: `${fmtLen(q, 'up')} square`, makes: 'stitch-and-flip corner' };
 }
 
-// The shape cut for a tessellation tile. Shapes cut off by the quilt edge or a panel are cut
-// whole and trimmed after assembly, unless "cut edge pieces to shape" is on: then each is cut
-// to its exact outline (and identical edge shapes share a cutting step and piece code).
+// Shapes and blocks cut off by the quilt edge or a panel are cut whole and trimmed after assembly,
+// unless "cut edge pieces to shape" is on: then only the part that shows is cut, to its exact
+// outline (identical edge shapes share a cutting step and piece code). Tessellations keep their
+// own setting; straight and on-point quilts cut to shape unless it's turned off.
+const exactEdges = () => doc.layout.mode === 'tess' ? !!doc.layout.tess.cutEdges : doc.layout.panelExact !== false;
+const partialCell = c => !!(c.b && c.clip && exactEdges());
 function tileCutShape(t) {
-  return t.role === 'trim' && t.full && !doc.layout.tess.cutEdges ? t.full : t.pts;
+  return t.role === 'trim' && t.full && !exactEdges() ? t.full : t.pts;
+}
+// The pieces of a partly covered block that show, in quilt coordinates.
+function partialBlockPieces(c) {
+  const map = cellPointMapper(c), out = [];
+  for (const p of blockPieces(doc.blocks[c.b], c.size, c.size)) {
+    const piece = [closeRing(p.pts.map(map)), ...p.holes.map(h => closeRing(h.map(map)))];
+    for (const part of c.clip) {
+      let mp = pcSafe('intersection', piece, toPC(part));
+      if (mp && c.clipHoles?.length) mp = pcSafe('difference', mp, ...c.clipHoles.map(toPC));
+      for (const x of fromPC(mp || [])) {
+        const pts = cleanPoly(x.outer);
+        if (pts.length >= 3 && polyArea(pts) > 0.02) out.push({ fab: p.fab, app: p.app, curved: p.curved, pts, holes: x.holes });
+      }
+    }
+  }
+  return out;
 }
 
 // Pieces of units the block steps make from whole squares (two-at-a-time HSTs, no-waste geese,
@@ -155,7 +176,10 @@ function collectCutItems(Q) {
   // blocks: group identical placements
   const groups = new Map();
   for (const c of Q.cells) {
-    if (c.b) { const k = `${c.b}|${c.flip ? 'f' : ''}|${c.size}`; groups.set(k, (groups.get(k) || 0) + 1); }
+    if (partialCell(c)) {
+      // only what shows of a partly covered block, each piece cut to shape
+      for (const p of partialBlockPieces(c)) add(p.fab, recipeFor(classifyPiece(p.pts, { curved: p.curved }), sa, ro(p.fab, { directional: isDir(p.fab), applique: p.app, holes: p.holes })), 1, 'Partial blocks', { kind: 'Partial blocks' });
+    } else if (c.b) { const k = `${c.b}|${c.flip ? 'f' : ''}|${c.size}`; groups.set(k, (groups.get(k) || 0) + 1); }
     else if (c.fab) add(c.fab, recipeFor({ shape: 'rect', w: c.size, h: c.size }, sa, ro(c.fab, { directional: isDir(c.fab) })), 1, 'Plain squares', { kind: 'plain' });
   }
   for (const [k, n] of groups) {
@@ -305,7 +329,7 @@ function honeycombPack(N, s, wof, binH = Infinity) {
 
 let _planCache = { key: null, plan: null };
 function cuttingPlan(Q = buildQuilt()) {
-  const key = snapshot();
+  const key = snapshot() + (ui?.units || '');   // plan texts are written in the display units
   if (_planCache.key === key) return _planCache.plan;
   const plan = computePlan(Q);
   _planCache = { key, plan };
@@ -372,8 +396,10 @@ function computePlan(Q) {
       return { kind: 'stash', stash: true, piece, name: names[i], W, H, L, pieces: before - demandPieces(d), used: work - demandWork(d) > 1e-9 };
     });
     // precut / fixed-size pieces: as many as it takes; cuts too big for them go on to yardage
-    let buyPieces = 0;
+    let buyPieces = 0, yardFor = '';
     if (!fmt.yardage) {
+      // long joined strips (binding, borders) come from yardage, not dozens of short precut strips
+      const held = d.joined; d.joined = [];
       const start = layouts.length;
       while (demandWork(d) > 1e-9 && buyPieces < 400) {
         const before = demandPieces(d), work = demandWork(d), L = layoutBin(d, fmt.W, fmt.H, dir);
@@ -382,6 +408,11 @@ function computePlan(Q) {
         layouts.push({ kind: 'precut', name: `${fmt.name} ${buyPieces}`, W: fmt.W, H: fmt.H, L, pieces: before - demandPieces(d), used: true });
       }
       if (buyPieces === 1) layouts[start].name = fmt.name;
+      d.joined = held;
+      if (!demandPieces({ ...d, joined: [] }) && held.some(j => j.left > 1e-6)) {
+        const kinds = uniq(held.filter(j => j.left > 1e-6).map(j => j.ref.binding ? 'binding' : 'borders'));
+        yardFor = `for the ${kinds.join(' and ')}`;
+      }
     }
     const yardPieces = demandPieces(d);
     const yard = layoutBin(d, wof, Infinity, dir);
@@ -394,17 +425,17 @@ function computePlan(Q) {
     const withExtra = lengthIn * (1 + (doc.cutting.extra || 0) / 100);
     fabrics.push({
       fab: f.fab, sources: [...f.sources], stripGroups, angled, tri60, joined: joinedPlans, templates, sheet: yard, layouts,
-      stashOwned: owned.length, format: fmt, buyPieces, lengthIn, buyIn: lengthIn > 1e-6 ? roundYardIn(withExtra, doc.cutting.roundTo) : 0, pieces, recipes: recs,
+      stashOwned: owned.length, format: fmt, buyPieces, yardFor, lengthIn, buyIn: lengthIn > 1e-6 ? roundYardIn(withExtra, doc.cutting.roundTo) : 0, pieces, recipes: recs,
     });
   }
   fabrics.sort((a, b) => fabricIndex(a.fab) - fabricIndex(b.fab));
-  for (const f of fabrics) f.fq = f.format.yardage && f.lengthIn > 0 && f.lengthIn <= 18 ? stashPlan(f, [{ w: 21, h: 18 }]).ok : false;
+  for (const f of fabrics) f.fq = f.format.yardage && f.lengthIn > 0 && f.lengthIn <= 18 ? stashPlan(f, [{ w: 20, h: 17.5 }]).ok : false;
 
   // backing (see backing.js), batting
   const backing = computeBacking(Q);
   const batting = { w: backing.w, h: backing.h };
   const problems = [];
-  for (const f of fabrics) for (const g of f.stripGroups) if (g.oversize) problems.push(`${fabricLabel(f.fab)}: a piece is longer than your fabric is wide — piece it from two cuts or use wider fabric.`);
+  for (const f of fabrics) for (const g of f.stripGroups) if (g.oversize) problems.push(`${fabricLabel(f.fab)}: a piece is longer than your fabric is wide. Piece it from two cuts or use wider fabric.`);
   return { fabrics, backing, batting, quilt: { w: Q.W, h: Q.H }, totalPieces: sum(fabrics, f => f.pieces), problems };
 }
 
@@ -578,7 +609,7 @@ const hasStashFor = fab => doc.stash.some(x => !x.backing && resolveFab(x.fabric
 function buyText(f) {
   const parts = [];
   if (f.buyPieces) parts.push(plural2(f.buyPieces, f.format.name));
-  if (f.buyIn > 0) parts.push(f.buyPieces ? `${fmtYards(f.buyIn)} for the larger cuts` : fmtYards(f.buyIn));
+  if (f.buyIn > 0) parts.push(f.buyPieces ? `${fmtYards(f.buyIn)} ${f.yardFor || 'for the larger cuts'}` : fmtYards(f.buyIn));
   return parts.length ? parts.join(' + ') : f.stashOwned ? 'nothing (stash)' : fmtYards(0);
 }
 
@@ -625,7 +656,7 @@ function formatOptions(f) {
   if (!f.format.yardage) return [];
   const out = [];
   for (const pc of PRECUTS.filter(x => ['fq', 'f8', 'layer', 'charm'].includes(x.key))) {
-    const n = piecesNeeded(f, pc.w, pc.h);
+    const [w, h] = pc.use || [pc.w, pc.h], n = piecesNeeded(f, w, h);
     if (n && n <= 12) out.push({ key: pc.key, n, label: `${n} ${pc.name.toLowerCase()}${n === 1 ? '' : 's'}` });
   }
   return out.slice(0, 3);
@@ -674,7 +705,7 @@ function fabricSheet(f) { return sheetFromLayout(f, f.sheet, doc.cutting.wof, f.
 function fabricSheets(f) {
   return f.layouts.filter(s => s.kind !== 'yardage' ? s.used : s.L.H > 1e-6 || f.layouts.length === 1).map(s => ({
     ...sheetFromLayout(f, s.L, s.W, s.kind !== 'yardage' ? s.H : s.L.H, s.kind !== 'yardage' ? 0 : f.buyIn),
-    src: s, title: s.kind === 'stash' ? `Your ${s.name.toLowerCase()} — ${fmtSize(s.W, s.H)}` : s.kind === 'precut' ? `${s.name} — ${fmtSize(s.W, s.H)}` : null,
+    src: s, title: s.kind === 'stash' ? `Your ${s.name.toLowerCase()}, ${fmtSize(s.W, s.H)}` : s.kind === 'precut' ? `${s.name}, ${fmtSize(s.W, s.H)}` : null,
   }));
 }
 // A drawable map for a layout (the yardage, or one stash piece), with each cut carrying the
@@ -695,7 +726,7 @@ function cutVerb(recipe, units, speedUnits = 0) {
   // squares for two-at-a-time HSTs, no-waste geese and two-fabric hourglasses are sewn whole first
   if (speedUnits && ['diag', 'diagR', 'diagL', 'cross'].includes(recipe.cut)) {
     const keep = Math.min(units, speedUnits);
-    if (keep === units) return `don't cut them yet — they're sewn first, then cut apart (see the block steps)`;
+    if (keep === units) return `sew them before cutting apart (see the block steps)`;
     const rest = units - keep, per = recipe.cut === 'cross' ? 4 : 2;
     return `keep ${keep} whole to sew first (see the block steps); cut the other ${rest} ${recipe.cut === 'cross' ? 'twice on the diagonal' : 'once on the diagonal'} → ${yieldText(rest * per)}`;
   }
@@ -725,7 +756,7 @@ function fabricInstructions(f) {
   for (const g of f.stripGroups) {
     const parts = g.recipes.map(r => {
       const v = cutVerb(r.recipe, r.units, r.speedUnits);
-      return `${r.units} × ${r.recipe.unitLabel}${v ? ` — ${v}` : ''}`;
+      return `${r.units} × ${r.recipe.unitLabel}${v ? `, ${v}` : ''}`;
     });
     const leftoverLines = list => fromLeftovers(list, xs => `cut ${xs.map(x => `a ${fmtLen(g.w, 'up')} × ${fmtLen(x.w, 'up')} ${x.w < g.w * 1.5 ? 'piece' : 'strip'}`).join(', ')}.`);
     let head;
@@ -752,7 +783,7 @@ function fabricInstructions(f) {
     if (a.recipe.method === 'trap') {
       const r = a.recipe, rh = runHead(a, r.w, '');
       rows.push({ kind: 'angled', head: rh.head,
-        parts: [...rh.lines, `Cut ${a.units} trapezoids — long edge ${fmtLen(r.a, 'up')}, short edge ${fmtLen(r.b, 'up')}, ends at ${uniq(r.angles).join('° and ')}°.${r.alternate ? ' Turn the ruler end-for-end after each cut so the angled ends nest' : ''} (${a.perStrip} per strip)`], a });
+        parts: [...rh.lines, `Cut ${a.units} trapezoids: long edge ${fmtLen(r.a, 'up')}, short edge ${fmtLen(r.b, 'up')}, ends at ${uniq(r.angles).join('° and ')}°.${r.alternate ? ' Turn the ruler end-for-end after each cut so the angled ends nest' : ''} (${a.perStrip} per strip)`], a });
       continue;
     }
     const lean = a.recipe.hand ? (a.recipe.hand === 'R' ? ', leaning right' : ', leaning left') : '';
@@ -778,8 +809,8 @@ function fabricInstructions(f) {
     rows.push({ kind: 'template', head: `Cut ${r.units} × ${r.recipe.makes.toLowerCase()} from template`, parts: [...perSrc,
       ...(inLeft.length ? [(() => {
         const n = inLeft.length, st = uniq(inLeft.map(p => stepOf(p.from))).sort((a, b) => a - b);
-        return `${n === r.units ? (n === 1 ? 'It fits' : 'All of them fit') : `${n} of them ${n === 1 ? 'fits' : 'fit'}`} in the leftover${st.length > 1 ? 's' : ''} from step${st.length > 1 ? 's' : ''} ${st.join(', ')} — see the map.`;
-      })()] : []),r.recipe.applique ? (doc.cutting.appMethod === 'fusible' ? 'Fusible appliqué: trace the reversed template onto fusible web, fuse it to the wrong side of the fabric and cut on the line.' : 'Appliqué piece: cut on the dashed line — it includes a 3/16" turn-under allowance.') : 'Trace the template, cut on the dashed (seam allowance) line.'], r });
+        return `${n === r.units ? (n === 1 ? 'It fits' : 'All of them fit') : `${n} of them ${n === 1 ? 'fits' : 'fit'}`} in the leftover${st.length > 1 ? 's' : ''} from step${st.length > 1 ? 's' : ''} ${st.join(', ')}. See the map.`;
+      })()] : []),r.recipe.applique ? (doc.cutting.appMethod === 'fusible' ? 'Fusible appliqué: trace the reversed template onto fusible web, fuse it to the wrong side of the fabric and cut on the line.' : 'Appliqué piece: cut on the dashed line, which includes a 3/16" turn-under.') : 'Trace the template and cut on the dashed line, which includes the seam allowance.'], r });
   }
   return rows;
 }
