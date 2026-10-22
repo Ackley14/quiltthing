@@ -31,13 +31,13 @@ function quiltLayersPanel() {
       <button class="icon-btn sm eye" data-act="qToggleShow" data-arg="${i}" title="${L.visible ? 'Hide' : 'Show'}" aria-label="${L.visible ? 'Hide' : 'Show'} ${t.label}" aria-pressed="${!!L.visible}">${icon(L.visible ? 'eye' : 'eyeoff', 14)}</button></div>`;
   }).join('');
   return `<div class="panel-tools"><span class="pt-note">${plural(layers.length, 'layer')}</span><span class="grow"></span><button class="btn small" data-act="addLayerMenu" aria-haspopup="menu">${icon('plus', 14)} Add ${icon('down', 12)}</button></div>
-    ${layers.length ? `<div class="part-list" role="list" aria-label="Quilting layers, stitched in this order">${rows}</div>` : panelNote('No quilting planned yet.', ['addLayerMenu'], 'Add quilting')}`;
+    ${layers.length ? `<div class="part-list" role="list" aria-label="Quilting layers, stitched in this order">${rows}</div>` : panelNote('No quilting planned yet.')}`;
 }
 // Properties in Quilting: the layer picked in the Layers panel.
 function quiltLayerProps() {
   const layers = doc.quilting.layers, Q = Qnow(), stats = quiltingStats(Q);
   const i = Math.max(0, layers.findIndex(L => L.id === ui.qOpen)), L = layers[i];
-  if (!L) return panelNote('Add a quilting layer to plan the stitching.', ['addLayerMenu'], 'Add quilting');
+  if (!L) return panelNote(doc.quilting.layers.length ? 'Choose a layer in Layers.' : 'No quilting yet.');
   const t = quiltType(L.type), p = `quilting.layers.${i}`, len = stats.per[i]?.length || 0;
   return `<div class="props-head"><span class="layer-sw" style="background:${L.color}"></span><b>${t.label}</b><span class="grow"></span>
       <button class="icon-btn sm" data-act="qToggleShow" data-arg="${i}" title="${L.visible ? 'Hide' : 'Show'}" aria-label="${L.visible ? 'Hide' : 'Show'} ${t.label}">${icon(L.visible ? 'eye' : 'eyeoff', 14)}</button></div>
