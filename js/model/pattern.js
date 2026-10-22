@@ -291,16 +291,13 @@ function blockStepsHtml(block, BS, sa, copies = 1) {
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(u);
   }
+  let sketched = false;
   for (const list of groups.values()) {
     const u = list[0].unit;
     let text = unitMethodText(u.type, list[0], list.length, sa, copies);
-    // sketch of the method, in the unit's own fabrics (lighter fabric first)
-    const fabs = (u.fabs || []).slice().sort((p, q) => luminance(fabricHex(q)) - luminance(fabricHex(p)));
-    const howto = u.type === 'goose' ? unitHowToSvg('goose', u.goose, u.sky)
-      : u.type === 'snowball' ? unitHowToSvg('snowball', resolveFab(u.main.fab), resolveFab(u.corners[0].fab))
-      : u.type === 'curved' ? unitHowToSvg('curved', fabs[0], fabs[1] || fabs[0])
-      : ['hst', 'qst'].includes(u.type) ? unitHowToSvg(u.type, fabs[0], fabs[1] || fabs[0]) : '';
-    if (howto) text += `<div class="howto-wrap">${howto}</div>`;
+    // sketch of the method at the unit's real size, in its own fabrics; the line key only under the block's first sketch
+    const howto = ['hst', 'qst', 'goose', 'snowball', 'curved', 'hrt'].includes(u.type) ? unitHowToSvg(u.type, { sample: list[0], sa, legend: !sketched }) : '';
+    if (howto) { text += `<div class="howto-wrap">${howto}</div>`; sketched = true; }
     steps.push({ text, diag: blockDiagramSvg(block, BS, STEP_DIAG_IN, { level: an.height + 1, highlight: new Set(list), dim: true }) });
   }
   // lay everything out first; the bias note is said once
