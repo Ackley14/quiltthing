@@ -22,20 +22,16 @@ function makeFabric(color, name, print) {
   };
 }
 
+// A new quilt starts with the built-in Mid-century palette (palettes-data.js), in its value order:
+// light background, dark, medium, light-medium, medium-dark, medium, dark, light, medium, medium-dark.
 function defaultFabrics() {
-  return [
-    makeFabric('#f3ead8', 'Cream'),
-    makeFabric('#1f3a5f', 'Navy'),
-    makeFabric('#e0a930', 'Mustard'),
-    makeFabric('#b5482f', 'Rust'),
-    makeFabric('#8fa98b', 'Sage', { kind: 'speckle', color2: '#6f8a6b', scale: 1 }),
-    makeFabric('#e9b7a9', 'Blush', { kind: 'dots', color2: '#ffffff', scale: 0.75 }),
-  ];
+  return [['#f4efe2', 'Ivory'], ['#3b2a1f', 'Walnut'], ['#2e8b8b', 'Teal'], ['#e3b448', 'Mustard'], ['#59602d', 'Olive'],
+    ['#d0662a', 'Burnt orange'], ['#1f2a33', 'Ink'], ['#e6d8b8', 'Sand'], ['#8a9a3a', 'Avocado'], ['#8a3a2a', 'Brick']].map(([c, n]) => makeFabric(c, n));
 }
 
 function newDoc() {
   const fabrics = defaultFabrics();
-  const [cream, navy, mustard, rust, sage] = fabrics.map(f => f.id);
+  const [light, dark, medium, , mediumDark] = fabrics.map(f => f.id);
   return {
     app: 'quiltthing',
     version: 3,
@@ -46,14 +42,14 @@ function newDoc() {
     layout: {
       mode: 'grid',
       blockSize: 12,
-      background: cream,
+      background: light,
       grid: { rows: 4, cols: 4, cells: Array(16).fill(null),
-        sashing: { width: 0, fabric: cream, cornerstones: false, cornerFabric: mustard, outer: false } },
-      onpoint: { rows: 3, cols: 3, cells: {}, fill: cream },
+        sashing: { width: 0, fabric: light, cornerstones: false, cornerFabric: medium, outer: false } },
+      onpoint: { rows: 3, cols: 3, cells: {}, fill: light },
       tess: { shape: 'hex', size: 3, ratio: 0.5, lean: 0.5, orient: 0, width: 48, height: 60,
-        edge: 'trim', fill: cream, base: sage, colors: {}, blocks: {}, seed: 1, snap: true, faces: null, cutEdges: false },
+        edge: 'trim', fill: light, base: mediumDark, colors: {}, blocks: {}, seed: 1, snap: true, faces: null, cutEdges: false },
       borders: [],
-      binding: { width: 2.25, fabric: navy },
+      binding: { width: 2.25, fabric: dark },
       backing: { fabric: null },
       panels: [],             // inset panels: framed squares set into the centre (any setting)
     },
