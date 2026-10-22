@@ -50,7 +50,7 @@ Views.layout = {
   main() {
     const Q = Qnow(), tool = layoutTool();
     return `<div class="stage"><div class="canvas-wrap">${layoutCanvasSvg(Q)}</div>
-      <div class="status-bar">${(lw => lw.length ? `<span class="sb-warn">${esc(lw.join(' '))}</span>` : '')([...Q.warnings, ...seamWarnings()])}<span class="sb-hint">${layoutHint(tool)}</span></div></div>`;
+      <div class="status-bar">${(lw => lw.length ? `<span class="sb-warn">${esc(lw.join(' '))}</span>` : '')([...Q.warnings, ...seamWarnings(Q)])}<span class="sb-hint">${layoutHint(tool)}</span></div></div>`;
   },
   afterMain(el) {
     const svg = el.querySelector('svg.quilt-svg');
@@ -234,7 +234,9 @@ function layDown(e) {
 function layMove(e) {
   if (lay.drag?.panel) {
     const d = lay.drag, [x, y] = svgPoint(e.currentTarget, e);
-    const nx = snapPanel(d.panel, Math.round((d.dx + x - d.start[0]) * 2) / 2, 'x'), ny = snapPanel(d.panel, Math.round((d.dy + y - d.start[1]) * 2) / 2, 'y');
+    // the panel stays on the quilt centre
+    const I = Qnow().inner, o = panelGeom(d.panel, I.w, I.h).outer, mx = Math.max(0, (I.w - o) / 2), my = Math.max(0, (I.h - o) / 2);
+    const nx = clamp(snapPanel(d.panel, Math.round((d.dx + x - d.start[0]) * 2) / 2, 'x'), -mx, mx), ny = clamp(snapPanel(d.panel, Math.round((d.dy + y - d.start[1]) * 2) / 2, 'y'), -my, my);
     if (nx !== d.panel.dx || ny !== d.panel.dy) { d.panel.dx = nx; d.panel.dy = ny; d.moved = true; refreshLayoutCanvas(); }
     return;
   }
@@ -428,7 +430,7 @@ function snapPanel(p, off, axis) {
   if (L.mode !== 'grid') return off;
   const g = L.grid, BS = L.blockSize, sw = g.sashing.width || 0, o = g.sashing.outer ? sw : 0, pitch = BS + sw;
   const n = axis === 'x' ? g.cols : g.rows, span = axis === 'x' ? Qnow().inner.w : Qnow().inner.h;
-  const outer = panelGeom(p, 1, 1).outer;
+  const outer = panelGeom(p, Qnow().inner.w, Qnow().inner.h).outer;
   let best = off, bestD = 0.75;
   for (let c = 0; c <= n; c++) {
     for (const cand of [o + c * pitch + outer / 2 - span / 2, o + c * pitch - sw - outer / 2 - span / 2]) {
@@ -690,10 +692,12 @@ function layoutInspector() {
     const contentOpts = cur => ['<option value="">Empty</option>', ...doc.blockOrder.filter(id => !isHexBlock(doc.blocks[id])).map(id => `<option value="${id}" ${cur.b === id ? 'selected' : ''}>${esc(doc.blocks[id].name)}</option>`), ...doc.fabrics.map(f => `<option value="fab:${f.id}" ${cur.fab === f.id ? 'selected' : ''}>Plain ${esc(f.name)}</option>`)].join('');
     h += section('Inset panel', `${panels.length ? '' : '<p class="hint">A framed square set into the quilt, for a medallion, label or logo.</p>'}
       ${panels.map((p, i) => {
-        const pi = L.panels.indexOf(p);
+        const pi = L.panels.indexOf(p), I = Q.inner, o = panelGeom(p, I.w, I.h).outer, fw = sum(p.frames || [], f => f.width > 0 ? f.width : 0);
+        // limits that keep it on the quilt centre
+        const maxS = Math.max(2, Math.min(I.w, I.h) - 2 * fw), mx = Math.max(0, (I.w - o) / 2), my = Math.max(0, (I.h - o) / 2);
         return `<div class="list-item"><div class="li-h"><b>Panel ${i + 1}</b><button class="icon-btn sm" data-act="panelCentre" data-arg="${p.id}" title="Centre it" aria-label="Centre panel">${icon('centre', 14)}</button><button class="icon-btn sm" data-act="removePanel" data-arg="${p.id}" title="Remove" aria-label="Remove panel">${icon('x', 14)}</button></div>
         <label class="f">Contents<select data-change="panelContent" data-arg="${p.id}">${contentOpts(p)}</select></label>
-        <div class="f-row three">${lenField('Size', `layout.panels.${pi}.size`, { min: 2, max: 120 })}${lenField('Across', `layout.panels.${pi}.dx`, { min: -200, max: 200 })}${lenField('Down', `layout.panels.${pi}.dy`, { min: -200, max: 200 })}</div>
+        <div class="f-row three">${lenField('Size', `layout.panels.${pi}.size`, { min: 2, max: maxS })}${lenField('Across', `layout.panels.${pi}.dx`, { min: -mx, max: mx })}${lenField('Down', `layout.panels.${pi}.dy`, { min: -my, max: my })}</div>
         <label class="f">Frames, inside first</label>
         ${(p.frames || []).map((fr, k) => `<div style="display:flex;gap:6px;align-items:center;margin-top:4px"><input type="text" inputmode="decimal" style="width:62px" data-bind="layout.panels.${pi}.frames.${k}.width" data-type="len" data-min="0" data-max="24" value="${esc(inputLen(fr.width))}" aria-label="Frame width">
           ${fabricPicker(fr.fabric, 'panelFrameFab').replace(/data-arg="([^"]+)"/g, `data-arg="${p.id}|${k}|$1"`)}<button class="icon-btn sm" data-act="panelFrameRemove" data-arg="${p.id}|${k}" aria-label="Remove frame" title="Remove frame">${icon('x', 14)}</button></div>`).join('')}

@@ -117,7 +117,7 @@ function templateGeom(recipe) {
   const sa = recipe.applique ? (fusible ? 0 : 0.1875) : doc.cutting.seam;
   let pts = recipe.outline, holes = recipe.holes || [];
   if (fusible) { const bb = bounds(pts), ax = bb.x + bb.w / 2; pts = mirrorPolyX(pts, ax); holes = holes.map(h => mirrorPolyX(h, ax)); }
-  return { sa, fusible, pts, holes, cut: seamOutline(pts, sa), cutHoles: holes.map(h => inflate(h, -sa)) };
+  return { sa, fusible, pts, holes, cut: seamOutline(pts, sa), cutHoles: holes.flatMap(h => holeCutLines(h, sa)) };
 }
 function recipeStitchMain(rect, sa) {
   return recipeFor({ shape: 'rect', w: rect.w, h: rect.h }, sa);
@@ -136,18 +136,30 @@ const partialCell = c => !!(c.b && c.clip && exactEdges());
 function tileCutShape(t) {
   return t.role === 'trim' && t.full && !exactEdges() ? t.full : t.pts;
 }
+// A tile's finished shape as it's cut, with any hole a panel inside it leaves: { cls, holes }.
+function tileCutCls(t) {
+  const pts = tileCutShape(t), holes = pts === t.pts ? t.holes || [] : [], cls = classifyPiece(pts);
+  if (holes.length) cls.shape = 'holed';
+  return { cls, holes };
+}
 // The pieces of a partly covered block that show, in quilt coordinates.
 function partialBlockPieces(c) {
   const map = cellPointMapper(c), out = [];
   for (const p of blockPieces(doc.blocks[c.b], c.size, c.size)) {
-    const piece = [closeRing(p.pts.map(map)), ...p.holes.map(h => closeRing(h.map(map)))];
+    // on a fine grid: turned blocks carry rounding noise (-8.9e-16 for 0) that can make the shape
+    // library lose a piece altogether
+    const piece = snapGeom([closeRing(p.pts.map(map)), ...p.holes.map(h => closeRing(h.map(map)))]);
+    let got = [];
     for (const part of c.clip) {
-      let mp = pcSafe('intersection', piece, toPC(part));
-      if (mp && c.clipHoles?.length) mp = pcSafe('difference', mp, ...c.clipHoles.map(toPC));
-      for (const x of fromPC(mp || [])) {
-        const pts = cleanPoly(x.outer);
-        if (pts.length >= 3 && polyArea(pts) > 0.02) out.push({ fab: p.fab, app: p.app, curved: p.curved, pts, holes: x.holes });
-      }
+      let mp = pcSafe('intersection', piece, snapGeom(toPC(part)));
+      if (mp && c.clipHoles?.length) mp = pcSafe('difference', mp, ...c.clipHoles.map(h => snapGeom(toPC(h))));
+      // the shape library failed: cut the piece whole, to trim after assembly
+      if (!mp) { got = [{ outer: p.pts.map(map), holes: p.holes.map(h => h.map(map)) }]; break; }
+      got.push(...fromPC(mp));
+    }
+    for (const x of got) {
+      const pts = dropSpikes(x.outer);
+      if (pts.length >= 3 && polyArea(pts) > 0.02) out.push({ fab: p.fab, app: p.app, curved: p.curved, pts, holes: x.holes });
     }
   }
   return out;
@@ -159,7 +171,7 @@ function speedPieces(an) {
   const out = new Set();
   for (const u of an.units) {
     const t = u.unit.type;
-    if (t === 'hst' || t === 'goose' || (t === 'qst' && (u.unit.fabs || []).length === 2)) for (const p of u.pieces) out.add(p);
+    if (t === 'hst' || t === 'goose' || (t === 'qst' && u.unit.hourglass)) for (const p of u.pieces) out.add(p);
   }
   return out;
 }
@@ -177,6 +189,9 @@ function collectCutItems(Q) {
   // no-waste geese are made four at a time from 1 big and 4 small squares: tally them per
   // (goose, sky, size) so whole sets of squares are cut (the extras make spare geese)
   const geese = new Map();
+  // two-at-a-time HSTs and two-fabric hourglasses are sewn from pairs of squares: tally them as the
+  // block steps do (per block, size and fabrics) so an odd count gets its spare pair
+  const pairs = new Map();
   // blocks: group identical placements
   const groups = new Map();
   for (const c of Q.cells) {
@@ -207,6 +222,11 @@ function collectCutItems(Q) {
           g.n += n; geese.set(key, g);
         }
       }
+      if (u.unit.type === 'hst' || (u.unit.type === 'qst' && u.unit.hourglass)) {
+        const key = `${bid}|${size}|${u.unit.type}|${u.unit.fabs.slice().sort().join(',')}|${[round(u.rect.w, 3), round(u.rect.h, 3)].sort((a, b) => a - b).join('x')}`;
+        const e = pairs.get(key) || { n: 0, u, name, uses: u.pieces.map(use) };
+        e.n += n; pairs.set(key, e);
+      }
       if (u.unit.type === 'snowball') {
         handled.add(u.unit.main);
         add(u.unit.main.fab, recipeStitchMain(u.rect, sa), n, name, use(u.unit.main));
@@ -228,18 +248,20 @@ function collectCutItems(Q) {
       add(p.fab, recipeFor(cls, sa, ro(p.fab, { directional: isDir(p.fab), applique: p.app, holes })), n, name, use(p), speed.has(p) ? n : 0);
     }
   }
+  const r = p => recipeFor(p.cls, sa, ro(p.fab, { directional: isDir(p.fab), applique: p.app, holes: p.holes }));
   for (const g of geese.values()) {
     const extra = 4 * Math.ceil(g.n / 4) - g.n;
     if (!extra) continue;
-    const r = p => recipeFor(p.cls, sa, ro(p.fab, { directional: isDir(p.fab), applique: p.app, holes: p.holes }));
     add(g.gp.fab, r(g.gp), extra, g.name, g.use, extra);
     add(g.sp.fab, r(g.sp), 2 * extra, g.name, g.useS, 2 * extra);
   }
+  // an odd count: the last pair of squares makes one spare unit
+  for (const e of pairs.values()) if (e.n % 2) e.u.pieces.forEach((p, i) => add(p.fab, r(p), 1, e.name, e.uses[i], 1));
   // tiles & setting triangles
   for (const t of Q.tiles) {
-    const cls = classifyPiece(tileCutShape(t));
+    const { cls, holes } = tileCutCls(t);
     const src = t.role === 'side-setting' || t.role === 'corner-setting' ? 'Setting triangles' : t.role === 'tile' ? 'Tiles' : 'Edge pieces';
-    add(t.fab, recipeFor(cls, sa, ro(t.fab, { directional: isDir(t.fab) })), 1, src, { kind: src });
+    add(t.fab, recipeFor(cls, sa, ro(t.fab, { directional: isDir(t.fab), holes })), 1, src, { kind: src });
   }
   // sashing, cornerstones, borders — long pieces become joined strips
   const joined = new Map();
@@ -585,9 +607,11 @@ function layoutBin(d, W, Hmax, directional) {
   // angled and 60° strips; the end of the last strip is left over
   for (const a of d.runs) {
     const r = a.recipe;
-    const per = r.method === 'tri60' ? Math.max(1, Math.floor((W - r.first + r.step) / r.step)) : r.method === 'trap' ? trapPerStrip(r, W) : Math.max(1, Math.floor((W - (r.trim || 0)) / r.step));
+    // none fit along a stash or precut piece: they go on to yardage (oversize ones stay on the main plan, flagged)
+    let per = r.method === 'tri60' ? Math.floor((W - r.first + r.step) / r.step) : r.method === 'trap' ? (trapSpan(r, 1) <= W + 1e-6 ? trapPerStrip(r, W) : 0) : Math.floor((W - (r.trim || 0)) / r.step);
+    if (Hmax === Infinity) per = Math.max(1, per);
     let count = 0;
-    while (a.left > 0 && room(r.w)) {
+    while (per > 0 && a.left > 0 && room(r.w)) {
       const n = Math.min(a.left, per);
       a.left -= n; count++;
       bands.push({ y, h: r.w, kind: r.method, ref: a.ref, recipe: r, n });
@@ -604,8 +628,8 @@ function layoutBin(d, W, Hmax, directional) {
     let count = 0;
     while (j.left > 1e-6 && room(j.w)) {
       bands.push({ y, h: j.w, kind: 'joined', ref: j.ref, label: j.ref.src });
-      j.left -= count ? W - loss : W;
-      count++;
+      j.left -= j.cut ? W - loss : W;   // every strip after the first is joined on, whichever piece it's from
+      count++; j.cut = (j.cut || 0) + 1;
       if (j.left <= 1e-6) {   // cut the last strip to the next ⅛″; the rest is free for templates
         const used = Math.min(W, ceilEighth(W + j.left));
         bands[bands.length - 1].used = used;

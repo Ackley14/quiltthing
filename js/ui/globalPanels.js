@@ -77,6 +77,7 @@ function computeIssues() {
     for (const w of Q.warnings) list.push({ text: w, where: 'Layout', act: 'view', arg: 'layout' });
     doc.blockOrder.map(id => doc.blocks[id]).filter(b => b?.kind === 'drawn' && blockUseCount(b.id) && pieceProblems(b, blockFrameSize(b)).some(p => p.kind !== 'tiny'))
       .forEach(b => list.push({ text: `${b.name} needs set-in seams as drawn.`, where: 'Blocks', act: 'showSeamIssue', arg: b.id }));
+    for (const { b, n } of crumbBlocks(Q)) list.push({ text: crumbText(b, n), where: 'Blocks', act: b.kind === 'drawn' ? 'showSeamIssue' : 'blockOpen', arg: b.id });
     // grid squares that aren't whole eighths of an inch make cut sizes that are rounded, so the block can finish a little off
     for (const b of doc.blockOrder.map(id => doc.blocks[id]).filter(b => b?.kind === 'drawn' && !isHexBlock(b) && b.lattice !== 'tri' && blockUseCount(b.id))) {
       const S = blockFrameSize(b), u = S / b.n;

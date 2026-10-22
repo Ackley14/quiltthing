@@ -134,11 +134,15 @@ function mergeSmallFills(fills, tileArea) {
   return list;
 }
 // Where an inset panel sits in a tessellation: centred, offset by (dx, dy), its frames around it.
+// It stays on the quilt centre (cw × ch): one too big for it is made smaller, its frames keeping
+// their widths unless they'd leave less than 1" in the middle; one moved past an edge comes back.
 function panelGeom(p, cw, ch) {
-  const fw = sum(p.frames || [], f => f.width > 0 ? f.width : 0);
-  const outer = p.size + 2 * fw;
-  const cx = cw / 2 + (p.dx || 0), cy = ch / 2 + (p.dy || 0);
-  return { p, fw, outer, cx, cy, x0: cx - outer / 2, y0: cy - outer / 2 };
+  const M = Math.min(cw, ch);
+  let fw = sum(p.frames || [], f => f.width > 0 ? f.width : 0), size = Math.min(p.size, M - 2 * fw), k = 1;
+  if (size < Math.min(p.size, 1)) { k = M / (p.size + 2 * fw); size = p.size * k; fw *= k; }
+  const outer = size + 2 * fw;
+  const cx = clamp(cw / 2 + (p.dx || 0), outer / 2, cw - outer / 2), cy = clamp(ch / 2 + (p.dy || 0), outer / 2, ch - outer / 2);
+  return { p, fw, outer, size, frames: (p.frames || []).map(f => ({ ...f, width: f.width * k })), cx, cy, x0: cx - outer / 2, y0: cy - outer / 2 };
 }
 function clipToRect(pts, W, H) {
   const bb = bounds(pts);
@@ -229,25 +233,26 @@ function buildQuilt() {
       if (bb.maxX <= 1e-9 || bb.maxY <= 1e-9 || bb.minX >= cw - 1e-9 || bb.minY >= ch - 1e-9) continue;
       const clipped = clipToRect(tile.pts, cw, ch);
       if (!clipped) continue;
-      let parts = [clipped];
+      let parts = [{ pts: clipped, holes: [] }];
       const hits = holes.filter(hp => { const hb = bounds(hp); return bb.maxX > hb.minX + 1e-9 && bb.minX < hb.maxX - 1e-9 && bb.maxY > hb.minY + 1e-9 && bb.minY < hb.maxY - 1e-9; });
       if (hits.length) {
         const mp = pcSafe('difference', toPC(clipped), ...hits.map(toPC));
-        parts = mp ? fromPC(mp).map(x => cleanPoly(x.outer)).filter(pp => pp.length >= 3 && polyArea(pp) > 1e-3) : [clipped];
+        parts = mp ? fromPC(mp).map(x => ({ pts: cleanPoly(x.outer), holes: x.holes })).filter(x => x.pts.length >= 3 && polyArea(x.pts) > 1e-3) : parts;
         if (!parts.length) continue;
       }
       const fullArea = polyArea(tile.pts);
       const blk = hexBlockAt(tile.key), blkParts = [];
-      for (let pts of parts) {
-        const whole = Math.abs(polyArea(pts) - fullArea) < 1e-4;
+      for (let { pts, holes: inner } of parts) {
+        // a panel inside the tile leaves a hole in it
+        const whole = !inner.length && Math.abs(polyArea(pts) - fullArea) < 1e-4;
         // a panel edge that only touches a tile leaves it whole: keep its exact outline
         if (whole) pts = clipped;
         const byPanel = hits.length > 0;
         const role = whole ? 'tile' : (t.edge === 'fill' && !byPanel ? 'fill' : 'trim');
-        if (blk && role !== 'fill') { blkParts.push(pts); continue; }
+        if (blk && role !== 'fill') { blkParts.push({ pts, holes: inner }); continue; }
         const tileRec = { key: `t${tile.key}`, tkey: tile.key, role,
           fab: role === 'fill' ? t.fill : (t.colors[tile.key] || faceFab(tile.orient) || t.base), whole,
-          pts: translatePoly(pts, off, off), full: translatePoly(tile.pts, off, off), row: tile.row, col: tile.col, orient: tile.orient };
+          pts: translatePoly(pts, off, off), holes: inner.map(h => translatePoly(h, off, off)), full: translatePoly(tile.pts, off, off), row: tile.row, col: tile.col, orient: tile.orient };
         if (role === 'fill') fills.push(tileRec); else Q.tiles.push(tileRec);
       }
       if (blkParts.length) {
@@ -255,8 +260,8 @@ function buildQuilt() {
         const [cx, cy] = centroid(tile.pts);
         const c = makeCell(`t${tile.key}`, blk, off + cx, off + cy, t.orient === 1 ? 0 : 30, 2 * t.size, tile.row, tile.col);
         Object.assign(c, { rstep: 60, hex: true, pts: translatePoly(tile.pts, off, off) });
-        const whole = blkParts.length === 1 && Math.abs(polyArea(blkParts[0]) - fullArea) < 1e-4;
-        if (!whole) c.clip = blkParts.map(pp => translatePoly(pp, off, off));
+        const whole = blkParts.length === 1 && !blkParts[0].holes.length && Math.abs(polyArea(blkParts[0].pts) - fullArea) < 1e-4;
+        if (!whole) Object.assign(c, { clip: blkParts.map(x => translatePoly(x.pts, off, off)), clipHoles: blkParts.flatMap(x => x.holes.map(h => translatePoly(h, off, off))) });
         Q.cells.push(c);
       }
     }
@@ -271,8 +276,8 @@ function buildQuilt() {
     const p = pg.p;
     Q.panels.push({ id: p.id, x: off + pg.x0, y: off + pg.y0, w: pg.outer, h: pg.outer });   // framed panel, for quilting areas
     // frames from the inside out: sides first, then top & bottom (the sewing order)
-    let x = off + pg.x0 + pg.fw, y = off + pg.y0 + pg.fw, s = p.size;
-    (p.frames || []).forEach((fr, k) => {
+    let x = off + pg.x0 + pg.fw, y = off + pg.y0 + pg.fw, s = pg.size;
+    pg.frames.forEach((fr, k) => {
       const w = fr.width; if (!(w > 0)) return;
       Q.patches.push({ role: 'frame', panel: p.id, ring: k, side: 'left', fab: fr.fabric, pts: rectPts(x - w, y, w, s) });
       Q.patches.push({ role: 'frame', panel: p.id, ring: k, side: 'right', fab: fr.fabric, pts: rectPts(x + s, y, w, s) });
@@ -281,7 +286,7 @@ function buildQuilt() {
       x -= w; y -= w; s += 2 * w;
     });
     Q.cells.push(makeCell(`p${p.id}`, p.b ? { b: p.b, r: p.r || 0, f: !!p.f } : p.fab ? { fab: p.fab } : null,
-      off + pg.cx, off + pg.cy, 0, p.size, 'panel', p.id));
+      off + pg.cx, off + pg.cy, 0, pg.size, 'panel', p.id));
   }
 
   // borders (sides first, then top & bottom — the usual sewing order)
@@ -322,7 +327,7 @@ function trimAroundPanels(Q, holes) {
     if (!parts.length) continue;
     if (c.fab && !c.b) {
       // a plain square: its uncovered parts are cut as pieces (whole square, trimmed)
-      for (const x of parts) Q.tiles.push({ key: c.key, role: 'trim', fab: c.fab, whole: false, pts: x.outer, full: c.pts, row: c.row, col: c.col });
+      for (const x of parts) Q.tiles.push({ key: c.key, role: 'trim', fab: c.fab, whole: false, pts: x.outer, holes: x.holes, full: c.pts, row: c.row, col: c.col });
       continue;
     }
     cells.push({ ...c, clip: parts.map(x => x.outer), clipHoles: parts.flatMap(x => x.holes) });
@@ -332,7 +337,7 @@ function trimAroundPanels(Q, holes) {
     if (t.role === 'trim' && !t.diag) return [t];
     const hits = hitsOf(t.pts);
     if (!hits.length) return [t];
-    return minus([t.pts], hits).map(x => ({ ...t, role: 'trim', whole: false, pts: x.outer, full: t.full || t.pts }));
+    return minus([t.pts], hits).map(x => ({ ...t, role: 'trim', whole: false, pts: x.outer, holes: x.holes, full: t.full || t.pts }));
   });
   const patches = [];
   for (const p of Q.patches) {
@@ -340,7 +345,7 @@ function trimAroundPanels(Q, holes) {
     if (!hits.length) { patches.push(p); continue; }
     for (const x of minus([p.pts], hits)) {
       if (isRect(x.outer) && !x.holes.length) patches.push({ ...p, pts: x.outer });
-      else Q.tiles.push({ key: null, role: 'trim', fab: p.fab, whole: false, pts: x.outer, full: null });   // an odd leftover: cut to shape
+      else Q.tiles.push({ key: null, role: 'trim', fab: p.fab, whole: false, pts: x.outer, holes: x.holes, full: null });   // an odd leftover: cut to shape
     }
   }
   Q.patches = patches;

@@ -253,7 +253,7 @@ function editorGuides(b) {
     for (const p of blockPieces(b, S, S)) s += `<path d="${polyToPath(p.pts)}" fill="none" stroke="rgba(20,30,40,.75)" stroke-width="${hair * 1.4}" stroke-dasharray="${hair * 5} ${hair * 3}" pointer-events="none"/>`;
   }
   // problem pieces are shown only with the Seam tool, so a block in progress isn't covered in red
-  if (ui.tool === 'seam') for (const pr of pieceProblems(b, S)) if (pr.kind !== 'tiny') s += `<path class="problem" d="${polyToPath(pr.piece.pts)}${pr.piece.holes.map(h => polyToPath(h)).join('')}" fill-rule="evenodd" stroke-width="${hair * 1.5}"/>`;
+  if (ui.tool === 'seam') for (const pr of pieceProblems(b, S)) if (pr.kind !== 'tiny' || pr.crumb) s += `<path class="problem" d="${polyToPath(pr.piece.pts)}${pr.piece.holes.map(h => polyToPath(h)).join('')}" fill-rule="evenodd" stroke-width="${hair * 1.5}"/>`;
   // selection: outline every selected shape; corner/edge handles when exactly one is selected
   const sel = selList();
   if (ui.tool === 'select') for (const i of sel) s += `<path class="sel-halo" d="${regionPathD(b.regions[i], k)}" stroke-width="${hair * 6}"/><path class="sel-outline" d="${regionPathD(b.regions[i], k)}" stroke-width="${hair * 3}"/>`;
@@ -1471,7 +1471,7 @@ function constructionSection(b, S) {
     : pieces.length > 1 ? (an.height ? `Sews in ${plural(an.height, 'step')}${an.units.some(u => u.unit.type === 'curved') ? ', with curved seams' : ''}.` : 'Sews as one unit.') : 'One piece.';
   let body = `<p class="${an.setIn ? 'hint warn' : 'hint'}">${plural(pieces.length, 'piece')} to cut. ${how}</p>
     <dl class="kv">${Object.entries(counts).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}${Object.entries(units).map(([k, v]) => `<dt>${esc(UNIT_NAMES[k] || k)}</dt><dd>${v}</dd>`).join('')}</dl>`;
-  for (const p of probs) body += `<p class="hint${p.kind === 'tiny' ? '' : ' warn'}">${esc(p.msg)}</p>`;
+  for (const p of probs) body += `<p class="hint${p.kind === 'tiny' && !p.crumb ? '' : ' warn'}">${esc(p.msg)}</p>`;
   return section('Construction', body, { key: 'construct', closed: true });
 }
 

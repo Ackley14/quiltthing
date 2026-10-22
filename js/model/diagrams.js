@@ -67,21 +67,22 @@ function fabricSheetSvg(sheet, fab, opts = {}) {
       if (h > fs * 1.2) s += `<text x="${round(len / 2, 3)}" y="${round(y + h / 2, 3)}" font-size="${fs * .85}" text-anchor="middle" dominant-baseline="central" fill="${ink}" pointer-events="none">${esc(b.label.toLowerCase())} strip</text>`;
     }
   }
-  // shorter strips cut from leftovers, with their step number at the start
+  // shorter strips cut from leftovers, with their step number at the start; step numbers in
+  // leftovers are drawn last, so later cuts don't cover them
+  let marks = '';
   for (const ps of sheet.partials || []) {
     s += `<rect x="${round(ps.x, 3)}" y="${round(ps.y, 3)}" width="${round(ps.w, 3)}" height="${round(ps.h, 3)}" fill="none" stroke="#6b7785" stroke-width="${hair}" stroke-dasharray="${hair * 4} ${hair * 3}"/>`;
     for (const c of ps.cuts) {
       s += poly(rectPts(c.x, ps.y, c.w, ps.h), ps.step);
       if (Math.min(c.w, ps.h) > fs * 2.4) s += `<text x="${round(c.x + c.w / 2, 3)}" y="${round(ps.y + ps.h / 2, 3)}" font-size="${fs * .85}" text-anchor="middle" dominant-baseline="central" fill="${ink}" pointer-events="none">${esc(shortLen(c.w, 'up'))}${Math.abs(c.w - ps.h) > 1e-3 ? `×${esc(shortLen(ps.h, 'up'))}` : ''}</text>`;
     }
-    s += badge(ps.x + fs * 0.9, ps.y + Math.min(ps.h / 2, fs * 0.9), ps.step, fs * 0.7);
+    marks += badge(ps.x + fs * 0.9, ps.y + Math.min(ps.h / 2, fs * 0.9), ps.step, fs * 0.7);
   }
   if (sheet.tpl) {
     const t = sheet.tpl;
     if (sheet.H > t.y + 1e-6) s += badge(-ML / 2, t.y + fs, t.placed.find(p => p.y >= t.y - 1e-6)?.step || t.placed[0]?.step || '', Math.min(ML * .36, fs * .95));
     // pieces placed in a leftover get their step number beside the first one, drawn on top
     const marked = new Map();
-    let marks = '';
     for (const p of t.placed) {
       if (p.from) {
         if (!marked.has(p.from)) marked.set(p.from, new Set());
@@ -96,9 +97,8 @@ function fabricSheetSvg(sheet, fab, opts = {}) {
       }
       s += poly(t.abs ? o : translatePoly(o, 0, t.y), p.step);
     }
-    s += marks;
   }
-  return s + '</svg>';
+  return s + marks + '</svg>';
 }
 
 /* ---------- what a cut looks like (small icon) ---------- */
@@ -182,7 +182,7 @@ function unitHowToSvg(type, a, b, widthIn) {
   let panels, key = type;
   switch (type) {
     case 'hst': panels = howtoHst(g); break;
-    case 'qst': if (g.fabs.length === 2) panels = howtoQst2(g); else { panels = howtoQst3(g); key = 'qst3'; } break;
+    case 'qst': if (g.fabs.length === 2 && info.sample.unit?.hourglass !== false) panels = howtoQst2(g); else { panels = howtoQst3(g); key = 'qst3'; } break;
     case 'goose': if (info.method === 'flip') { panels = howtoGooseFlip(g); key = 'gooseFlip'; } else panels = howtoGoose(g); break;
     case 'snowball': panels = howtoSnowball(g); break;
     case 'hrt': panels = howtoHrt(g); break;

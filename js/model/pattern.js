@@ -46,6 +46,9 @@ function bindingText(plan) {
   const bnd = doc.layout.binding, f = plan.fabrics.find(x => x.fab === resolveFab(bnd.fabric)), j = f?.joined.find(x => x.binding);
   if (!j) return `${fmtLen(bnd.width)} strips, double fold`;
   const w = fabricFormat(bnd.fabric).yardage ? fabricFormat(bnd.fabric).width : doc.cutting.wof;
+  // j.count is the yardage strips; stash pieces can give some too
+  const n = sum(f.layouts, l => l.L.joinedCount.get(j) || 0), own = n - j.count;
+  if (own) return `${plural(n, 'strip')} ${fmtLen(bnd.width)} wide from fabric ${fabricLetter(bnd.fabric)} (${j.count ? `${own} from your stash, ${j.count} from yardage` : 'all from your stash'}), joined into ${fmtLen(j.total, 'up')} of double-fold binding.`;
   return `${plural(j.count, 'strip')} ${fmtLen(bnd.width)} × ${fmtLen(w)} from fabric ${fabricLetter(bnd.fabric)} (about ${fmtYards(roundYardIn(j.count * bnd.width, 'eighth'))}, included in its amount above), joined into ${fmtLen(j.total, 'up')} of double-fold binding.`;
 }
 
@@ -81,7 +84,8 @@ function pieceCodes(plan) {
 const codeTag = c => `<span class="pcode">${c}</span>`;
 // The recipe a tessellation tile is cut with (must match collectCutItems).
 function tileRecipeKey(t, sa) {
-  return recipeFor(classifyPiece(tileCutShape(t)), sa, { directional: !!fabricById(t.fab).directional }).key;
+  const { cls, holes } = tileCutCls(t);
+  return recipeFor(cls, sa, { directional: !!fabricById(t.fab).directional, holes }).key;
 }
 // Piece object → its code(s) for one block (mirrored copies cut differently get a second code).
 function blockPieceCodes(codes, blockId, size) {
@@ -194,8 +198,9 @@ function unitMethodText(type, sample, n, sa, copies = 1) {
   const L = f => `<b>${fabricLetter(resolveFab(f))}</b>`;
   const byLight = uniq((sample.unit.fabs || []).map(resolveFab)).sort((p, q) => luminance(fabricHex(q)) - luminance(fabricHex(p)));
   const lt = byLight[0], dk = byLight[byLight.length - 1];
-  const total = n * copies;
-  const make = (one, many, what) => `Make <b>${total}</b> ${total === 1 ? one : many}${copies > 1 ? ` (${n} per block)` : ''}. ${what}`;
+  // copies 0: every block in the quilt is partial, so the numbers are for one block
+  const total = n * (copies || 1);
+  const make = (one, many, what) => (copies ? `Make <b>${total}</b> ${total === 1 ? one : many}${copies > 1 ? ` (${n} per block)` : ''}. ` : `Each block has <b>${n}</b> ${n === 1 ? one : many}. Make the ones that show. `) + what;
   const steps = list => `<ol class="sub">${list.map(t => `<li>${t}</li>`).join('')}</ol>`;
   const spare = got => (got > total ? ` You'll have ${got - total} spare.` : '');
   switch (type) {
@@ -210,7 +215,7 @@ function unitMethodText(type, sample, n, sa, copies = 1) {
       ]);
     }
     case 'qst': {
-      if (byLight.length === 2) {
+      if (sample.unit.hourglass) {
         const sq = fmtLen(ceilEighth(r.w + 2 * sa * (1 + Math.SQRT2)), 'up'), pairs = Math.ceil(total / 2);
         return make('quarter-square triangle (QST)', 'quarter-square triangles (QSTs)', `A QST (also called an hourglass) is a square made of four triangles meeting in the centre. You make HSTs first, then cut them again.`) + steps([
           `Make HSTs: draw a diagonal on the wrong side of each ${sq} ${L(lt)} square, place it on a ${sq} ${L(dk)} square right sides together, sew ${S} each side of the line and cut on it. Press toward ${L(dk)}. Don't trim these HSTs.`,
@@ -623,15 +628,15 @@ function renderPatternDoc() {
     const inPanel = Q.cells.some(c => c.b === id && c.size === BSZ && c.row === 'panel');
     const n = Q.cells.filter(c => c.b === id && c.size === BSZ && !partialCell(c)).length;
     const trimmed = Q.cells.filter(c => c.b === id && c.size === BSZ && c.clip && !partialCell(c)).length;
-    const partial = Q.cells.filter(c => c.b === id && c.size === BSZ && partialCell(c)).length;
+    const partial = Q.cells.filter(c => c.b === id && c.size === BSZ && partialCell(c)).length, edge = (doc.layout.panels || []).length ? 'panel or edge' : 'edge';
     const steps = blockStepsHtml(b, BSZ, sa, n);
     const fabs = uniq(blockPieces(b, BSZ, BSZ).map(p => resolveFab(p.fab))).sort((a, c) => fabricIndex(a) - fabricIndex(c));
     let h = `<h2>${esc(b.name)}${inPanel ? ' <span class="muted" style="font-weight:400;font-size:12pt">(centre panel)</span>' : ''}</h2>
       <div class="block-head"><div>${blockDiagramSvg(b, BSZ, 2.2, { codes: blockPieceCodes(codes, id, BSZ) })}</div><div>
-        <div class="callout">Make <b>${n}</b> block${n === 1 ? '' : 's'}${partial ? ` + ${partial} partial` : ''}</div>
+        <div class="callout">${n ? `Make <b>${n}</b> block${n === 1 ? '' : 's'}${partial ? ` + ${partial} partial` : ''}` : `Make <b>${partial}</b> partial block${partial === 1 ? '' : 's'}`}</div>
         <p>Finished ${blockSizeText(b, BSZ)} · unfinished ${blockSizeText(b, BSZ, 2 * sa)}</p>
         ${trimmed ? `<p><b>${trimmed}</b> of them run off the edge${(doc.layout.panels || []).length ? ' or under the panel' : ''}. Make them whole; they're trimmed after the top is assembled.</p>` : ''}
-        ${partial ? `<p>Plus <b>${partial}</b> partial block${partial === 1 ? '' : 's'} where the ${(doc.layout.panels || []).length ? 'panel or edge' : 'edge'} covers part of it. Only the pieces that show are cut, to shape (listed as "Partial blocks" in the cutting list). Sew them in the same order, leaving out what's covered.</p>` : ''}
+        ${partial ? `<p>${n ? `Plus <b>${partial}</b> partial block${partial === 1 ? '' : 's'} where the ${edge} covers part of it.` : `The ${edge} covers part of ${partial === 1 ? 'it' : 'each one'}.`} Only the pieces that show are cut, to shape (listed as "Partial blocks" in the cutting list). Sew them in the same order, leaving out what's covered.</p>` : ''}
         <div class="fab-key">${fabs.map(f => `<span>${swatchHtml(f, 16)}<b>${fabricLetter(f)}</b> ${esc(fabricLabel(f))}</span>`).join('')}</div>
       </div></div><ol class="steps">`;
     for (const s of steps) h += `<li><div class="step-text">${s.text}</div>${s.diag ? `<div class="step-diag">${s.diag}</div>` : ''}</li>`;
@@ -700,8 +705,8 @@ function panelStepsHtml(Q, sa, name, exact) {
   let h = '';
   for (const p of doc.layout.panels || []) {
     const pg = panelGeom(p, Q.inner.w, Q.inner.h);
-    const content = p.b && doc.blocks[p.b] ? `the ${esc(doc.blocks[p.b].name)} block` : p.fab ? `a ${fmtSize(p.size, p.size)} square of fabric ${fabricLetter(p.fab)}` : 'the centre square';
-    const frames = (p.frames || []).filter(f => f.width > 0);
+    const content = p.b && doc.blocks[p.b] ? `the ${esc(doc.blocks[p.b].name)} block` : p.fab ? `a ${fmtSize(pg.size, pg.size)} square of fabric ${fabricLetter(p.fab)}` : 'the centre square';
+    const frames = pg.frames.filter(f => f.width > 0);
     const tess = Q.mode === 'tess';
     h += `<li><b>Panel:</b> ${frames.length ? `frame ${content} with ${frames.map((f, k) => `${fmtLen(f.width + 2 * sa)}-wide strips of fabric ${fabricLetter(f.fabric)} (${fmtLen(f.width)} finished)${k === 0 ? ', innermost' : ''}`).join(', then ')}: sides first, pressing toward the frame, then top and bottom. It then measures ${fmtSize(pg.outer + 2 * sa, pg.outer + 2 * sa)} unfinished.` : `${content} measures ${fmtSize(pg.outer + 2 * sa, pg.outer + 2 * sa)} unfinished.`}</li>
       ${Q.mode === 'grid' ? '' : `<li><b>Setting the panel in:</b> piece the ${name} in sections: the full-width rows above and below the panel, and the shorter rows to its left and right. ${exact ? 'The pieces along the panel are cut to shape, so each section already has a straight edge there.' : `Trim each section's edge that meets the panel straight, ${fmtLen(sa)} beyond the panel line.`} Sew the left and right sections to the panel, then add the top and bottom sections, matching seams.</li>`}`;

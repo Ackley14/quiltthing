@@ -133,8 +133,14 @@ function fromPC(mp) {
   }
   return out;
 }
+// polygon-clipping can fail on nearly coincident points and edges; snapping every coordinate to a
+// fine grid (dropping the repeated points that makes) usually gets it through
+const snapGeom = g => typeof g[0] === 'number' ? g.map(v => Math.round(v * 1e7) / 1e7)
+  : typeof g[0][0] === 'number' ? g.map(snapGeom).filter((p, i, r) => !i || p[0] !== r[i - 1][0] || p[1] !== r[i - 1][1]) : g.map(snapGeom);
 function pcSafe(op, a, ...b) {
-  try { return PC[op](a, ...b); } catch (e) { console.warn('polygon op failed', op, e); return null; }
+  try { return PC[op](a, ...b); } catch (e) {
+    try { return PC[op](snapGeom(a), ...b.map(snapGeom)); } catch (e2) { console.warn('polygon op failed', op, e2); return null; }
+  }
 }
 function polyUnion(list) {
   if (!list.length) return [];
@@ -184,9 +190,39 @@ function inflate(poly, d) {
 // triangle's angles). Built as the union of the piece, a band d wide along every edge and a wedge
 // at every outward corner, so inward corners and narrow notches fill in properly too.
 function seamOutline(poly, d, limit = 4) {
-  const n = poly.length;
-  if (n < 3 || !(d > 0)) return poly.slice();
-  const area = signedArea(poly), out = area > 0 ? -1 : 1;
+  poly = dedupePts(poly);
+  if (poly.length < 3 || !(d > 0)) return poly.slice();
+  const area = signedArea(poly), mp = pcSafe('union', ...[poly, ...allowanceParts(poly, d, limit)].map(toPC));
+  const u = mp ? fromPC(mp) : [];
+  if (!u.length) return inflate(poly, d);
+  // the outline to cut around: the largest outer ring (a hole inside would only be a deep pocket)
+  let best = u[0];
+  for (const q of u) if (Math.abs(polyArea(q.outer)) > Math.abs(polyArea(best.outer))) best = q;
+  const ring = dropSpikes(best.outer);   // a slit where bands only touch is no part of the outline
+  return Math.sign(signedArea(ring)) === Math.sign(area) ? ring : ring.reverse();
+}
+// The cut line inside a hole in a piece: the hole less the allowance turned into it (a band d wide
+// along every edge, a wedge at every corner that points into the hole). A hole too small for that
+// fills in and is dropped; one with a narrow waist can leave two.
+function holeCutLines(hole, d, limit = 4) {
+  hole = dedupePts(hole);
+  if (hole.length < 3) return [];
+  if (!(d > 0)) return [hole];
+  const band = pcSafe('union', ...allowanceParts(hole, d, limit, true).map(toPC));
+  const mp = band && pcSafe('difference', toPC(hole), band), s = Math.sign(signedArea(hole));
+  if (!mp) {
+    // the shape library failed: a plain inset, unless an edge turned round (the hole is too small)
+    const q = inflate(hole, -d), n = q.length;
+    return q.every((a, i) => { const b = q[(i + 1) % n], A = hole[i], B = hole[(i + 1) % n]; return (b[0] - a[0]) * (B[0] - A[0]) + (b[1] - a[1]) * (B[1] - A[1]) > 0; }) ? [q] : [];
+  }
+  return fromPC(mp).map(x => dropSpikes(x.outer)).filter(q => q.length >= 3 && polyArea(q) > 1e-6).map(q => Math.sign(signedArea(q)) === s ? q : q.reverse());
+}
+// Drop points (next to) repeated: the edge between them has no direction.
+const dedupePts = (p, tol = 1e-6) => p.filter((q, i) => dist(q, p[(i + 1) % p.length]) > tol);
+// The allowance d wide along a ring, as parts to join: a band along every edge and a wedge at every
+// outward corner. into: the allowance goes inside the ring, as it does into a hole in a piece.
+function allowanceParts(poly, d, limit, into) {
+  const n = poly.length, area = signedArea(poly) * (into ? -1 : 1), out = area > 0 ? -1 : 1;
   const lines = poly.map((a, i) => {
     const b = poly[(i + 1) % n], ex = b[0] - a[0], ey = b[1] - a[1], l = Math.hypot(ex, ey) || 1;
     const nx = out * -ey / l, ny = out * ex / l;
@@ -198,7 +234,7 @@ function seamOutline(poly, d, limit = 4) {
     const t = ((L1.p[0] - L0.p[0]) * L1.v[1] - (L1.p[1] - L0.p[1]) * L1.v[0]) / det;
     return [L0.p[0] + t * L0.v[0], L0.p[1] + t * L0.v[1]];
   };
-  const parts = [poly];
+  const parts = [];
   for (const L of lines) parts.push([L.a, L.b, [L.b[0] + d * L.nx, L.b[1] + d * L.ny], [L.a[0] + d * L.nx, L.a[1] + d * L.ny]]);
   for (let i = 0; i < n; i++) {
     const L0 = lines[(i - 1 + n) % n], L1 = lines[i], v = poly[i];
@@ -211,13 +247,7 @@ function seamOutline(poly, d, limit = 4) {
     const ux = ox / ol, uy = oy / ol, c = [v[0] + ux * max, v[1] + uy * max], T = { p: c, v: [-uy, ux] };
     parts.push([v, e0, meet(L0, T) || c, meet(T, L1) || c, e1]);
   }
-  const u = polyUnion(parts);
-  if (!u.length) return inflate(poly, d);
-  // the outline to cut around: the largest outer ring (a hole inside would only be a deep pocket)
-  let best = u[0];
-  for (const q of u) if (Math.abs(polyArea(q.outer)) > Math.abs(polyArea(best.outer))) best = q;
-  const ring = cleanPoly(best.outer);
-  return Math.sign(signedArea(ring)) === Math.sign(area) ? ring : ring.reverse();
+  return parts;
 }
 
 /* ---------- orientation helpers ---------- */
@@ -462,10 +492,10 @@ function autoSeamsFor(poly, arcKeys) {
    Rotation-invariant. Grain decides HST vs QST: an HST keeps its legs on the straight
    grain (legs parallel to the block edges), a QST keeps its long side on the grain. */
 // A finished piece's outline can double back on itself in a zero-width spike where clipping met
-// coinciding edges. The spike isn't part of the piece. Only for finished pieces (makePiece): the
-// seam search scores shapes mid-split, where such a slit is where a seam stops.
+// coinciding edges. The spike isn't part of the piece. Only for finished pieces and cut outlines,
+// not the seam search: it scores shapes mid-split, where such a slit is where a seam stops.
 function dropSpikes(pts) {
-  let out = pts.slice(), changed = true;
+  let out = cleanPoly(pts), changed = true;   // near-repeated points first: they hide a spike's tip
   while (changed && out.length > 3) {
     changed = false;
     for (let i = 0; i < out.length; i++) {
@@ -478,7 +508,7 @@ function dropSpikes(pts) {
 }
 function classifyPiece(rawPts, opts = {}) {
   const curved = !!opts.curved;
-  const pts = curved ? rawPts : cleanPoly(rawPts);
+  const pts = curved ? dedupePts(rawPts) : cleanPoly(rawPts);   // curves keep every arc point
   const n = pts.length;
   const area = polyArea(pts);
   const base = { pts, area, curved };

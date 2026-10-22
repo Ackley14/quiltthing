@@ -229,21 +229,38 @@ function pieceProblems(block, size) {
   if (!block || block.kind !== 'drawn') return [];
   const out = [];
   for (const p of blockPieces(block, size, size)) {
+    // a crumb (appliqué too) is a problem; a narrow pieced strip is only worth knowing about
+    const w = pieceWidth(p);
+    if (w < CRUMB) out.push({ piece: p, kind: 'tiny', crumb: true, msg: `Piece too small to cut and sew (${fmtLen(w)} finished)` });
     if (p.app) continue;
     if (p.holes.length) out.push({ piece: p, kind: 'hole', msg: 'Piece surrounds another piece (has a hole)' });
     else if (!p.curved && !isConvex(p.pts)) out.push({ piece: p, kind: 'concave', msg: 'Piece has an inside corner (needs a set-in seam)' });
-    const mar = minAreaRect(p.pts);
-    if (mar && Math.min(mar.w, mar.h) < 0.249) out.push({ piece: p, kind: 'tiny', msg: `Very narrow piece (${fmtLen(Math.min(mar.w, mar.h))} finished)` });
+    if (w >= CRUMB && w < 0.249) out.push({ piece: p, kind: 'tiny', msg: `Very narrow piece (${fmtLen(w)} finished)` });
   }
   return out;
 }
+// A piece's finished width (across its narrowest way); under CRUMB it's too small to cut and sew.
+const CRUMB = 0.125;
+function pieceWidth(p) { const mar = minAreaRect(p.pts); return mar ? Math.min(mar.w, mar.h) : Infinity; }
+// Blocks in the quilt with pieces too small to cut, at the sizes they're used: [{ b, n }].
+function crumbBlocks(Q) {
+  const by = new Map();
+  for (const k of uniq(Q.cells.filter(c => c.b && doc.blocks[c.b]).map(c => `${c.b}|${c.size}`))) {
+    const [id, size] = k.split('|'), n = blockPieces(doc.blocks[id], +size, +size).filter(p => pieceWidth(p) < CRUMB).length;
+    if (n) by.set(id, Math.max(n, by.get(id) || 0));
+  }
+  return [...by].map(([id, n]) => ({ b: doc.blocks[id], n }));
+}
 
 // Blocks in the quilt with pieces that can't be sewn as drawn. The block editor stays quiet about
-// these while you draw; Layout, Fabric & cutting and Pattern mention them.
-function seamWarnings() {
-  return doc.blockOrder.map(id => doc.blocks[id]).filter(b => b?.kind === 'drawn' && blockUseCount(b.id) && pieceProblems(b, blockFrameSize(b)).some(p => p.kind !== 'tiny'))
-    .map(b => `${b.name} needs set-in seams as drawn. The Seam tool in Blocks can fix that.`);
+// these while you draw; Layout, Fabric & cutting and Pattern mention them. Given the quilt, also
+// the blocks with pieces too small to cut.
+function seamWarnings(Q) {
+  return [...doc.blockOrder.map(id => doc.blocks[id]).filter(b => b?.kind === 'drawn' && blockUseCount(b.id) && pieceProblems(b, blockFrameSize(b)).some(p => p.kind !== 'tiny'))
+    .map(b => `${b.name} needs set-in seams as drawn. The Seam tool in Blocks can fix that.`),
+    ...(Q ? crumbBlocks(Q) : []).map(({ b, n }) => crumbText(b, n))];
 }
+const crumbText = (b, n) => `${b.name} has ${n === 1 ? 'a piece' : `${n} pieces`} under ${fmtLen(CRUMB)} wide, too small to cut and sew. Change ${n === 1 ? 'it' : 'them'} in Blocks.`;
 
 /* ---------- seam suggestions ----------
    A small search: for each piece, try seams that start at a corner (edge continuations and
@@ -536,11 +553,17 @@ function classifyUnit(node) {
   if (ps.some(p => p.curved)) return { type: 'curved', fabs };
   const square = Math.abs(r.w - r.h) < 1e-3 * r.w;
   if (ps.length === 2 && count('hst') === 2 && square) return { type: 'hst', fabs };
-  if (ps.length === 2 && count('rtri') === 2) return { type: 'hrt', fabs };
-  if (ps.length === 4 && count('qst') === 4 && square) return { type: 'qst', fabs };
+  if (ps.length === 2 && count('rtri') === 2 && Math.abs(polyArea(node.region) - r.w * r.h) < 1e-3 * r.w * r.h) return { type: 'hrt', fabs };
+  if (ps.length === 4 && count('qst') === 4 && square) {
+    // two fabrics, each one's triangles opposite: an hourglass, sewn from two squares by way of HSTs
+    const c = [r.x + r.w / 2, r.y + r.h / 2], ang = p => { const m = centroid(p.pts); return Math.atan2(m[1] - c[1], m[0] - c[0]); };
+    const o = ps.slice().sort((a, b) => ang(a) - ang(b)).map(p => resolveFab(p.fab));
+    return { type: 'qst', fabs, hourglass: fabs.length === 2 && o[0] === o[2] && o[1] === o[3] };
+  }
   if (ps.length === 3 && count('qst') === 1 && count('hst') === 2) {
-    const goose = ps.find(p => p.cls.shape === 'qst'), sky = ps.find(p => p.cls.shape === 'hst');
-    return { type: 'goose', goose: resolveFab(goose.fab), sky: resolveFab(sky.fab), fabs };
+    // no-waste geese need both sky triangles in one fabric; otherwise the pieces are sewn one by one
+    const goose = ps.find(p => p.cls.shape === 'qst'), sky = ps.filter(p => p.cls.shape === 'hst');
+    if (resolveFab(sky[0].fab) === resolveFab(sky[1].fab)) return { type: 'goose', goose: resolveFab(goose.fab), sky: resolveFab(sky[0].fab), fabs };
   }
   // stitch-and-flip: one main piece plus right-isosceles corner triangles on the unit's corners
   const tol = 1e-4 * Math.max(r.w, r.h);

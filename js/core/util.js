@@ -1,7 +1,7 @@
 /* Quilt Designer — shared utilities: escaping, numbers, units, formatting.
    Internal measurements are ALWAYS inches; only display/input converts. */
 
-const APP_VERSION = '4.0.4';
+const APP_VERSION = '4.0.5';
 const CM_PER_IN = 2.54;
 const EPS = 1e-9;
 
