@@ -31,13 +31,27 @@ const QUILT_AREAS = [
   ['all', 'Whole quilt'], ['center', 'Centre only'], ['borders', 'Borders only'],
   ['blocks', 'Blocks only'], ['plain', 'Plain squares & setting triangles'], ['sashing', 'Sashing'],
   ['panel', 'Inset panel only'], ['aroundPanel', 'Centre, around the inset'],
+  ['pickBlocks', 'Specific blocks'], ['pickFabrics', 'Specific fabrics'],
 ];
+// What "Specific blocks" and "Specific fabrics" can choose from: the blocks placed on the quilt, and
+// the fabrics of the pieces that aren't inside a block (plain squares, tessellation shapes, setting
+// triangles, sashing, cornerstones, borders, panel frames).
+function quiltPickables(Q) {
+  const blocks = [...new Set(Q.cells.filter(c => c.b).map(c => c.b))].filter(id => doc.blocks[id]);
+  const fabs = new Set([...Q.cells.filter(c => !c.b && c.fab).map(c => c.fab), ...Q.tiles.filter(t => t.fab).map(t => t.fab), ...Q.patches.filter(p => p.fab).map(p => p.fab)]);
+  return { blocks, fabrics: doc.fabrics.map(f => f.id).filter(id => fabs.has(id)) };
+}
+// The chosen ones (none chosen yet = all of them).
+function quiltPicked(Q, layer) {
+  const all = quiltPickables(Q)[layer.area === 'pickBlocks' ? 'blocks' : 'fabrics'];
+  return Array.isArray(layer.pick) ? all.filter(id => layer.pick.includes(id)) : all;
+}
 // Patterns built from the quilt's own shapes, made once and then trimmed to each area.
 const GLOBAL_QUILT_TYPES = ['ditch', 'echo', 'outline', 'faces'];
 const polyArea2 = (pts, holes = []) => ({ pts, holes, bb: bounds(pts) });
 // The areas a layer covers: each is a rect to stitch inside (`outer`) minus rects to skip (`inner`).
 // Patterns like spirals and circles are centred on each area, so every inset panel gets its own.
-function quiltAreaRects(Q, area) {
+function quiltAreaRects(Q, area, layer) {
   const outer = { x: 0, y: 0, w: Q.W, h: Q.H }, panels = Q.panels || [];
   if (area === 'center') return [{ outer: Q.inner, inner: null }];
   if (area === 'borders') return doc.layout.borders.some(b => b.width > 0) ? [{ outer, inner: Q.inner }] : [];
@@ -48,6 +62,11 @@ function quiltAreaRects(Q, area) {
   if (area === 'blocks') return one(Q.cells.filter(c => c.b).flatMap(c => c.clip || [c.pts]));
   if (area === 'plain') return one([...Q.cells.filter(c => !c.b).flatMap(c => c.clip || [c.pts]),
     ...Q.tiles.filter(t => /setting/.test(t.role || '')).map(t => t.pts)]);
+  if (area === 'pickBlocks') { const set = new Set(quiltPicked(Q, layer || {})); return one(Q.cells.filter(c => c.b && set.has(c.b)).flatMap(c => c.clip || [c.pts])); }
+  if (area === 'pickFabrics') {
+    const set = new Set(quiltPicked(Q, layer || { area }));
+    return one([...Q.cells.filter(c => !c.b && set.has(c.fab)).flatMap(c => c.clip || [c.pts]), ...Q.tiles.filter(t => set.has(t.fab)).map(t => t.pts), ...Q.patches.filter(p => set.has(p.fab)).map(p => p.pts)]);
+  }
   if (area === 'sashing') {
     const ps = Q.patches.filter(p => /^(sash|sashLong|corner)$/.test(p.role)).map(p => polyArea2(p.pts));
     return ps.length ? [{ outer: Q.inner, inner: null, polys: ps }] : [];
@@ -161,7 +180,7 @@ function quiltLayerPaths(Q, layer) {
   if (_qpCache.snap !== snap) { _qpCache.snap = snap; _qpCache.map.clear(); }
   const cache = _qpCache.map;
   if (cache.has(key)) return cache.get(key);
-  const areas = quiltAreaRects(Q, layer.area);
+  const areas = quiltAreaRects(Q, layer.area, layer);
   const avoid = layer.type !== 'ditch' && layer.skipApp !== false ? appliquePolys(Q) : [];   // the ditch handles appliqué itself
   let out;
   if (GLOBAL_QUILT_TYPES.includes(layer.type)) {
@@ -531,11 +550,15 @@ function quiltingStats(Q) {
   return { per, total, threadYds: total * 2 * 1.15 / 36 };
 }
 
+// "A", "A and B", "A, B and C"
+function listWords(a) { return a.length <= 1 ? (a[0] || 'chosen') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`; }
 function quiltingInstructions(L) {
   const sp = fmtLen(L.spacing);
   const where = { all: 'across the whole quilt', center: 'in the quilt centre (inside the borders)', borders: 'in the borders only',
     panel: 'in the inset panel (including its frames)', aroundPanel: 'in the quilt centre, around the inset panel',
-    blocks: 'in the blocks', plain: 'in the plain squares and setting triangles', sashing: 'in the sashing' }[L.area] || '';
+    blocks: 'in the blocks', plain: 'in the plain squares and setting triangles', sashing: 'in the sashing' }[L.area]
+    || (L.area === 'pickBlocks' ? `in the ${listWords(quiltPicked(Qnow(), L).map(id => doc.blocks[id].name))} blocks`
+      : L.area === 'pickFabrics' ? `in the pieces of ${listWords(quiltPicked(Qnow(), L).map(id => fabricLabel(id)))} (outside the blocks)` : '');
   const ang = Math.round(((L.angle % 180) + 180) % 180);
   const dirWord = ang === 90 ? 'vertical' : ang === 0 ? 'horizontal' : `${ang}°`;
   switch (L.type) {

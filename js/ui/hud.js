@@ -59,7 +59,12 @@ function renderHud() {
   const ratio = vb && vb.height ? vb.width / vb.height : 1, artW = Math.min(aw, ah * ratio), artL = D ? D.left + (D.width - artW) / 2 : 0;
   const band = cs => Math.max(0, ...cs.map(c => {
     const el = $(`#hud .hud-c.${c}`), r = el?.getBoundingClientRect();
-    if (!r || !r.height || (art && (r.right < artL - 4 || r.left > artL + artW + 4))) return 0;   // beside the drawing: no room needed
+    if (!r || !r.height) return 0;
+    // text widgets change width as their wording changes (e.g. "0 showing"): judge them at their widest,
+    // so the drawing's size never jumps because a label got longer
+    const wide = el.querySelector('[data-hud="info"]') ? Math.max(r.width, 320) : r.width;
+    const left = c[1] === 'l' ? r.left : r.right - wide, right = c[1] === 'l' ? r.left + wide : r.right;
+    if (art && (right < artL - 4 || left > artL + artW + 4)) return 0;   // beside the drawing: no room needed
     return Math.round((c[0] === 't' ? r.bottom - D.top : D.bottom - r.top) + 10);
   }));
   if (dw) { const t = `${Math.max(side, band(['tl', 'tr']))}px`, b2 = `${Math.max(side, band(['bl', 'br']))}px`; if (dw.style.getPropertyValue('--hud-top') !== t) dw.style.setProperty('--hud-top', t); if (dw.style.getPropertyValue('--hud-bottom') !== b2) dw.style.setProperty('--hud-bottom', b2); }

@@ -918,3 +918,11 @@ div.f > .seg { margin-top: 4px; }
 .blkpick button[aria-pressed="true"] { border-color: var(--accent); }
 .fill-end { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .fill-end .btn .sw { margin-right: 4px; }
+
+.pick-list { margin-top: 8px; padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-field); max-height: 240px; overflow-y: auto; }
+.pick-h { display: flex; align-items: center; gap: 4px; font-size: var(--fs-xs); font-weight: 600; color: var(--text-2); margin-bottom: 4px; }
+.pick-h .muted { font-weight: 400; }
+.pick-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.pick-row svg, .pick-row .sw { flex: none; }
+
+.hud-c [data-hud="info"] .hud-info { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

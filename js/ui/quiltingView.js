@@ -43,8 +43,9 @@ function quiltLayerProps() {
       <button class="icon-btn sm" data-act="qToggleShow" data-arg="${i}" title="${L.visible ? 'Hide' : 'Show'}" aria-label="${L.visible ? 'Hide' : 'Show'} ${t.label}">${icon(L.visible ? 'eye' : 'eyeoff', 14)}</button></div>
     <div class="pad">
         <div class="f-row"><label class="f">Pattern<select data-bind="${p}.type">${QUILT_TYPES.map(x => `<option value="${x.key}" ${x.key === L.type ? 'selected' : ''}>${x.label}</option>`).join('')}</select></label>
-        <label class="f">Where<select data-bind="${p}.area">${QUILT_AREAS.filter(([k]) => L.area === k || areaAvail(Q, k)).map(([k, l]) => `<option value="${k}" ${L.area === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+        <label class="f">Where<select data-change="qArea" data-arg="${i}">${QUILT_AREAS.filter(([k]) => L.area === k || areaAvail(Q, k)).map(([k, l]) => `<option value="${k}" ${L.area === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
         ${['panel', 'aroundPanel'].includes(L.area) && !Q.panels.length ? '<p class="hint warn">This quilt has no inset panel.</p>' : ''}
+        ${L.area === 'pickBlocks' || L.area === 'pickFabrics' ? qPickList(Q, L, i) : ''}
         ${t.noSpacing ? '' : lenField(L.type === 'spiral' ? 'Distance between turns' : 'Spacing', `${p}.spacing`, { min: 0.25, max: 24, step: L.spacing < 1 ? 0.125 : 0.25 })}
         ${['lines', 'crosshatch', 'diamonds', 'wavy', 'zigzag', 'spiral'].includes(L.type) ? `<label class="f">Angle <span class="muted">${Math.round(L.angle)}°</span><input type="range" min="0" max="180" step="5" value="${((L.angle % 180) + 180) % 180}" data-input="qAngleLive" data-change="qAngle" data-arg="${i}"></label>` : ''}
         ${t.wave ? `<div class="f-row">${lenField('Wave height', `${p}.amp`, { min: 0.1, max: 6 })}${lenField('Wave length', `${p}.wave`, { min: 0.5, max: 24 })}</div>` : ''}
@@ -63,6 +64,29 @@ Actions.addLayerMenu = (a, el) => openMenu(el, QUILT_TYPES.map(t => ({ label: t.
 Actions.addQuiltType = type => Actions.addQuiltLayer(type, { value: '' });
 Actions.qOpen = id => { ui.qOpen = ui.qOpen === id ? null : id; renderInspector(); };
 Actions.qPick = id => { ui.qOpen = id; saveUi(); renderInspector(); renderHud(); };
+// The blocks or fabrics a "Specific" layer can be limited to, with a tick for each.
+function qPickList(Q, L, i) {
+  const blocks = L.area === 'pickBlocks', all = quiltPickables(Q)[blocks ? 'blocks' : 'fabrics'], on = new Set(quiltPicked(Q, L));
+  if (!all.length) return `<p class="hint">${blocks ? 'No blocks are placed on the quilt.' : 'No plain fabric pieces on the quilt.'}</p>`;
+  const row = id => `<label class="check pick-row"><input type="checkbox" data-change="qPick" data-arg="${i}|${id}" ${on.has(id) ? 'checked' : ''}>
+    ${blocks ? blockThumb(doc.blocks[id], 22, 'mini') : swatchHtml(id, 18)}<span>${esc(blocks ? doc.blocks[id].name : fabricLabel(id))}</span></label>`;
+  return `<div class="pick-list" role="group" aria-label="${blocks ? 'Blocks' : 'Fabrics'} to quilt">
+    <div class="pick-h"><span>${blocks ? 'Blocks' : 'Fabrics'} <span class="muted">· ${on.size} of ${all.length}</span></span><span class="grow"></span><button class="btn small quiet" data-act="qPickAll" data-arg="${i}|1">All</button><button class="btn small quiet" data-act="qPickAll" data-arg="${i}|0">None</button></div>
+    ${all.map(row).join('')}${on.size ? '' : '<p class="hint warn">Nothing chosen, so this layer stitches nothing.</p>'}</div>`;
+}
+// a new Where starts with everything ticked
+Actions.qArea = (v, el) => { const L = doc.quilting.layers[+el.dataset.arg]; if (!L || L.area === v) return; L.area = v; delete L.pick; commit(`Quilting: ${(QUILT_AREAS.find(([k]) => k === v) || [, v])[1].toLowerCase()}`); };
+Actions.qPick = (v, el) => {
+  const [i, id] = el.dataset.arg.split('|'), L = doc.quilting.layers[+i]; if (!L) return;
+  const cur = quiltPicked(Qnow(), L);
+  L.pick = v ? [...new Set([...cur, id])] : cur.filter(x => x !== id);
+  commit(`Quilting: ${v ? 'add' : 'leave out'} ${L.area === 'pickBlocks' ? doc.blocks[id]?.name : fabricLabel(id)}`);
+};
+Actions.qPickAll = arg => {
+  const [i, on] = arg.split('|'), L = doc.quilting.layers[+i]; if (!L) return;
+  L.pick = on === '1' ? quiltPickables(Qnow())[L.area === 'pickBlocks' ? 'blocks' : 'fabrics'] : [];
+  commit(on === '1' ? 'Quilting: all chosen' : 'Quilting: none chosen');
+};
 Actions.qToggleShow = i => { const L = doc.quilting.layers[+i]; if (L) { L.visible = !L.visible; commit(); } };
 // Only offer the "Where" choices this quilt has.
 function areaAvail(Q, k) {
@@ -70,6 +94,8 @@ function areaAvail(Q, k) {
   if (k === 'blocks') return Q.cells.some(c => c.b);
   if (k === 'plain') return Q.cells.some(c => !c.b) || Q.tiles.some(t => /setting/.test(t.role || ''));
   if (k === 'sashing') return Q.patches.some(p => /^(sash|sashLong|corner)$/.test(p.role));
+  if (k === 'pickBlocks') return quiltPickables(Q).blocks.length > 0;
+  if (k === 'pickFabrics') return quiltPickables(Q).fabrics.length > 0;
   return true;
 }
 Actions.qSeed = i => { const L = doc.quilting.layers[+i]; if (L) { L.seed = (L.seed || 1) + 1; commit(); } };
