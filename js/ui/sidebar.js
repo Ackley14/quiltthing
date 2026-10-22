@@ -12,13 +12,12 @@ function fabricsSection() {
   const bgId = doc.layout.background;
   let chips = '';
   doc.fabrics.forEach((f, i) => {
-    chips += `<button class="fab-chip${f.id === bgId ? ' is-bg' : ''}" draggable="true" aria-label="${letterFor(i)}: ${esc(f.name)}${f.id === bgId ? ', background' : ''}" aria-pressed="${ui.fabric === f.id}" data-act="pickFabric" data-arg="${f.id}" title="${letterFor(i)} · ${esc(f.name)}${f.id === bgId ? ' (background)' : ''}${ui.fabric === f.id ? '. Click again to edit.' : ''}">
+    chips += `<button class="fab-chip${f.id === bgId ? ' is-bg' : ''}" draggable="true" aria-label="${letterFor(i)}: ${esc(f.name)}${f.id === bgId ? ', background' : ''}" aria-pressed="${ui.fabric === f.id}" data-act="pickFabric" data-arg="${f.id}" title="${letterFor(i)} · ${esc(f.name)}${f.id === bgId ? ' (background)' : ''}">
       ${swatchHtml(f.id, 40)}<span class="lt" style="color:${inkOn(f.color)};text-shadow:0 0 2px ${inkOn(f.color) === '#ffffff' ? 'rgba(0,0,0,.6)' : 'rgba(255,255,255,.9)'}">${letterFor(i)}</span>${ui.grayscale ? `<span class="val">${valueLetter(f.color)}</span>` : ''}</button>`;
   });
-  chips += `<button class="fab-chip add" data-act="addFabric" title="Add a fabric" aria-label="Add a fabric">${icon('plus', 18)}</button>`;
   // painting with "Background" lets pieces follow whatever the quilt background is
   if (ui.view === 'block') chips += `<button class="fab-chip bgpaint" aria-pressed="${ui.fabric === BG}" data-act="pickFabric" data-arg="${BG}" title="Background: pieces follow the quilt's background fabric">BG</button>`;
-  return `<div class="panel-tools"><span class="pt-note">${plural(doc.fabrics.length, 'fabric')}</span><span class="grow"></span><button class="btn small" data-act="palettes">Palettes</button></div><div class="fabrics pad">${chips}</div>`;
+  return `<div class="panel-tools"><span class="pt-note">${plural(doc.fabrics.length, 'fabric')}</span><span class="grow"></span><button class="btn small" data-act="palettes">Palettes</button><button class="btn small" data-act="addFabric" title="Add a fabric" aria-label="Add a fabric">${icon('plus', 14)}</button></div><div class="fabrics pad">${chips}</div>`;
 }
 
 // How this fabric comes (its own width, precuts, or pieces of a set size); default = the shared setting.
@@ -209,7 +208,7 @@ function myBlocksSection() {
       ${blockThumb(b, 72)}<div class="nm">${esc(b.name)}</div></button>`;
   }
   const right = `<button class="btn small" data-act="addBlockMenu" aria-haspopup="menu">${icon('plus', 14)} Add ${icon('down', 12)}</button>`;
-  const hint = fillingSlot ? `<p class="hint">Pick a block for slot ${ui.activeSlot + 1}.</p>` : ui.view === 'layout' ? '<p class="hint">Click a block, then click the quilt to place it, or drag it on.</p>' : '';
+  const hint = fillingSlot ? `<p class="hint">Pick a block for slot ${ui.activeSlot + 1}.</p>` : '';
   return `<div class="panel-tools"><span class="pt-note">${plural(doc.blockOrder.length, 'block')}</span><span class="grow"></span>${right}</div><div class="pad">${hint}${grid ? `<div class="blocks">${grid}</div>` : `<div class="empty-state"><p>No blocks yet.</p><button class="btn primary" data-act="libraryPicker">Browse classic blocks</button></div>`}</div>`;
 }
 Actions.addBlockMenu = (a, el) => openMenu(el, [

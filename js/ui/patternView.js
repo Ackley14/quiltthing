@@ -1,7 +1,7 @@
 /* Pattern view: live preview of the printable pattern + cover details. */
 
 Views.pattern = {
-  tools() { return { act: 'docTool', active: ui.docTool || 'pointer', list: [{ key: 'pointer', label: 'Select', kb: 'V', icon: 'pointer' }, { key: 'hand', label: 'Hand', kb: 'H', icon: 'hand' }] }; },
+  tools() { return { act: 'docTool', active: ui.docTool || 'pointer', list: [{ key: 'pointer', label: 'Select', kb: 'S', icon: 'pointer' }, { key: 'hand', label: 'Hand', kb: 'H', icon: 'hand' }, { key: 'zoom', label: 'Zoom', kb: 'Z', icon: 'zoomin' }] }; },
   docs() { return [{ label: `${doc.meta.title || 'Quilt'} · pattern`, on: true, icon: 'pages' }]; },
   options() {
     const a4 = ui.patternPage === 'a4';
@@ -23,8 +23,11 @@ Views.pattern = {
     pv.style.zoom = '';
     paginatePattern(pv);
     const pageW = (ui.patternPage === 'a4' ? 8.27 : 8.5) * 96;
-    const z = Math.min(1, (el.clientWidth - 32) / pageW);
-    pv.style.zoom = z < 1 ? String(round(z, 3)) : '';
+    const z = Math.min(1, (el.clientWidth - 32) / pageW) * docZoom();
+    pv.style.zoom = Math.abs(z - 1) > 1e-3 ? String(round(z, 3)) : '';
+    // after a redraw, stay on the same page at the same place (pages are rebuilt, so the old scroll position is meaningless)
+    const a = _patAnchor, pg = a && pv.querySelectorAll('.page')[a.i];
+    if (pg) el.scrollTop += pg.getBoundingClientRect().top - el.getBoundingClientRect().top + a.f * pg.getBoundingClientRect().height;
   },
   props() { return Views.pattern.inspector(); },
   inspector() {
@@ -114,10 +117,13 @@ function pagesPanel() {
   if (ui.view !== 'pattern') return panelNote('The pattern\'s pages show here in the Pattern workspace.', ['view', 'pattern'], 'Go to Pattern');
   const pages = patternPages();
   if (!pages.length) return panelNote('Building the pages…');
+  // one row a section, with its page range (a section that runs over several pages is one row)
+  const groups = [];
+  for (const p of pages) if (p.cont && groups.length) groups[groups.length - 1].to = p.i; else groups.push({ from: p.i, to: p.i, title: p.title });
   let h = '';
-  for (const p of pages) {
-    const cont = p.cont;
-    h += `<button class="page-row${cont ? ' cont' : ''}" data-act="goPage" data-arg="${p.i}" data-page="${p.i}" aria-label="Page ${p.i + 1}: ${esc(p.title)}${cont ? ', continued' : ''}"><span class="pg-n">${p.i + 1}</span><span class="pg-t">${cont ? 'continued' : esc(p.title)}</span></button>`;
+  for (const g of groups) {
+    const range = g.to > g.from ? `${g.from + 1}–${g.to + 1}` : `${g.from + 1}`;
+    h += `<button class="page-row" data-act="goPage" data-arg="${g.from}" data-page="${g.from}" data-to="${g.to}" aria-label="${g.to > g.from ? `Pages ${range}` : `Page ${range}`}: ${esc(g.title)}"><span class="pg-n">${range}</span><span class="pg-t">${esc(g.title)}</span></button>`;
   }
   return `<div class="panel-tools"><span class="pt-note">${plural(pages.length, 'page')} · ${ui.patternPage === 'a4' ? 'A4' : 'US Letter'}</span></div><div class="page-list" aria-label="Pages">${h}</div>`;
 }
@@ -127,9 +133,16 @@ function markCurrentPage() {
   const pages = $$('#pattern-preview .page'), box = $('#main').getBoundingClientRect();
   let cur = 0;
   pages.forEach((pg, i) => { if (pg.getBoundingClientRect().top < box.top + box.height / 3) cur = i; });
-  $$('.page-row').forEach(r => r.setAttribute('aria-current', +r.dataset.page === cur));
+  $$('.page-row').forEach(r => r.setAttribute('aria-current', cur >= +r.dataset.page && cur <= +(r.dataset.to ?? r.dataset.page)));
   const st = $('#statusbar .sb-l');
   if (st && ui.view === 'pattern') st.textContent = pages.length ? `Page ${cur + 1} of ${pages.length}` : '';
 }
 $('#main')?.addEventListener('scroll', debounce(() => { if (ui.view === 'pattern') markCurrentPage(); }, 60));
+// which page is at the top of the view, and how far into it (as a fraction, so a zoom change keeps the place)
+let _patAnchor = null;
+$('#main')?.addEventListener('scroll', () => {
+  if (ui.view !== 'pattern') return;
+  const top = $('#main').getBoundingClientRect().top, pages = $$('#pattern-preview .page'), i = pages.findIndex(p => p.getBoundingClientRect().bottom > top + 1);
+  if (i >= 0) { const r = pages[i].getBoundingClientRect(); _patAnchor = { i, f: (top - r.top) / (r.height || 1) }; }
+}, { passive: true });
 registerPanel('pages', { title: 'Pages', short: 'Pages', icon: 'pages', ws: ['pattern'], render: pagesPanel, after: () => markCurrentPage() });

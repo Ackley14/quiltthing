@@ -74,8 +74,14 @@ function fmtSize(w, h, mode = 'near') {
   return `${fracIn(w, mode)}" × ${fracIn(h, mode)}"`;
 }
 // Value for an <input> in current units (plain decimal, no glyphs).
+// A length for a text box: eighths as fractions, like everywhere else ("2¼"), other values as decimals.
 function inputLen(inches) {
   if (displayUnits === 'cm') return String(round(inches * CM_PER_IN, 2));
+  const e = Math.round(inches * 8);
+  if (Math.abs(inches * 8 - e) < 1e-4 && e >= 0) {
+    const w = Math.floor(e / 8), f = ['', '⅛', '¼', '⅜', '½', '⅝', '¾', '⅞'][e % 8];
+    return (w || !f ? String(w) : '') + f;
+  }
   return String(round(inches, 4));
 }
 function unitLabel() { return displayUnits === 'cm' ? 'cm' : 'in'; }

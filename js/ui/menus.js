@@ -231,7 +231,7 @@ const CONTEXT_MENUS = [
     { label: 'Add to this quilt', act: 'useLibrary', arg: el.dataset.arg },
     { label: 'Add and place in the layout', act: 'useLibraryPlace', arg: el.dataset.arg },
   ]],
-  ['.zoom-pct', () => zoomMenuItems()],
+  ['.zoom-pct', () => ['fabric', 'pattern'].includes(ui.view) ? [{ label: '100%', act: 'docZoomBy', arg: 'fit', kb: '0' }, '-', { label: 'Zoom in', act: 'docZoomBy', arg: 'in', kb: '+' }, { label: 'Zoom out', act: 'docZoomBy', arg: 'out', kb: '−' }] : zoomMenuItems()],
   ['[data-panel] .part-row.layer', el => {
     const i = doc.quilting.layers.findIndex(L => L.id === el.dataset.arg), L = doc.quilting.layers[i];
     if (!L) return null;

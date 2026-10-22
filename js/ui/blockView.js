@@ -42,13 +42,13 @@ Views.block = {
       const ib = (act, arg, ic, label) => `<button class="tool icon-only" data-act="${act}" ${arg ? `data-arg="${arg}"` : ''} title="${label}" aria-label="${label}">${icon(ic)}</button>`;
       opts = `<span class="tb-label">${plural(sel.length, 'shape')}</span>${fabBtn('selFabricMenu', fs.length === 1 ? fs[0] : null, fs.length > 1)}
         ${ib('selDup', '', 'dup', 'Duplicate (Ctrl+D)')}${ib('selRotate', 'cw', 'rotate', 'Rotate 90° (E)')}${ib('selMirror', 'h', 'mirror', 'Flip horizontal (X)')}${ib('selMirror', 'v', 'flipv', 'Flip vertical (Y)')}${ib('selOrder', 'front', 'front', 'Bring to front')}${ib('selOrder', 'back', 'back', 'Send to back')}${ib('selDelete', '', 'trash', 'Delete (Del)')}`;
-    } else if (ui.tool === 'select') opts = '<span class="tb-hint">Click a shape to select it. Shift-click or drag a box to select several.</span>';
-    else if (ui.tool === 'text') opts = '<span class="tb-hint">Type the words and choose the font in Properties, then click where they go.</span>';
-    else if (ui.tool === 'hand') opts = '<span class="tb-hint">Drag to move around when zoomed in. Space-drag does the same with any tool.</span>';
-    else if (ui.tool === 'zoom') opts = `<span class="tb-hint">Click to zoom in, Alt-click to zoom out.</span><button class="tool small" data-act="edZoomBy" data-arg="fit">Fit</button>`;
-    else if (ui.tool === 'erase') opts = '<span class="tb-hint">Click a shape or seam line to remove it, or drag across several.</span>';
+    } else if (ui.tool === 'select') opts = `<button class="tool small" data-act="selAll" title="Select all (Ctrl+A)">Select all</button>`;
+    // controls only; the status bar says how to use the tool
+    else if (ui.tool === 'text') { const o = textOpts(); opts = `${fabBtn('paintFabricMenu', ui.fabric)}<input class="tb-in wide" type="text" data-input="textStr" value="${esc(o.str)}" aria-label="Words" title="Words" spellcheck="false"><select class="tb-in" data-change="textFont" aria-label="Font" title="Font">${fontOptions(o.font)}</select><label class="tb-label">Height<input class="tb-in narrow" type="text" inputmode="decimal" value="${esc(inputLen(o.h))}" data-change="textH" aria-label="Capital height"></label>`; }
+    else if (ui.tool === 'hand' || ui.tool === 'zoom') opts = `<button class="tool small" data-act="edZoomBy" data-arg="fit" title="Fit (0)">Fit</button><button class="tool small" data-act="zoomActual" title="Actual size (Shift+0)">100%</button>`;
+    else if (ui.tool === 'erase') opts = '';
     else if (ui.tool === 'paint' || ui.tool === 'fill') opts = `<span class="tb-label">${ui.tool === 'fill' ? 'Fill with' : 'Paint with'}</span>${fabBtn('paintFabricMenu', ui.fabric)}`;
-    else if (ui.tool !== 'select') opts = `<span class="tb-hint">${{ polygon: 'Click grid points; click the first one or press Enter to finish.', rect: 'Drag from corner to corner.', tri: 'Click a square to cut it into triangles; drag for bigger ones.', arc: 'Click a square for a quarter circle; drag from a corner for a bigger one.', seam: 'Click a point on a line, then a point on another line.' }[ui.tool] || ''}</span><button class="tool toggle" data-act="toggleSnap" aria-pressed="${!ui.snapOff}" title="Snap points to the grid">Snap</button>`;
+    else opts = `${ui.tool !== 'seam' ? fabBtn('paintFabricMenu', ui.fabric) : ''}<button class="tool toggle" data-act="toggleSnap" aria-pressed="${!ui.snapOff}" title="Snap points to the grid">Snap</button>`;
     const tl = [...BLOCK_TOOLS, ...NAV_TOOLS].find(t => t.key === ui.tool);
     return `${tl ? `<span class="tool-chip">${icon(tl.icon, 16)}${tl.label}</span>` : ''}${opts}
       ${refImgs[b.id] ? `<span class="sep"></span><button class="tool toggle" data-act="refAdjustToggle" aria-pressed="${!!ui.refAdjust}" title="Drag to move the tracing picture, scroll to resize it">Move picture</button>` : ''}
@@ -1342,11 +1342,11 @@ function blockInspector() {
   h += section('Block', `
     <label class="f">Name<input type="text" value="${esc(b.name)}" data-change="blockName"></label>
     ${hex ? `<label class="f">Lattice<select data-change="blockGrid">${hexGrids.map(v => `<option value="${v}" ${v === b.n ? 'selected' : ''}>${v} triangles across</option>`).join('')}</select></label>
-      <p class="hint">${blockSizeText(b, S)}. Set the size in Layout.</p>` : ''}
+      <p class="hint">${blockSizeText(b, S)}.</p>` : ''}
     ${b.kind === 'drawn' && !hex ? `<div class="f-row">
       <label class="f">Grid<select data-change="blockGrid">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 24, 32].concat(b.n).filter((v, i, a) => a.indexOf(v) === i).sort((x, y) => x - y).map(v => `<option value="${v}" ${v === b.n ? 'selected' : ''}>${v} × ${v}</option>`).join('')}</select></label>
       <label class="f">Lattice<select data-change="blockLattice"><option value="square" ${b.lattice !== 'tri' ? 'selected' : ''}>Square</option><option value="tri" ${b.lattice === 'tri' ? 'selected' : ''}>Triangle, 60°</option></select></label></div>
-      <p class="hint">${fmtSize(S, S)} finished, ${fmtLen(S / b.n)} squares. Set the size in Layout.</p>` : ''}`, { key: 'block', right: more });
+      <p class="hint">${fmtSize(S, S)} finished, ${fmtLen(S / b.n)} squares.</p>` : ''}`, { key: 'block', right: more });
 
   if (b.kind === 'compound') {
     let slots = `<label class="f">Arrangement<select data-change="compoundSub">${SUB_PRESETS.map(p => `<option value="${p.key}" ${subKey(b.sub) === p.key ? 'selected' : ''}>${p.label}</option>`).join('')}</select></label>`;
@@ -1401,7 +1401,7 @@ function shapesPanel() {
   return `<div class="panel-tools"><span class="pt-note">${plural(b.regions.length, 'shape')}${sel.length ? ` · ${sel.length} selected` : ''}</span><span class="grow"></span>
     ${sel.length ? `<button class="btn small quiet" data-act="selOrder" data-arg="front" title="Bring to front">${icon('front', 14)}</button><button class="btn small quiet" data-act="selOrder" data-arg="back" title="Send to back">${icon('back', 14)}</button>` : ''}
     <button class="btn small" data-act="selAll" title="Select all (Ctrl+A)">Select all</button></div>
-    <div class="pad">${list ? `${list}<p class="hint">Top of the list is in front.</p>` : '<p class="hint">Empty block. Draw with the tools on the left.</p>'}</div>`;
+    <div class="pad">${list ? list : '<p class="hint">No shapes yet.</p>'}</div>`;
 }
 // A shape's name in the shapes list, in quilting words.
 function regionName(b, reg) {

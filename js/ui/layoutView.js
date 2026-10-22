@@ -42,10 +42,9 @@ Views.layout = {
           <button class="tool" data-act="cellRotate">Rotate 90°</button><button class="tool" data-act="cellFlip">Flip</button><button class="tool" data-act="cellEdit">Edit block</button>
           ${pb && pb.id !== c.b ? `<button class="tool" data-act="cellReplace">Replace with ${esc(pb.name)}</button>` : ''}<button class="tool danger" data-act="cellClear">Clear</button>`
         : `<span class="tb-label">${c?.fab ? `Plain ${esc(fabricLabel(c.fab))}` : 'Empty position'}</span>${pb && cellOk ? `<button class="tool" data-act="cellReplace">Put ${esc(pb.name)} here</button>` : ''}${c?.fab ? '<button class="tool danger" data-act="cellClear">Clear</button>' : ''}`;
-    } else opts = '<span class="tb-hint">Click a position on the quilt to select it; drag an inset panel to move it.</span>';
+    } else opts = '';
     const tl = [...LAYOUT_TOOLS, ...NAV_TOOLS].find(t => t.key === tool);
-    if (tool === 'hand') opts = '<span class="tb-hint">Drag to move around the quilt when zoomed in.</span>';
-    if (tool === 'zoom') opts = `<span class="tb-hint">Click to zoom in, Alt-click to zoom out.</span><button class="tool small" data-act="qZoomBy" data-arg="fit">Fit</button>`;
+    if (tool === 'hand' || tool === 'zoom') opts = `<button class="tool small" data-act="qZoomBy" data-arg="fit" title="Fit (0)">Fit</button><button class="tool small" data-act="zoomActual" title="Actual size (Shift+0)">100%</button>`;
     return `${tl ? `<span class="tool-chip">${icon(tl.icon, 16)}${tl.label}</span>` : ''}${opts}`;
   },
   main() {
@@ -483,7 +482,10 @@ Actions.tessPattern = kind => {
 };
 Actions.addBorder = () => {
   const last = doc.layout.borders[doc.layout.borders.length - 1];
-  doc.layout.borders.push({ width: last ? last.width + 2 : 2, fabric: doc.fabrics[(fabricIndex(last?.fabric) + 1) % doc.fabrics.length]?.id || doc.fabrics[1].id });
+  // the next fabric after the last border's, but never the background (a border in it wouldn't show)
+  const n = doc.fabrics.length, start = fabricIndex(last?.fabric) + 1;
+  const fab = [...Array(n).keys()].map(k => doc.fabrics[(start + k) % n].id).find(id => id !== doc.layout.background && id !== last?.fabric) || doc.fabrics[0].id;
+  doc.layout.borders.push({ width: last ? last.width + 2 : 2, fabric: fab });
   commit();
   focusSoon(`[data-panel="props"] input[data-bind="layout.borders.${doc.layout.borders.length - 1}.width"]`);
 };
@@ -617,7 +619,12 @@ Actions.quiltAddMenu = (a, el) => openMenu(el, [
   ...(doc.layout.mode === 'grid' && !(doc.layout.grid.sashing.width > 0) ? [{ label: 'Sashing', act: 'addSashing' }] : []),
   ...(doc.layout.binding.fabric ? [] : [{ label: 'Binding', act: 'bindingFab', arg: doc.fabrics[1]?.id || doc.fabrics[0].id }]),
 ]);
-Actions.addSashing = () => { doc.layout.grid.sashing.width = 1.5; ui.quiltPart = 'sashing'; commit(); focusSoon('[data-panel="props"] input[data-bind="layout.grid.sashing.width"]'); };
+Actions.addSashing = () => {
+  const s = doc.layout.grid.sashing; s.width = 1.5; ui.quiltPart = 'sashing';
+  // sashing in the background fabric wouldn't show
+  if (s.fabric === doc.layout.background) s.fabric = doc.fabrics.find(f => f.id !== doc.layout.background)?.id || s.fabric;
+  commit(); focusSoon('[data-panel="props"] input[data-bind="layout.grid.sashing.width"]');
+};
 // Properties in Layout: the selected position first, then the part chosen in the Quilt panel.
 function layoutProps() {
   const parts = quiltParts(), cur = parts.find(p => p.key === ui.quiltPart) || parts[0];

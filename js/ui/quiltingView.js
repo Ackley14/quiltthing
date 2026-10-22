@@ -30,7 +30,7 @@ function quiltLayersPanel() {
       <button class="icon-btn sm eye" data-act="qToggleShow" data-arg="${i}" title="${L.visible ? 'Hide' : 'Show'}" aria-label="${L.visible ? 'Hide' : 'Show'} ${t.label}" aria-pressed="${!!L.visible}">${icon(L.visible ? 'eye' : 'eyeoff', 14)}</button></div>`;
   }).join('');
   return `<div class="panel-tools"><span class="pt-note">${plural(layers.length, 'layer')}</span><span class="grow"></span><button class="btn small" data-act="addLayerMenu" aria-haspopup="menu">${icon('plus', 14)} Add ${icon('down', 12)}</button></div>
-    ${layers.length ? `<div class="part-list" role="list" aria-label="Quilting layers">${rows}</div><p class="hint pad">Stitched from the top of the list down.</p>` : panelNote('No quilting planned yet.', ['addLayerMenu'], 'Add quilting')}`;
+    ${layers.length ? `<div class="part-list" role="list" aria-label="Quilting layers, stitched in this order">${rows}</div>` : panelNote('No quilting planned yet.', ['addLayerMenu'], 'Add quilting')}`;
 }
 // Properties in Quilting: the layer picked in the Layers panel.
 function quiltLayerProps() {
@@ -129,7 +129,7 @@ Actions.addQuiltLayer = (type, el) => {
   L.color = palette[doc.quilting.layers.length % palette.length];
   doc.quilting.layers.push(L);
   el.value = '';
-  ui.showQuilting = true; ui.qOpen = L.id;
+  ui.qOpen = L.id;
   commit();
   $(`[data-panel] [data-arg="${L.id}"]`)?.closest('.sec')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 };

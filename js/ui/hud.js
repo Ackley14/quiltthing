@@ -12,7 +12,7 @@ const HUD_WIDGETS = {
     if (hudSession.compact) return `<div class="hud-group"><button class="tool" data-act="viewMenu" aria-haspopup="menu">${icon('eye', 14)} View${items.some(t => t.on && t.arg !== 'grayscale') ? ' ·' : ''} ${icon('down', 12)}</button></div>`;
     return `<div class="hud-group" role="toolbar" aria-label="View">${viewToggles()}</div>`;
   } },
-  zoom: { label: 'Zoom', corner: 'br', ws: ['block', 'layout', 'quilting'], html: hudZoom },
+  zoom: { label: 'Zoom', corner: 'br', ws: ['block', 'layout', 'quilting', 'fabric', 'pattern'], html: hudZoom },
 };
 // Settings per workspace (prefs.hud[ws][id]); older settings saved for every workspace still count.
 const hudPref = (id, ws = curWs()) => ({ show: true, corner: HUD_WIDGETS[id].corner, order: Object.keys(HUD_WIDGETS).indexOf(id), ...(prefs.hud?.[id] || {}), ...(prefs.hud?.[ws]?.[id] || {}) });
@@ -32,6 +32,7 @@ function hudInfo() {
   return '';
 }
 function hudZoom() {
+  if (ui.view === 'fabric' || ui.view === 'pattern') return `<div class="hud-group zoom-ctl" role="group" aria-label="Zoom"><button class="tool" data-act="docZoomBy" data-arg="out" title="Zoom out (−)" aria-label="Zoom out">${icon('minus', 14)}</button><button class="tool zoom-pct" data-act="docZoomBy" data-arg="fit" title="Click for 100% (0)">${Math.round(docZoom() * 100)}%</button><button class="tool" data-act="docZoomBy" data-arg="in" title="Zoom in (+)" aria-label="Zoom in">${icon('plus', 14)}</button></div>`;
   const block = ui.view === 'block';
   if (block && activeBlock()?.kind !== 'drawn') return '';
   const z = block ? edZoom() : qzZoom(), act = block ? 'edZoomBy' : 'qZoomBy', id = block ? 'ed-zoom' : 'q-zoom';
@@ -39,6 +40,7 @@ function hudZoom() {
 }
 function renderHud() {
   const hud = $('#hud'); if (!hud) return;
+  document.body.dataset.doctool = ['fabric', 'pattern'].includes(ui.view) ? (ui.docTool || 'pointer') : '';
   const corners = { tl: [], tr: [], bl: [], br: [] };
   for (const id of hudFor().sort((x, y) => hudPref(x).order - hudPref(y).order)) {
     const p = hudPref(id);
@@ -51,6 +53,10 @@ function renderHud() {
   hud.classList.toggle('with-rulers', !!prefs.rulers);
   if (typeof drawRulers === 'function') requestAnimationFrame(drawRulers);
   requestAnimationFrame(() => { for (const el of $$('#ed-zoom, #q-zoom')) el.textContent = zoomPctText(); });
+  // the canvas fits between the HUD's top and bottom rows, so nothing covers the quilt's corners
+  const dw = $('#docwrap'), D = dw?.getBoundingClientRect();
+  const band = cs => Math.max(0, ...cs.map(c => { const el = $(`#hud .hud-c.${c}`), r = el?.getBoundingClientRect(); return r && r.height ? Math.round((c[0] === 't' ? r.bottom - D.top : D.bottom - r.top) + 10) : 0; }));
+  if (dw) { const t = `${Math.max(28, band(['tl', 'tr']))}px`, b2 = `${Math.max(28, band(['bl', 'br']))}px`; if (dw.style.getPropertyValue('--hud-top') !== t) dw.style.setProperty('--hud-top', t); if (dw.style.getPropertyValue('--hud-bottom') !== b2) dw.style.setProperty('--hud-bottom', b2); }
   // measure: does the row of View switches fit beside what's in the top-left corner?
   const W = $('#docarea')?.clientWidth || 0;
   if (hudSession.compact && W > hudSession.at + 40) { hudSession.compact = false; return renderHud(); }
@@ -69,7 +75,7 @@ Actions.hudCustomise = () => {
     <select data-change="hudCorner" data-arg="${id}" aria-label="Corner for ${HUD_WIDGETS[id].label}">${HUD_CORNERS.map(([k, l]) => `<option value="${k}" ${p.corner === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
     <span class="hud-ord"><button class="icon-btn sm" data-act="hudOrder" data-arg="${id}|-1" ${i ? '' : 'disabled'} aria-label="Move ${HUD_WIDGETS[id].label} up" title="Earlier in this corner">${icon('up', 14)}</button><button class="icon-btn sm" data-act="hudOrder" data-arg="${id}|1" ${i < n - 1 ? '' : 'disabled'} aria-label="Move ${HUD_WIDGETS[id].label} down" title="Later in this corner">${icon('down', 14)}</button></span></div>`; };
   const groups = HUD_CORNERS.map(([c, l]) => { const ids = hudInCorner(c); return ids.length ? `<h4 class="hud-corner">${l}</h4>${ids.map((id, i) => row(id, i, ids.length)).join('')}` : ''; }).join('');
-  openModal(`<h2>Customise the canvas HUD</h2><p class="hint">For the ${esc(wsLabel(curWs()))} workspace: which controls float over the canvas, in which corner and in what order.</p><div class="hud-rows">${groups}</div>
+  openModal(`<h2>Canvas HUD in ${esc(wsLabel(curWs()))}</h2><div class="hud-rows">${groups}</div>
     <div class="actions"><button class="btn" data-act="hudReset">Reset</button><button class="btn" data-act="hudAll">Use for every workspace</button><span class="grow"></span><button class="btn primary" data-act="closeModal">Done</button></div>`);
 };
 const setHud = (id, patch) => { const ws = curWs(); prefs.hud = { ...(prefs.hud || {}), [ws]: { ...(prefs.hud?.[ws] || {}), [id]: { ...hudPref(id), ...patch } } }; savePrefs(); renderHud(); };

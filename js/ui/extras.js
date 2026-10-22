@@ -54,6 +54,7 @@ document.addEventListener('keydown', e => {
   const shown = sel => [...next.querySelectorAll(sel)].find(x => isShown(x) && !x.disabled);
   const target = next.id === 'docarea' ? $('#main') : shown('[aria-selected="true"][tabindex="0"]') || shown('[aria-pressed="true"]') || shown('button, input, select, [tabindex="0"]');
   target?.focus();
+  if (target?.id === 'main') { target.classList.add('kbd-focus'); target.addEventListener('blur', () => target.classList.remove('kbd-focus'), { once: true }); }
   announce(next.getAttribute('aria-label') || next.id.replace(/^dock-/, '') + ' panels');
 });
 
@@ -217,7 +218,12 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.('input, select, textarea') || $('#modal-root').innerHTML) return;
   const k = e.key.toLowerCase();
   if (ui.view === 'quilting' && (k === 'h' || k === 'z')) Actions.qTool(k === 'h' ? 'hand' : 'zoom');
-  if (['fabric', 'pattern'].includes(ui.view) && (k === 'h' || k === 'v')) Actions.docTool(k === 'h' ? 'hand' : 'pointer');
+  if (['fabric', 'pattern'].includes(ui.view)) {
+    if (k === 'h' || k === 's' || k === 'v' || k === 'z') Actions.docTool(k === 'h' ? 'hand' : k === 'z' ? 'zoom' : 'pointer');
+    if (e.key === '+' || e.key === '=') Actions.docZoomBy('in');
+    if (e.key === '-' || e.key === '_') Actions.docZoomBy('out');
+    if (e.key === '0') Actions.docZoomBy('fit');
+  }
 });
 
 /* ---------- zoom at true scale ---------- */
@@ -237,3 +243,24 @@ document.addEventListener('keydown', e => {
   if (!e.shiftKey || e.ctrlKey || e.metaKey || e.altKey || e.code !== 'Digit0' || e.target.closest?.('input, select, textarea') || $('#modal-root').innerHTML) return;
   e.preventDefault(); Actions.zoomActual();
 }, true);
+
+/* ---------- documents zoom (Fabric & cutting, Pattern): 100% is the page at its natural size ---------- */
+const DOC_ZOOMS = [0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
+const docZoom = () => (ui.docZoom && ui.docZoom[ui.view]) || 1;
+function applyDocZoom(el = $('#main')) {
+  const d = el?.querySelector('.docview'); if (!d) return;
+  const z = docZoom();
+  d.classList.toggle('zoomed', z !== 1); d.style.zoom = z !== 1 ? String(z) : '';
+}
+Actions.docZoomBy = a => {
+  const z = docZoom(), i = DOC_ZOOMS.findIndex(x => x >= z - 1e-6);
+  const nz = a === 'in' ? DOC_ZOOMS[Math.min(DOC_ZOOMS.length - 1, (DOC_ZOOMS[i] > z + 1e-6 ? i : i + 1))] : a === 'out' ? DOC_ZOOMS[Math.max(0, i - 1)] : 1;
+  ui.docZoom = { ...(ui.docZoom || {}), [ui.view]: nz }; saveUi();
+  if (ui.view === 'pattern') Views.pattern.afterMain?.($('#main')); else applyDocZoom();
+  renderHud();
+};
+// the Zoom tool on a document: click to zoom in, Alt-click to zoom out
+document.addEventListener('pointerdown', e => {
+  if (!['fabric', 'pattern'].includes(ui.view) || ui.docTool !== 'zoom' || e.button !== 0 || !e.target.closest?.('#main') || e.target.closest('button, input, select, a')) return;
+  e.preventDefault(); Actions.docZoomBy(e.altKey ? 'out' : 'in');
+});

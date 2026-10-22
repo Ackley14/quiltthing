@@ -13,7 +13,7 @@ function fabricDefaultsHtml() {
     ${lenField('Usable width (WOF)', 'cutting.wof', { min: 10, max: 140 })}
     <div class="f-row">${numField('Extra %', 'cutting.extra', { min: 0, max: 50 })}
     ${selectField('Round up to', 'cutting.roundTo', [['eighth', '⅛ yard'], ['quarter', '¼ yard'], ['half', '½ yard'], ['none', "Don't round"]])}</div>
-    <p class="hint">Every fabric uses these unless its own settings say otherwise. Usable width is what's left after trimming the selvages; quilting cotton is usually 40–42".</p>`;
+    <p class="hint">Quilting cotton is usually 40–42" wide after trimming the selvages.</p>`;
 }
 // How pieces are sewn and cut: seam allowance, appliqué method, backing margin, edge pieces.
 function seamSettingsHtml() {
@@ -26,7 +26,7 @@ function seamSettingsHtml() {
 }
 
 Views.fabric = {
-  tools() { return { act: 'docTool', active: ui.docTool || 'pointer', list: [{ key: 'pointer', label: 'Select', kb: 'V', icon: 'pointer' }, { key: 'hand', label: 'Hand', kb: 'H', icon: 'hand' }] }; },
+  tools() { return { act: 'docTool', active: ui.docTool || 'pointer', list: [{ key: 'pointer', label: 'Select', kb: 'S', icon: 'pointer' }, { key: 'hand', label: 'Hand', kb: 'H', icon: 'hand' }, { key: 'zoom', label: 'Zoom', kb: 'Z', icon: 'zoomin' }] }; },
   docs() { const cut = ui.fabPane === 'cut'; return [{ label: 'Shopping list', on: !cut, act: 'fabPane', arg: 'shop', icon: 'list' }, { label: 'Cutting plan', on: cut, act: 'fabPane', arg: 'cut', icon: 'cut' }]; },
   docTools() { return ui.fabPane === 'cut' ? `<button class="tool toggle small" data-act="toggleCutMaps" aria-pressed="${ui.cutDiagrams !== false}">Cutting maps</button>` : ''; },
   options() {
@@ -45,7 +45,7 @@ Views.fabric = {
     for (const w of [...Q.warnings, ...seamWarnings(), ...plan.problems]) h += `<div class="callout bad" style="margin-bottom:10px">${esc(w)}</div>`;
     return h + (cut ? cuttingPlanHtml(plan) : shoppingListHtml(plan)) + '</div>';
   },
-  afterMain(el) { if (ui.fabPane === 'cut') cuttingAfterMain(el); },
+  afterMain(el) { if (ui.fabPane === 'cut') cuttingAfterMain(el); applyDocZoom(el); },
   // Properties in Fabric & cutting: how fabric is bought and how pieces are sewn (the two
   // settings dialogs, always at hand here); Stash and Backing are panels of their own.
   props() {

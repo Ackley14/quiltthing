@@ -25,8 +25,7 @@ registerPanel('palettes', {
 registerPanel('library', {
   title: 'Library', short: 'Library', icon: 'library', ws: ['block', 'layout'],
   render: () => `<div class="pad"><div class="lib-tools"><input type="text" placeholder="Search blocks" value="${esc(ui.libSearch)}" data-input="libSearch" aria-label="Search blocks"></div>
-    <div class="lib-panel-folders">${libraryFolders()}</div><div class="blocks lib-grid in-panel">${libraryGrid()}</div>
-    <p class="hint">Click a block to add it to this quilt. Right-click for more.</p></div>`,
+    <div class="lib-panel-folders">${libraryFolders()}</div><div class="blocks lib-grid in-panel">${libraryGrid()}</div></div>`,
   // the saved quilts are read once; then just this panel is redrawn
   after: () => { if (ui.libCat === 'mine' && !_savedLibLoaded) loadSavedBlocks().then(() => { for (const h of $$('[data-host="library"]')) dockSession.html.delete(h); dockRender(); }); },
 });
@@ -40,7 +39,7 @@ function historyPanel() {
   return `<div class="panel-tools"><span class="pt-note">${plural(past.length, 'step')}${fut.length ? ` · ${fut.length} undone` : ''}</span><span class="grow"></span>
     <button class="btn small quiet" data-act="undo" ${past.length ? '' : 'disabled'} title="Undo (Ctrl+Z)">${icon('undo', 14)}</button><button class="btn small quiet" data-act="redo" ${fut.length ? '' : 'disabled'} title="Redo (Ctrl+Shift+Z)">${icon('redo', 14)}</button></div>
     <div class="hist-list" aria-label="Undo history">${rows.join('')}</div>
-    <p class="hint pad">Click a step to go back to it. Making a new change after going back drops the steps after it.</p>`;
+    <p class="hint pad">A new change after going back drops the later steps.</p>`;
 }
 registerPanel('history', { title: 'History', short: 'History', icon: 'history', render: historyPanel, after: host => host.querySelector('.hist-row.on')?.scrollIntoView({ block: 'nearest' }) });
 Actions.histGo = n => {
