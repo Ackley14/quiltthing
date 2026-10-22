@@ -99,7 +99,12 @@ function fabricById(id) {
 function resolveFab(id) { return id === BG ? doc.layout.background : id; }
 function fabricIndex(id) { return doc.fabrics.findIndex(f => f.id === resolveFab(id)); }
 function activeBlock() { return doc.blocks[ui.activeBlock] || null; }
-function placeBlock() { return doc.blocks[ui.placeBlock] || activeBlock(); }
+function placeBlock() {
+  const b = doc.blocks[ui.placeBlock] || activeBlock();
+  // a tessellation of other shapes takes blocks only in its inset panel, and a hexagon block can't go there
+  if (b && doc.layout.mode === 'tess' && doc.layout.tess.shape !== 'hex' && isHexBlock(b)) return doc.blockOrder.map(id => doc.blocks[id]).find(x => !isHexBlock(x)) || null;
+  return b;
+}
 
 /* ---------- history ---------- */
 const undoStack = { past: [], future: [], current: null, max: 200 };

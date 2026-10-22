@@ -5,6 +5,7 @@
 
 // words quilters use that aren't in the command names
 const CMD_SYNONYMS = { stitch: 'quilting', stitching: 'quilting', turn: 'rotate', spin: 'rotate', mirror: 'flip', hst: 'half square triangle seam', qst: 'quarter square triangle', yardage: 'fabric buy shopping', cut: 'cutting plan', binding: 'binding', pdf: 'print pattern', colour: 'color fabric palette', color: 'colour fabric palette', recolour: 'palette swap', recolor: 'palette swap', undo: 'history', layer: 'quilting', applique: 'appliqué', sashing: 'sashing', border: 'border', zoom: 'zoom fit', dark: 'theme', light: 'theme',
+  tessellation: 'tessellation setting', tessellate: 'tessellation', random: 'random', mirror: 'mirror flip', center: 'centre', centre: 'centre center', saved: 'saved', hexagon: 'hexagons hexagon',
   seam: 'seam allowance', seams: 'seam allowance', allowance: 'seam', wof: 'width default fabric', width: 'width', point: 'setting', onpoint: 'setting', diagonal: 'setting', cornerstone: 'sashing', cornerstones: 'sashing', swap: 'swap', exchange: 'swap', fat: 'default fabric bought', quarter: 'default fabric bought', shopping: 'shopping list', buy: 'shopping list', cutting: 'cutting plan', back: 'back', backing: 'back backing', stipple: 'meander', freemotion: 'meander', fmq: 'meander', paper: 'paper', letter: 'paper', a4: 'paper' };
 // settings and views anywhere in the app, so they can be found from any workspace
 const CMD_PLACES = () => [
@@ -32,7 +33,7 @@ function commandList() {
       if (it === '-') { head = ''; continue; }
       if (!it) continue;
       if (it.header) { head = it.header.replace(/<[^>]+>/g, ''); continue; }
-      if (!it.act) continue;
+      if (!it.act || it.act === 'togglePanel') continue;   // panels are listed once, below
       add({ label: it.text ? it.label : it.label.replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').trim(), path: `${name}${head ? ` › ${head}` : ''}`, act: it.act, arg: it.arg, kb: it.kb, checked: it.checked, disabled: !!it.disabled });
     }
   }
@@ -129,7 +130,7 @@ const SHORTCUTS = [
   ['Layout', [
     ['B', 'Place'], ['V', 'Paint'], ['S', 'Select'], ['R', 'Turn the block under the pointer or selected (Shift R: other way)'], ['F', 'Flip it'], ['Delete', 'Clear it'], ['Shift-click', 'Place mirrored'], ['Right-click', 'Clear a position'],
   ]],
-  ['Fabric & cutting, Pattern', [['V', 'Select (text on the page)'], ['H', 'Hand: drag the page'], ['Ctrl P', 'Print the pattern or save it as a PDF']]],
+  ['Fabric & cutting, Pattern', [['S', 'Select (text on the page)'], ['H', 'Hand: drag the page'], ['Z', 'Zoom: click in, Alt-click out'], ['+ −', 'Zoom in, out'], ['0', 'Fit (Pattern) or 100% (Fabric & cutting)'], ['Ctrl P', 'Print the pattern or save it as a PDF']]],
   ['Length boxes', [['↑ ↓', 'Step ⅛" (0.5 cm); Shift 1" (1 cm); Alt 1/16" (1 mm)'], ['Esc', 'Put the old value back'], ['2-1/2  or  3 1/2 + 1/4', 'Quilting fractions and sums work; +1/4, *2 and 50% change the current value']]],
   ['Panels', [['Arrow keys on a tab', 'Next or previous panel in the group'], ['Right-click a tab', 'Move, fold or close the panel'], ['Arrow keys on a divider', 'Resize (Enter or double-click resets)'], ['Ctrl .', 'Hide or show all panels']]],
 ];

@@ -239,9 +239,10 @@ function editorGuides(b) {
   // drawn turned, so the lines are turned back to stay upright)
   if (ui.showCentre) {
     const c = S / 2, ink = 'stroke="#d6336c" stroke-linecap="round" pointer-events="none"', back = edAngle(b);
-    s += `${back ? `<g transform="rotate(${-back} ${c} ${c})">` : ''}<line x1="${c}" y1="0" x2="${c}" y2="${S}" ${ink} stroke-width="${hair * 1.8}" stroke-dasharray="${hair * 10} ${hair * 4}"/>
+    const hexClip = isHexBlock(b) ? `<clipPath id="ed-hexclip"><path d="${polyToPath(blockOutline(b, S))}"/></clipPath>` : '';
+    s += `${hexClip}${hexClip ? '<g clip-path="url(#ed-hexclip)">' : ''}${back ? `<g transform="rotate(${-back} ${c} ${c})">` : ''}<line x1="${c}" y1="0" x2="${c}" y2="${S}" ${ink} stroke-width="${hair * 1.8}" stroke-dasharray="${hair * 10} ${hair * 4}"/>
       <line x1="0" y1="${c}" x2="${S}" y2="${c}" ${ink} stroke-width="${hair * 1.8}" stroke-dasharray="${hair * 10} ${hair * 4}"/>
-      <circle cx="${c}" cy="${c}" r="${u * 0.012}" fill="#d6336c" pointer-events="none"/>${back ? '</g>' : ''}`;
+      <circle cx="${c}" cy="${c}" r="${u * 0.012}" fill="#d6336c" pointer-events="none"/>${back ? '</g>' : ''}${hexClip ? '</g>' : ''}`;
   }
   // seams (always shown while the seam tool is active, so they can be clicked to remove)
   if (ui.showSeamLines !== false || ui.tool === 'seam' || ui.tool === 'erase') [['s', b.seams], ['a', b.appSeams]].forEach(([tag, list]) => (list || []).forEach(([A, B], i) => {
@@ -843,7 +844,7 @@ Actions.blockViewMenu = (a, el) => {
   ]);
 };
 Actions.blockTool = t => { ui.tool = t; ui.drawing = []; ed.triPreview = null; ed.hover = null; ed.eraseHover = null; ed.fillHover = null; if (t !== 'select') ui.selEdge = null; saveUi(); renderView(); };
-Actions.toggleSnap = () => { ui.snapOff = !ui.snapOff; saveUi(); renderView(); toast(ui.snapOff ? 'Snap off' : 'Snap on', 1400); };
+Actions.toggleSnap = () => { ui.snapOff = !ui.snapOff; saveUi(); renderView(); announce(ui.snapOff ? 'Snap off' : 'Snap on'); };
 // Arc snaps for Shift-dragging an edge: bulge = tan(sweep / 4)
 const ARC_SNAPS = [0, 30, 45, 60, 90, 120, 180].flatMap(d => d ? [Math.tan(d * Math.PI / 720), -Math.tan(d * Math.PI / 720)] : [0]);
 function arcLabel(bl) {

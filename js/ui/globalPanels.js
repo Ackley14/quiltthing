@@ -3,7 +3,7 @@
 
 /* ---------- Fabric Properties: the fabric editor as a panel (the swatch popover's pinned form) ---------- */
 registerPanel('fabprops', {
-  title: 'Fabric Properties', short: 'Fabric', icon: 'swatch',
+  title: 'Fabric properties', short: 'Fabric', icon: 'swatch',
   render: () => { const f = selFabric(); return f ? `<div class="pad fabprops">${fabricEditor(f).replace(/<div class="pop-h">[\s\S]*?<\/div>/, `<div class="pop-h"><b>Fabric ${letterFor(doc.fabrics.indexOf(f))} · ${esc(f.name)}</b></div>`)}</div>` : panelNote('Pick a fabric in the Fabrics panel to edit it here.'); },
 });
 // the popover's pin docks it as the panel

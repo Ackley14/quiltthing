@@ -154,10 +154,12 @@ Actions.addQuiltLayer = (type, el) => {
   const L = newQuiltLayer(type);
   const palette = ['#c0392b', '#2471a3', '#1e8449', '#8e44ad', '#d35400', '#17202a'];
   L.color = palette[doc.quilting.layers.length % palette.length];
-  doc.quilting.layers.push(L);
-  el.value = '';
+  // a new layer goes above the open one (higher layers win where lines overlap), or on top
+  const at = doc.quilting.layers.findIndex(x => x.id === ui.qOpen);
+  doc.quilting.layers.splice(at >= 0 ? at : 0, 0, L);
+  if (el) el.value = '';
   ui.qOpen = L.id;
-  commit();
+  commit(`Add quilting: ${quiltType(type).label}`);
   $(`[data-panel] [data-arg="${L.id}"]`)?.closest('.sec')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 };
 Actions.qAngleLive = (v, el) => { const L = doc.quilting.layers[+el.dataset.arg]; if (L) { L.angle = +v; renderMainOnly(); } };

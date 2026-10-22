@@ -150,7 +150,8 @@ function layoutCountText(Q) {
   return `${plural(blocks, 'block')}${plain ? ` + ${plural(plain, 'plain square')}` : ''}`;
 }
 function layoutHint(tool) {
-  if (tool === 'place' && tessHexBlocks()) return 'Click or drag to place. Click again to turn. Right-click to clear.';
+  if (tool === 'place' && tessHexBlocks()) return 'Click or drag to place. Click again to turn, Shift to mirror. Right-click to clear.';
+  if (tool === 'place' && doc.layout.mode === 'tess') return 'Click the inset panel to put a block in it. Right-click to clear.';
   if (tool === 'place') return 'Click or drag to place. Click again to turn, Shift to mirror. Right-click to clear.';
   if (tool === 'paintcell') return doc.layout.mode === 'tess' ? 'Click or drag to paint shapes. Right-click to reset.' : 'Paint plain squares or setting triangles. Right-click to clear.';
   if (tool === 'hand') return 'Drag to move around the quilt when zoomed in.';
@@ -385,7 +386,7 @@ Actions.rotPattern = kind => {
   });
   commit();
 };
-Actions.clearLayout = () => confirmModal('Clear the layout?', 'Removes every block and painted square from the layout (your blocks stay in Quilt blocks).', 'Clear layout', () => {
+Actions.clearLayout = () => confirmModal('Clear the layout?', 'Removes every block and painted shape from the layout (your blocks stay in the Blocks panel).', 'Clear layout', () => {
   const L = doc.layout;
   L.grid.cells = L.grid.cells.map(() => null); delete L.grid.hidden;
   L.onpoint.cells = {};
@@ -395,9 +396,9 @@ Actions.clearLayout = () => confirmModal('Clear the layout?', 'Removes every blo
 }, true);
 
 Actions.tessShape = v => {
-  const t = doc.layout.tess, s = tessShape(v);
-  t.shape = v; t.ratio = s.ratio; t.lean = s.lean; t.orient = 0; t.colors = {}; t.blocks = {};
-  commit();
+  const t = doc.layout.tess, sh = tessShape(v);
+  if (t.shape === v) return;
+  tessReshape(t => { t.shape = v; t.ratio = sh.ratio; t.lean = sh.lean; t.orient = 0; }, `Shape: ${sh.label.replace(/ \(.*\)$/, '')}`);
 };
 Actions.tessEdge = v => { doc.layout.tess.edge = v; commit(); };
 Actions.tessFill = id => { doc.layout.tess.fill = id; commit(); };
@@ -524,7 +525,7 @@ Actions.tessPattern = kind => {
   for (const t of tiles) {
     let i = 0;
     const c = centroid(t.pts);
-    if (kind === 'random') i = Math.floor(R() * F.length);
+    if (kind === 'random') i = Math.floor(R() * items.length);
     else if (kind === 'rows') i = t.row - minR;
     else if (kind === 'cols') i = t.col;
     else if (kind === 'diag') i = t.row + t.col;
@@ -556,48 +557,60 @@ Actions.bindingFab = id => { doc.layout.binding.fabric = id || null; commit(); }
 Actions.bindingNone = () => { doc.layout.binding.fabric = null; commit(); };
 Actions.bgFab = id => { doc.layout.background = id; commit(); };
 
-/* ---------- turning the tessellation (pointy/flat, rows/columns) ---------- */
-// The other orientation is a different grid of shapes. Each painted shape and hexagon block goes to the
-// shape of the new grid nearest where it was, so the design stays put and only the shapes change.
-function tessCentres() {
-  // build the tessellation even when the quilt is set straight or on point right now
+/* ---------- changing a tessellation's shape or orientation ---------- */
+// The new arrangement is a different set of shapes. Each new shape takes the fabric of the old shape
+// under its centre, so the design stays where it was; hexagon blocks move to the nearest new hexagon.
+// Going back to an arrangement you just left, with nothing changed since, brings its design back exactly.
+const _tessMemo = new Map();
+function tessGeometry() {
+  // built as a tessellation even when the quilt is set straight or on point right now
   const mode = doc.layout.mode; let Q;
   try { doc.layout.mode = 'tess'; _Q = null; Q = buildQuilt(); } finally { doc.layout.mode = mode; _Q = null; }
-  const m = new Map(), cx = Q.W / 2, cy = Q.H / 2;
-  for (const tl of Q.tiles) if (tl.tkey != null && tl.role !== 'fill') { const [x, y] = centroid(tl.full || tl.pts); m.set(tl.tkey, [x - cx, y - cy]); }
-  for (const c of Q.cells) if (c.hex && c.key[0] === 't') m.set(c.key.slice(1), [c.cx - cx, c.cy - cy]);
-  return m;
+  const cx = Q.W / 2, cy = Q.H / 2, shift = pts => pts.map(([x, y]) => [x - cx, y - cy]);
+  const shapes = [];
+  for (const tl of Q.tiles) if (tl.tkey != null && tl.role !== 'fill') { const poly = shift(tl.full || tl.pts); shapes.push({ key: tl.tkey, poly, c: centroid(poly) }); }
+  for (const c of Q.cells) if (c.hex && c.key[0] === 't') { const poly = shift(c.pts); shapes.push({ key: c.key.slice(1), poly, c: [c.cx - cx, c.cy - cy], block: true }); }
+  return shapes;
 }
-function centreGrid(m, cell) {
-  const g = new Map();
-  for (const [k, [a, b]] of m) { const key = `${Math.floor(a / cell)},${Math.floor(b / cell)}`; if (!g.has(key)) g.set(key, []); g.get(key).push([k, a, b]); }
-  return { g, cell };
+function shapeGrid(shapes, cell) {
+  const g = new Map(), at = (i, j) => { const k = `${i},${j}`; if (!g.has(k)) g.set(k, []); return g.get(k); };
+  for (const s of shapes) { const b = bounds(s.poly); for (let i = Math.floor(b.minX / cell); i <= Math.floor(b.maxX / cell); i++) for (let j = Math.floor(b.minY / cell); j <= Math.floor(b.maxY / cell); j++) at(i, j).push(s); }
+  return { under: ([x, y]) => (g.get(`${Math.floor(x / cell)},${Math.floor(y / cell)}`) || []).find(s => pointInPoly([x, y], s.poly)), near: g, cell };
 }
-function nearestKey(G, [x, y], used, within) {
-  let best = null, bd = within;
-  const i0 = Math.floor(x / G.cell), j0 = Math.floor(y / G.cell), r = Math.ceil(within / G.cell);
-  for (let i = i0 - r; i <= i0 + r; i++) for (let j = j0 - r; j <= j0 + r; j++) for (const [k, a, b] of G.g.get(`${i},${j}`) || []) {
-    if (used.has(k)) continue; const d = Math.hypot(a - x, b - y); if (d < bd) { bd = d; best = k; }
+function tessReshape(change, label) {
+  const t = doc.layout.tess, fromKey = `${t.shape}|${t.orient}`, design = { colors: { ...t.colors }, blocks: { ...(t.blocks || {}) } };
+  const before = tessGeometry();
+  change(t);
+  const toKey = `${t.shape}|${t.orient}`, memo = _tessMemo.get(toKey), here = JSON.stringify(design);
+  let lost = 0, lostBlocks = 0;
+  if (memo && memo.left === here) { t.colors = { ...memo.colors }; t.blocks = { ...memo.blocks }; }
+  else {
+    const after = tessGeometry(), size = Math.max(0.5, 2 * t.size * Math.max(1, t.ratio || 1)), G = shapeGrid(before, size);
+    const colors = {}, blocks = {};
+    for (const s of after) { const o = G.under(s.c); const f = o && design.colors[o.key]; if (f) colors[s.key] = f; }
+    // hexagon blocks: to the nearest whole hexagon of the new arrangement (they only go in hexagons)
+    const blockKeys = Object.keys(design.blocks).filter(k => before.some(s => s.key === k));
+    if (t.shape === 'hex') {
+      const free = after.filter(s => !s.block || true), used = new Set();
+      const bc = new Map(before.map(s => [s.key, s.c]));
+      for (const k of blockKeys.sort((a, b) => Math.hypot(...bc.get(a)) - Math.hypot(...bc.get(b)))) {
+        let best = null, bd = size;
+        for (const s of free) { if (used.has(s.key)) continue; const d = Math.hypot(s.c[0] - bc.get(k)[0], s.c[1] - bc.get(k)[1]); if (d < bd) { bd = d; best = s.key; } }
+        if (best != null) { blocks[best] = design.blocks[k]; used.add(best); delete colors[best]; } else lostBlocks++;
+      }
+    } else lostBlocks = blockKeys.length;
+    lost = Object.keys(design.colors).length && !Object.keys(colors).length ? Object.keys(design.colors).length : 0;
+    t.colors = colors; t.blocks = blocks;
   }
-  return best;
+  _tessMemo.set(fromKey, { ...design, left: JSON.stringify({ colors: t.colors, blocks: t.blocks }) });
+  commit(label);
+  if (lostBlocks) toast(`${plural(lostBlocks, 'hexagon block')} only ${lostBlocks === 1 ? 'fits' : 'fit'} hexagons. Switch back to bring ${lostBlocks === 1 ? 'it' : 'them'} back, or Ctrl+Z.`, 5000);
+  else if (lost) toast('The painted shapes had no place in the new arrangement. Ctrl+Z brings them back.', 4000);
 }
 Actions.tessOrient = v => {
   const t = doc.layout.tess, o = +v === 1 ? 1 : 0;
   if (t.orient === o) return;
-  const before = tessCentres();
-  t.orient = o;
-  const after = tessCentres(), reach = 1.2 * t.size * Math.max(1, t.ratio || 1), G = centreGrid(after, Math.max(0.5, reach));
-  let lost = 0;
-  for (const field of ['colors', 'blocks']) {
-    const old = t[field] || {}, moved = {}, used = new Set();
-    // shapes nearest the centre first, so the middle of the design lines up best
-    const keys = Object.keys(old).filter(k => before.has(k)).sort((a, b) => Math.hypot(...before.get(a)) - Math.hypot(...before.get(b)));
-    for (const k of keys) { const q = nearestKey(G, before.get(k), used, reach); if (q != null) { moved[q] = old[k]; used.add(q); } else lost++; }
-    if (t[field]) t[field] = moved;
-  }
-  const lab = tessShape(t.shape).orientLabels[o];
-  commit(`${tessShape(t.shape).label.replace(/ \(.*\)$/, '')}: ${lab.toLowerCase()}`);
-  if (lost) toast(`${plural(lost, 'shape')} near the edges had no matching place and went back to the base fabric`, 4000);
+  tessReshape(t => { t.orient = o; }, `${tessShape(t.shape).label.replace(/ \(.*\)$/, '')}: ${tessShape(t.shape).orientLabels[o].toLowerCase()}`);
 };
 /* ---------- inspector ---------- */
 function rotIcon(r, flip) {
@@ -614,7 +627,7 @@ function layoutInspector() {
     h += section('Size', `<div class="f-row">
         <label class="f">Rows<input type="number" min="1" max="40" value="${L.grid.rows}" data-change="layoutRows"></label>
         <label class="f">Columns<input type="number" min="1" max="40" value="${L.grid.cols}" data-change="layoutCols"></label></div>
-      ${lenField('Block size', 'layout.blockSize', { min: 1, max: 48 })}`, { key: 'size' });
+      ${lenField('Block size', 'layout.blockSize', { min: 1, max: 48, step: 0.5 })}`, { key: 'size' });
   } else if (L.mode === 'onpoint') {
     h += section('Size', `<div class="f-row">
         ${numField('Blocks down', 'layout.onpoint.rows', { int: true, min: 1, max: 20 })}
@@ -625,7 +638,7 @@ function layoutInspector() {
     const t = L.tess, sh = tessShape(t.shape);
     h += section('Shape & size', `<label class="f">Shape<select data-change="tessShape">${TESS_SHAPES.map(s => `<option value="${s.key}" ${s.key === t.shape ? 'selected' : ''}>${s.label}</option>`).join('')}</select></label>
       <div class="f-row">${lenField(t.shape === 'hex' || t.shape === 'tumbling' || t.shape === 'triangle' ? 'Side length' : 'Width', 'layout.tess.size', { min: 0.5, max: 40, step: 0.25 })}
-        <label class="f">Orientation<select data-change="tessOrient">${sh.orientLabels.map((l, i) => `<option value="${i}" ${t.orient === i ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+        <div class="f"><span class="f-l">Orientation</span><div class="seg" role="group" aria-label="Orientation">${sh.orientLabels.map((l, i) => `<button aria-pressed="${t.orient === i}" data-act="tessOrient" data-arg="${i}">${l}</button>`).join('')}</div></div></div>
       ${['zigzag', 'brick', 'diamond'].includes(t.shape) ? `<div class="f-row">${numField('Height ÷ width', 'layout.tess.ratio', { min: 0.2, max: 4, step: 0.05 })}${t.shape === 'zigzag' ? numField('Lean ÷ width', 'layout.tess.lean', { min: 0, max: 2, step: 0.05 }) : ''}</div>` : ''}
       <div class="f-row">${lenField('Centre width', 'layout.tess.width', { min: 2, max: 200, step: round(tessPeriod(t)[0], 3) })}${lenField('Centre height', 'layout.tess.height', { min: 2, max: 200, step: round(tessPeriod(t)[1], 3) })}</div>
       <div class="f-row">${nudgeField('Nudge across', 'offX', tessPeriod(t)[0])}${nudgeField('Nudge down', 'offY', tessPeriod(t)[1])}</div>
@@ -647,7 +660,7 @@ function layoutInspector() {
       ${tessBlocksOk() ? `<div class="fill-group"><div class="fill-h">${icon('blocks', 14)} Blocks</div>
         ${hexBlocks.length ? `<div class="blkpick" role="group" aria-label="Blocks to fill with">${hexBlocks.map(id => `<button aria-pressed="${bset.includes(id)}" data-act="tessToggleBlock" data-arg="${id}" title="${esc(doc.blocks[id].name)}" aria-label="${esc(doc.blocks[id].name)}">${blockThumb(doc.blocks[id], 34, 'mini')}</button>`).join('')}</div>`
           : '<p class="hint">No hexagon blocks yet. Make one in Blocks (Add, Hexagon block).</p>'}</div>` : ''}
-      <div class="fill-group"><div class="fill-h">Pattern <span class="muted">· ${plural(set.length, 'fabric')}${bset.length ? ` and ${plural(bset.length, 'block')}` : ''}</span></div>
+      <div class="fill-group"><div class="fill-h">Arrange <span class="muted">· ${plural(set.length, 'fabric')}${bset.length ? ` and ${plural(bset.length, 'block')}` : ''}</span></div>
         <div class="btn-row">${[['random', 'Random'], ['rows', 'Rows'], ['cols', 'Columns'], ['diag', 'Diagonals'], ['rings', 'Rings'], ['gradient', 'Gradient'], ['orient', 'By direction']].map(([k, l]) => `<button class="btn small" data-act="tessPattern" data-arg="${k}">${l}</button>`).join('')}<button class="btn small" data-act="tessPattern" data-arg="shuffle" title="Random again, differently">Shuffle</button></div></div>
       <div class="btn-row fill-end"><button class="btn small" data-act="tessFillAll" title="Every shape in one fabric (the fabric you paint with)">${swatchHtml(fillFab, 14)} Fill all with ${esc(fabricLabel(fillFab))}</button><button class="btn small quiet danger" data-act="clearLayout">Clear all</button></div>`, { key: 'tessfill' });
   }

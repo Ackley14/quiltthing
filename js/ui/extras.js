@@ -13,7 +13,7 @@ function welcomeV4(whatsNew) {
     ${v3 ? `<div class="welcome-moved"><h4>Where things moved</h4><ul>
       <li><b>Steps</b> are the tabs at the top: Blocks, Layout, Quilting, Fabric &amp; cutting, Pattern.</li>
       <li><b>Tools</b> are the strip down the left; their options are in the bar above the canvas.</li>
-      <li><b>Fabrics and blocks</b> are panels on the left; <b>settings</b> are in Properties on the right.</li>
+      <li><b>Fabrics, blocks and settings</b> are panels around the canvas; the Window menu shows any panel.</li>
       <li>Layout's borders, sashing, binding and panels are listed in the <b>Quilt</b> panel.</li>
       <li>Panels can be moved, folded or closed. <b>Window</b> brings any panel back and resets the layout.</li>
       <li>Press <kbd>Ctrl K</kbd> to search for any command.</li></ul></div>` : ''}
@@ -69,10 +69,10 @@ document.addEventListener('keydown', e => {
   const path = el.dataset.bind, cur = path ? parseLenExpr(el.value, getPath(doc, path)) : parseLenExpr(el.value);
   if (!Number.isFinite(cur)) return;
   // inches: 1/8" (Shift 1", Alt 1/16"); centimetres: 0.5 cm (Shift 1 cm, Alt 1 mm)
-  const own = +el.dataset.step || 0;   // a box with arrows steps by the same amount as its arrows
+  const own = ui.units === 'cm' ? 0 : +el.dataset.step || 0;   // a box with arrows steps by the same amount as its arrows (inches)
   const step = own && !e.altKey && !e.shiftKey ? own : ui.units === 'cm' ? (e.shiftKey ? 1 : e.altKey ? 0.1 : 0.5) / 2.54 : e.shiftKey ? 1 : e.altKey ? 1 / 16 : 1 / 8;
   const lo = el.dataset.min !== undefined ? +el.dataset.min : 0, hi = el.dataset.max !== undefined ? +el.dataset.max : Infinity;
-  const v = clamp(own && !e.altKey && !e.shiftKey ? round(cur + (e.key === 'ArrowUp' ? step : -step), 4) : Math.round((cur + (e.key === 'ArrowUp' ? step : -step)) / step) * step, lo, hi);
+  const v = clamp(round(cur + (e.key === 'ArrowUp' ? step : -step), 4), lo, hi);
   el.value = inputLen(v);
   el.dataset.stepped = '1';
 }, true);

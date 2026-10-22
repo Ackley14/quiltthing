@@ -268,7 +268,7 @@ function labelNextCommit(el) {
   if (field && t) {
     let v = '';
     if (el.type === 'checkbox') v = el.checked ? 'on' : 'off';
-    else if (el.tagName === 'SELECT') v = el.selectedOptions?.[0]?.textContent || '';
+    else if (el.tagName === 'SELECT') { v = el.selectedOptions?.[0]?.textContent || ''; if (v) { t = `${t}:`; } }
     else if (el.dataset.type === 'len' || el.dataset.type === 'int' || el.dataset.type === 'num' || el.type === 'number') {
       let n = el.dataset.type === 'len' ? parseLenExpr(el.value, el.dataset.bind ? getPath(doc, el.dataset.bind) : undefined) : parseFloat(el.value);
       const lo = el.dataset.min ?? (el.min || undefined), hi = el.dataset.max ?? (el.max || undefined);
@@ -337,8 +337,10 @@ function applyBinding(el) {
 // A length box. opts.step adds − and + buttons that change it by that much.
 function lenField(label, path, opts = {}) {
   const v = getPath(doc, path);
+  if (opts.step === undefined) opts = { ...opts, step: 0.25 };
   const input = `<input type="text" inputmode="decimal" data-bind="${path}" data-type="len" value="${esc(inputLen(v))}"${opts.step ? ` data-step="${opts.step}"` : ''}${opts.aria ? ` aria-label="${esc(opts.aria)}"` : ''}${opts.min !== undefined ? ` data-min="${opts.min}"` : ''}${opts.max !== undefined ? ` data-max="${opts.max}"` : ''} title="Accepts 4.5, 4 1/2, 4½, 11.4cm, sums like 3 + 1/4, or +1/4, *2, 50%">`;
-  if (!opts.step) return `<label class="f">${label}${opts.suffix ? ` <span class="muted">${opts.suffix}</span>` : ''}${input}</label>`;
+  if (opts.step === 0) return `<label class="f">${label}${opts.suffix ? ` <span class="muted">${opts.suffix}</span>` : ''}${input}</label>`;
+  opts = { ...opts, step: opts.step || 0.25 };
   const arg = d => `${path}|${d}|${opts.min ?? 0}|${opts.max ?? 1e9}`;
   // small up/down arrows inside the box (the arrow keys in the box step finer)
   return `<div class="f">${label}<span class="spin">${input}<span class="spin-b"><button type="button" tabindex="-1" data-act="lenStep" data-arg="${arg(opts.step)}" aria-label="Increase ${esc(opts.aria || label)}" title="Up ${fmtLen(opts.step)}">${icon('up', 10)}</button><button type="button" tabindex="-1" data-act="lenStep" data-arg="${arg(-opts.step)}" aria-label="Decrease ${esc(opts.aria || label)}" title="Down ${fmtLen(opts.step)}">${icon('down', 10)}</button></span></span></div>`;
@@ -350,7 +352,8 @@ document.addEventListener('pointerdown', e => {
   // a value typed in the box (not saved yet) is saved first, so the step goes from it
   const box = b.closest('.spin')?.querySelector('input'), arg0 = b.dataset.arg;
   // saving it redraws the panel, so the click would land on a new button: step now, and skip that click
-  if (box && document.activeElement === box) { box.blur(); nextCommitLabel = b.getAttribute('aria-label'); Actions.lenStep(arg0); nextCommitLabel = null; _spinStepAt = Date.now(); }
+  if (box && document.activeElement === box) { box.blur(); _spinName = b.getAttribute('aria-label') || ''; Actions.lenStep(arg0); _spinStepAt = Date.now(); }
+  _spinName = b.getAttribute('aria-label') || '';
   const arg = b.dataset.arg, sel = `.spin-b button[data-arg="${CSS.escape(arg)}"]`, base = undoStack.past.length;
   let rep = null, ticks = 0;
   const hold = setTimeout(() => { rep = setInterval(() => { if ($(sel) && ticks++ < 200) Actions.lenStep(arg); else stop(); }, 110); }, 450);
@@ -362,12 +365,16 @@ document.addEventListener('pointerdown', e => {
   };
   addEventListener('pointerup', stop); addEventListener('pointercancel', stop); addEventListener('blur', stop);
 });
-let _spinStepAt = 0;
+let _spinStepAt = 0, _spinName = '';
 Actions.lenStep = (arg, el, e) => {
   if (e && Date.now() - _spinStepAt < 500) return;   // the click after a step already made on press
+  nextCommitLabel = null;
   const [path, d, lo, hi] = arg.split('|'), v = +getPath(doc, path) || 0, eighths = Math.abs(+d * 8 - Math.round(+d * 8)) < 1e-6;
-  setPath(doc, path, clamp(eighths ? Math.round((v + +d) * 8) / 8 : round(v + +d, 4), +lo, +hi));
-  commit();
+  const nv = clamp(eighths ? Math.round((v + +d) * 8) / 8 : round(v + +d, 4), +lo, +hi);
+  setPath(doc, path, nv);
+  // "Side length 3¼": the field's name (from its arrows) and the new value
+  const name = (el?.getAttribute?.('aria-label') || _spinName || '').replace(/^(Increase|Decrease) /, '');
+  commit(name ? `${name} ${fmtLen(nv)}` : undefined);
 };
 function numField(label, path, opts = {}) {
   const v = getPath(doc, path);

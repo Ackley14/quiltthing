@@ -82,7 +82,7 @@ const MENUS = {
     if (ui.view === 'quilting' && doc.quilting.layers.length) items.push('-', { header: 'Quilting layers' }, { label: 'Show all layers', act: 'qShowAll', arg: '1' }, { label: 'Hide all layers', act: 'qShowAll', arg: '' });
     items.push('-', { header: 'Quilt defaults' },
       { label: 'Default fabric…', act: 'fabricDefaults' },
-      { label: 'Seams & appliqué…', act: 'seamSettings' },
+      { label: 'Seams and appliqué…', act: 'seamSettings' },
       '-', { header: 'Preferences' },
       tick('Inches', 'setUnits', 'in', ui.units !== 'cm'),
       tick('Centimetres', 'setUnits', 'cm', ui.units === 'cm'),

@@ -221,7 +221,7 @@ Actions.dockFloatSize = arg => { const [fi, s] = String(arg).split('#'), L = doc
 Actions.dockGroupMenu = (a, el) => {
   const at = dockArgs(a), g = dockGroupAt(at); if (!g) return;
   const id = g.active, col = at.zone === 'left' || at.zone === 'right' ? wsLayout()[at.zone][at.ci] : null, locked = dockLocked();
-  const moves = [['left', 'Left dock'], ['right', 'Right dock'], ['bottom', 'Bottom dock'], ['float', 'its own window']].filter(([z]) => z !== at.zone).map(([z, l]) => ({ label: `Move to ${l}`, act: 'dockMoveTo', arg: `${id}|${z}`, disabled: locked }));
+  const moves = [['left', 'left dock'], ['right', 'right dock'], ['bottom', 'bottom dock'], ['float', 'its own window']].filter(([z]) => z !== at.zone).map(([z, l]) => ({ label: `Move to ${l}`, act: 'dockMoveTo', arg: `${id}|${z}`, disabled: locked }));
   openMenu(el.getBoundingClientRect ? el : { x: el.x, y: el.y }, [
     ...(g.tabs.length > 1 ? [{ header: 'Panels here' }, ...g.tabs.map(t => tick(esc(panelTitle(t)), 'dockTab', t, t === id)), '-'] : []),
     { header: esc(panelTitle(id)) + (locked ? ' · layout locked' : '') },
