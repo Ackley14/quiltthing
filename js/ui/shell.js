@@ -200,6 +200,9 @@ function renderTopbar() {
 function renderSaveState() {
   const el = $('#save-state'); if (!el) return;
   const bad = saveStatus.at && !saveStatus.ok;
+  const key = `${bad}|${saveStatus.paused}|${!!saveStatus.at}`;
+  if (el.dataset.k === key) return;
+  el.dataset.k = key;
   el.className = `save-state${bad ? ' bad' : ''}`;
   el.innerHTML = saveStatus.paused ? `${icon('warn', 14)}<span>Saving paused</span>` : bad ? `${icon('warn', 14)}<span>Not saved</span>` : saveStatus.at ? `${icon('check', 14)}<span>Saved</span>` : '';
   el.title = bad ? "This browser couldn't save the design. Download a project file to keep it." : 'Your design is saved in this browser';
@@ -467,7 +470,7 @@ function toast(msg, ms = 2600) {
 /* ---------- global actions ---------- */
 Actions.view = v => {
   if (v === 'cutting') { v = 'fabric'; ui.fabPane = 'cut'; }
-  ui.view = v; ui.drawing = []; saveUi(); render(); $('#main').focus({ preventScroll: true }); document.body.classList.remove('show-sidebar', 'show-inspector'); };
+  ui.view = v; ui.drawing = []; dockSession.flyout = null; saveUi(); render(); $('#main').focus({ preventScroll: true }); };
 Actions.undo = () => { if (!undo()) toast('Nothing to undo'); };
 Actions.redo = () => { if (!redo()) toast('Nothing to redo'); };
 Actions.toggleUnits = () => { ui.units = ui.units === 'cm' ? 'in' : 'cm'; saveUi(); render(); toast(ui.units === 'cm' ? 'Showing centimetres' : 'Showing inches'); };
@@ -601,6 +604,9 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (closeMenu(true) || closeModal()) return;
     if (ui.fabPop) { Actions.closeFabricPopover(); return; }
+    // in a field the field handles it; in a panel, Esc goes back to the canvas
+    if (inField) return;
+    if (t?.closest?.('#flyout-layer, #float-layer, .dock-side, #dock-bottom')) { if (!$('#flyout-layer').contains(t) && !dockSession.drawer) $('#main').focus({ preventScroll: true }); return; }
     Views[ui.view]?.key?.(e);
     return;
   }
@@ -618,6 +624,9 @@ document.addEventListener('keydown', e => {
   if (!ctrl && !e.altKey && /^[1-5]$/.test(e.key)) { e.preventDefault(); Actions.view(VIEW_LIST[+e.key - 1].key); return; }
   if (!ctrl && (e.key === 'g' || e.key === 'G')) { Actions.toggleUi('grayscale'); return; }
   if (e.key === '?') { Actions.help(); return; }
+  // tabs, splitters and menus use the arrow keys themselves; buttons and links use Enter and Space
+  if (/^(Arrow|Home$|End$|PageUp$|PageDown$)/.test(e.key) && t?.closest?.('[role="tab"], [data-split], [role="separator"], [role^="menuitem"], [role="option"], [role="slider"], [role="radio"]')) return;
+  if ((e.key === 'Enter' || e.key === ' ') && t?.closest?.('button, a[href], [role="button"], [role="tab"]') && !t.closest('#main')) return;
   Views[ui.view]?.key?.(e);
 });
 

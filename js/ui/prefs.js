@@ -23,4 +23,3 @@ Actions.setTheme = t => { prefs.theme = t === 'light' ? 'light' : t === 'toggle'
 Actions.setDensity = d => { prefs.density = d === 'large' ? 'large' : 'standard'; savePrefs(); applyPrefs(); render(); };
 Actions.setSurround = s => { if (SURROUNDS[s]) { prefs.surround = s; savePrefs(); applyPrefs(); render(); } };
 Actions.toggleToolLabels = () => { prefs.toolLabels = !prefs.toolLabels; savePrefs(); applyPrefs(); render(); };
-Actions.toggleRulers = () => { prefs.rulers = !prefs.rulers; savePrefs(); render(); };

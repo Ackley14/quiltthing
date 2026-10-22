@@ -8,10 +8,10 @@
    view (dock.js) redraws from the result. */
 
 const DOCK_VERSION = 1;
-const DOCK_MIN = { colW: 180, colMaxW: 520, groupH: 0.08, floatW: 220, floatH: 140, bottomH: 64, bottomMaxH: 320 };
+const DOCK_MIN = { colW: 180, colMaxW: 520, groupH: 0.08, floatW: 220, floatH: 140, bottomH: 120, bottomMaxH: 480 };
 
 const dockClone = L => JSON.parse(JSON.stringify(L));
-const emptyLayout = () => ({ left: [], right: [], bottom: { h: 76, groups: [] }, floating: [] });
+const emptyLayout = () => ({ left: [], right: [], bottom: { h: 220, groups: [] }, floating: [] });
 
 // Every group in a layout, with where it lives.
 function dockGroups(L) {
@@ -46,7 +46,8 @@ function dockTidy(L) {
   }
   L.bottom.groups = L.bottom.groups.filter(g => g.tabs.length);
   for (const g of L.bottom.groups) if (!g.tabs.includes(g.active)) g.active = g.tabs[0];
-  L.bottom.h = Math.max(DOCK_MIN.bottomH, Math.min(DOCK_MIN.bottomMaxH, +L.bottom.h || 76));
+  // an empty bottom dock opens at a useful height when a panel is first put there
+  L.bottom.h = L.bottom.groups.length ? Math.max(DOCK_MIN.bottomH, Math.min(DOCK_MIN.bottomMaxH, +L.bottom.h || 220)) : 220;
   L.floating = L.floating.filter(g => g.tabs.length);
   for (const g of L.floating) {
     if (!g.tabs.includes(g.active)) g.active = g.tabs[0];
@@ -128,7 +129,7 @@ function dockLoad(saved, def, known, seen = []) {
   let L;
   try {
     if (!saved || typeof saved !== 'object') throw 0;
-    L = { left: Array.isArray(saved.left) ? saved.left : [], right: Array.isArray(saved.right) ? saved.right : [], bottom: saved.bottom && Array.isArray(saved.bottom.groups) ? saved.bottom : { h: 76, groups: [] }, floating: Array.isArray(saved.floating) ? saved.floating : [] };
+    L = { left: Array.isArray(saved.left) ? saved.left : [], right: Array.isArray(saved.right) ? saved.right : [], bottom: saved.bottom && Array.isArray(saved.bottom.groups) ? saved.bottom : { h: 220, groups: [] }, floating: Array.isArray(saved.floating) ? saved.floating : [] };
     L = dockClone(L);
     const ok = new Set(known), once = new Set();
     for (const x of dockGroups(L)) {

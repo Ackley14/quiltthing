@@ -31,26 +31,27 @@ Actions.whatsNew = () => { _welcomeWhatsNew = true; welcomeV4(true); };
 
 /* ---------- second tab: warn when the design changes somewhere else ---------- */
 window.addEventListener('storage', e => {
-  if (e.key !== 'quiltthing.v3.doc' || !e.newValue || e.newValue === snapshot()) return;
+  if (!['quiltthing.v3.doc', 'quiltthing.v3.refs'].includes(e.key) || !e.newValue || (e.key === 'quiltthing.v3.doc' ? e.newValue === snapshot() : e.newValue === JSON.stringify(refImgs))) return;
   savePaused = true;
   let bar = $('#tab-guard');
   if (!bar) { bar = document.createElement('div'); bar.id = 'tab-guard'; bar.setAttribute('role', 'alert'); document.body.appendChild(bar); }
   bar.innerHTML = `${icon('warn', 16)}<span>This design was changed in another tab or window. Saving here is paused so that work isn't replaced.</span><button class="btn small primary" data-act="tabGuardLoad">Load the other version</button><button class="btn small" data-act="tabGuardKeep">Keep this one</button>`;
 });
 Actions.tabGuardLoad = () => location.reload();
-Actions.tabGuardKeep = () => { $('#tab-guard')?.remove(); savePaused = false; saveNow(); renderSaveState(); toast('Kept this version; saving again'); };
+Actions.tabGuardKeep = () => { $('#tab-guard')?.remove(); savePaused = false; saveNow(); saveRefs(); renderSaveState(); toast('Kept this version; saving again'); };
 
 /* ---------- F6: jump between regions (app bar, tool options, tools, panels, canvas, status) ---------- */
-const REGIONS = ['#appbar', '#ctxbar', '#toolstrip', '#dock-left', '#docarea', '#dock-right', '#dock-bottom', '#float-layer', '#statusbar'];
+const REGIONS = ['#appbar', '#ctxbar', '#toolstrip', '#dock-left', '#flyout-layer', '#docarea', '#dock-right', '#dock-bottom', '#float-layer', '#statusbar'];
+const isShown = x => x.getClientRects().length > 0 && getComputedStyle(x).visibility !== 'hidden';
 document.addEventListener('keydown', e => {
   if (e.key !== 'F6' || $('#modal-root').innerHTML) return;
   e.preventDefault();
-  const live = REGIONS.map(s => $(s)).filter(el => el && el.offsetParent !== null && el.querySelector('button, input, select, [tabindex]'));
+  const live = REGIONS.map(s => $(s)).filter(el => el && [...el.querySelectorAll('button, input, select, [tabindex]')].some(isShown));
   if (!live.length) return;
   const i = live.findIndex(el => el.contains(document.activeElement));
   const next = live[(i + (e.shiftKey ? -1 : 1) + live.length) % live.length];
   // the selected tab or pressed tool first, else the first visible control
-  const shown = sel => [...next.querySelectorAll(sel)].find(x => x.offsetParent !== null && !x.disabled);
+  const shown = sel => [...next.querySelectorAll(sel)].find(x => isShown(x) && !x.disabled);
   const target = next.id === 'docarea' ? $('#main') : shown('[aria-selected="true"][tabindex="0"]') || shown('[aria-pressed="true"]') || shown('button, input, select, [tabindex="0"]');
   target?.focus();
   announce(next.getAttribute('aria-label') || next.id.replace(/^dock-/, '') + ' panels');
@@ -61,7 +62,7 @@ document.addEventListener('focusin', e => { const el = e.target; if (el.matches?
 document.addEventListener('keydown', e => {
   const el = e.target;
   if (!el.matches?.('input[data-type="len"]')) return;
-  if (e.key === 'Escape') { el.value = el.dataset.was ?? el.value; el.classList.remove('invalid'); el.nextElementSibling?.classList?.contains('field-err') && el.nextElementSibling.remove(); delete el.dataset.stepped; el.blur(); e.stopImmediatePropagation(); e.preventDefault(); return; }
+  if (e.key === 'Escape') { el.value = el.dataset.was ?? el.value; el.classList.remove('invalid'); el.removeAttribute('aria-invalid'); el.removeAttribute('aria-describedby'); el.nextElementSibling?.classList?.contains('field-err') && el.nextElementSibling.remove(); delete el.dataset.stepped; el.blur(); e.stopImmediatePropagation(); e.preventDefault(); return; }
   if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
   e.preventDefault();
   const path = el.dataset.bind, cur = path ? parseLenExpr(el.value, getPath(doc, path)) : parseLenExpr(el.value);
@@ -82,7 +83,8 @@ document.addEventListener('focusout', e => {
 function lenFieldError(el, raw) {
   el.classList.add('invalid');
   let msg = el.parentElement.querySelector('.field-err');
-  if (!msg) { msg = document.createElement('div'); msg.className = 'field-err'; msg.setAttribute('role', 'alert'); el.insertAdjacentElement('afterend', msg); }
+  if (!msg) { msg = document.createElement('div'); msg.className = 'field-err'; msg.id = `ferr-${Math.random().toString(36).slice(2, 8)}`; msg.setAttribute('role', 'alert'); el.insertAdjacentElement('afterend', msg); }
+  el.setAttribute('aria-invalid', 'true'); el.setAttribute('aria-describedby', msg.id);
   msg.textContent = `Couldn't read "${raw}". Try 4.5, 4 1/2, 4-1/2, 4½ or 11cm.`;
   el.value = el.dataset.was ?? el.value;
   setTimeout(() => el.focus(), 0);

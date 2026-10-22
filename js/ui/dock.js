@@ -6,7 +6,7 @@
 
 const DOCK_KEY = 'quiltthing.v4.layout';
 let dockState = (() => {
-  try { const s = JSON.parse(localStorage.getItem(DOCK_KEY) || 'null'); if (s && s.version === DOCK_VERSION && s.ws) return { seen: [], ...s }; } catch {}
+  try { const s = JSON.parse(localStorage.getItem(DOCK_KEY) || 'null'); if (s && s.version === DOCK_VERSION && s.ws) { for (const L of Object.values(s.ws)) if (L) delete L.__ok; return { seen: [], ...s }; } } catch {}   // stored layouts are always checked again
   return { version: DOCK_VERSION, ws: {}, seen: [] };
 })();
 if (/[?&]resetLayout\b/.test(location.search)) dockState = { version: DOCK_VERSION, ws: {}, seen: [] };
@@ -25,7 +25,7 @@ function wsLayout(ws = curWs()) {
 function saveDock() {
   try {
     for (const ws of Object.keys(dockState.ws)) for (const id of dockOpenIds(dockState.ws[ws])) if (!dockState.seen.includes(id)) dockState.seen.push(id);
-    localStorage.setItem(DOCK_KEY, JSON.stringify(dockState));
+    localStorage.setItem(DOCK_KEY, JSON.stringify(dockState, (k, v) => k === '__ok' ? undefined : v));
   } catch {}
 }
 function setLayout(L) { L.__ok = true; dockState.ws[curWs()] = L; saveDock(); dockSession.sig = ''; render(); }
@@ -40,16 +40,16 @@ const colCollapsed = (c, zone, ci) => c.collapsed || autoCollapsed(zone, ci);
 /* ---------- drawing ---------- */
 const panelTitle = id => Panels[id]?.title || id;
 function dockTabHtml(id, active, where) {
-  return `<div class="dtab${active ? ' on' : ''}" data-dtab="${id}" ${where}><button class="dtab-b" role="tab" tabindex="${active ? 0 : -1}" aria-selected="${active}" data-act="dockTab" data-arg="${id}">${esc(panelTitle(id))}</button><button class="dtab-x" data-act="dockClose" data-arg="${id}" aria-label="Close the ${esc(panelTitle(id))} panel" title="Close" tabindex="-1">${icon('x', 12)}</button></div>`;
+  return `<div class="dtab${active ? ' on' : ''}" data-dtab="${id}" ${where}><button class="dtab-b" role="tab" id="dtab-${where.replace(/\D+/g, '-')}-${id}" tabindex="${active ? 0 : -1}" aria-selected="${active}" data-act="dockTab" data-arg="${id}">${esc(panelTitle(id))}</button><button class="dtab-x" data-act="dockClose" data-arg="${id}" aria-label="Close the ${esc(panelTitle(id))} panel" title="Close" tabindex="-1">${icon('x', 12)}</button></div>`;
 }
 function dockGroupHtml(g, zone, ci, gi, flex) {
   const where = `data-zone="${zone}" data-ci="${ci}" data-gi="${gi}"`;
-  return `<section class="dgroup${g.folded ? ' folded' : ''}" ${where} style="${flex}" aria-label="${esc(g.tabs.map(panelTitle).join(', '))}">
+  return `<section class="dgroup${g.folded ? ' folded' : ''}" ${where} style="${flex}" role="group" aria-label="${esc(g.tabs.map(panelTitle).join(', '))}">
     <div class="dtabs"><div class="dtab-strip" role="tablist" aria-label="${esc(g.tabs.map(panelTitle).join(', '))} panels">${g.tabs.map(id => dockTabHtml(id, id === g.active, where)).join('')}</div>
       ${dockLocked() ? `<span class="dlock" title="Layout locked (Window ▸ Lock layout)">${icon('lock', 12)}</span>` : ''}
       <button class="dbtn" data-act="dockGroupMenu" data-arg="${zone}|${ci}|${gi}" aria-haspopup="menu" aria-label="Panel options" title="Panel options">${icon('more', 14)}</button>
       <button class="dbtn" data-act="dockFold" data-arg="${zone}|${ci}|${gi}" aria-expanded="${!g.folded}" aria-label="${g.folded ? 'Unfold' : 'Fold'}" title="${g.folded ? 'Unfold' : 'Fold'}">${icon(g.folded ? 'right' : 'down', 14)}</button></div>
-    ${g.folded ? '' : `<div class="dbody" role="tabpanel" data-host="${g.active}" data-panel="${g.active}"></div>`}</section>`;
+    ${g.folded ? '' : `<div class="dbody" role="tabpanel" aria-labelledby="dtab-${where.replace(/\D+/g, '-')}-${g.active}" data-host="${g.active}" data-panel="${g.active}"></div>`}</section>`;
 }
 function dockColumnHtml(c, zone, ci) {
   if (colCollapsed(c, zone, ci)) {
@@ -81,17 +81,16 @@ function closedPanelsHtml(zone) {
 }
 function dockRender() {
   const L = wsLayout(), hidden = dockSession.hidden;
-  const sig = JSON.stringify([curWs(), hidden, dockSession.flyout, L.left, L.right, L.bottom, L.floating, prefs.lockLayout, innerWidth < 1000 ? 0 : innerWidth < 1280 ? 1 : 2, [...dockSession.expanded]]);
+  const sig = JSON.stringify([curWs(), hidden, dockSession.flyout, L.left, L.right, L.bottom, L.floating.map(({ z, ...f }) => f), prefs.lockLayout, innerWidth < 1000 ? 0 : innerWidth < 1280 ? 1 : 2, [...dockSession.expanded]]);
   if (sig !== dockSession.sig) {
-    keepFloatsOnScreen();
     dockSession.sig = sig; dockSession.html.clear();
     const left = $('#dock-left'), right = $('#dock-right'), bottom = $('#dock-bottom');
     const side = zone => hidden ? '' : L[zone].length ? dockSideHtml(zone, L[zone]) : closedPanelsHtml(zone);
     left.innerHTML = side('left'); right.innerHTML = side('right');
-    bottom.innerHTML = hidden || !L.bottom.groups.length ? '' : `<div class="dsplit-b" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="Resize bottom panels" data-split="bottom"></div><div class="dbottom-row" style="height:${L.bottom.h}px">${L.bottom.groups.map((g, gi) => dockGroupHtml(g, 'bottom', 0, gi, 'flex:1 1 0')).join('')}</div>`;
+    bottom.innerHTML = hidden || !L.bottom.groups.length ? '' : `<div class="dsplit-b" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="Height of the bottom panels" aria-valuemin="${DOCK_MIN.bottomH}" aria-valuemax="${DOCK_MIN.bottomMaxH}" aria-valuenow="${L.bottom.h}" data-split="bottom"></div><div class="dbottom-row" style="height:${L.bottom.h}px">${L.bottom.groups.map((g, gi) => dockGroupHtml(g, 'bottom', 0, gi, 'flex:1 1 0')).join('')}</div>`;
     left.classList.toggle('empty', !left.innerHTML); right.classList.toggle('empty', !right.innerHTML);
     bottom.classList.toggle('empty', !bottom.innerHTML);
-    $('#float-layer').innerHTML = hidden ? '' : L.floating.map((f, fi) => `<div class="dfloat" role="dialog" aria-label="${esc(f.tabs.map(panelTitle).join(', '))}" data-fi="${fi}" style="left:${f.x}px;top:${f.y}px;width:${f.w}px;height:${f.h}px;z-index:${30 + (f.z || 0)}">${dockGroupHtml(f, 'float', 0, fi, 'flex:1 1 0').replace('<button class="dbtn" data-act="dockFold"', `<button class="dbtn" data-act="dockFloatClose" data-arg="${fi}" aria-label="Close this window" title="Close this window">${icon('x', 14)}</button><button class="dbtn" data-act="dockFold"`)}<div class="dfloat-grip" data-fgrip="${fi}" aria-hidden="true"></div></div>`).join('');
+    $('#float-layer').innerHTML = hidden ? '' : L.floating.map((f, fi) => `<div class="dfloat" role="dialog" aria-label="${esc(f.tabs.map(panelTitle).join(', '))}" data-fi="${fi}" style="${(b => `left:${b.x}px;top:${b.y}px;width:${b.w}px;height:${b.h}px`)(floatBox(f))};z-index:${30 + (f.z || 0)}">${dockGroupHtml(f, 'float', 0, fi, 'flex:1 1 0').replace('<button class="dbtn" data-act="dockFold"', `<button class="dbtn" data-act="dockFloatClose" data-arg="${fi}" aria-label="Close this window" title="Close this window">${icon('x', 14)}</button><button class="dbtn" data-act="dockFold"`)}<div class="dfloat-grip" data-fgrip="${fi}" aria-hidden="true"></div></div>`).join('');
     const fly = dockSession.flyout && !hidden ? dockFind(L, dockSession.flyout) : null;
     $('#flyout-layer').innerHTML = fly ? `<div class="dflyout ${fly.zone}" role="dialog" aria-label="${esc(panelTitle(dockSession.flyout))}"><div class="dtabs"><div class="dtab-strip"><div class="dtab on"><span class="dtab-l">${esc(panelTitle(dockSession.flyout))}</span></div></div><button class="dbtn" data-act="dockFlyout" data-arg="" aria-label="Close" title="Close">${icon('x', 14)}</button></div><div class="dbody" data-host="${dockSession.flyout}" data-panel="${dockSession.flyout}"></div></div>` : '';
     if (fly) placeFlyout();
@@ -118,16 +117,12 @@ function placeFlyout() {
   el.style.top = `${top.top + 4}px`; el.style.bottom = `${innerHeight - top.bottom + 4}px`;
   if (el.classList.contains('left')) el.style.left = `${strip.right + 4}px`; else el.style.right = `${innerWidth - strip.left + 4}px`;
 }
-function keepFloatsOnScreen() {
-  const L = wsLayout(), W = innerWidth, H = innerHeight, minY = ($('#ctxbar')?.getBoundingClientRect().bottom || 80) + 4;
-  let moved = false;
-  for (const f of L.floating) {
-    // the whole window stays inside the browser window (shrunk if it has to be)
-    const w = Math.min(f.w, W - 16), h = Math.min(f.h, H - minY - 8);
-    const x = clamp(f.x, 0, Math.max(0, W - w)), y = clamp(f.y, minY, Math.max(minY, H - h));
-    if (x !== f.x || y !== f.y || w !== f.w || h !== f.h) { Object.assign(f, { x, y, w: Math.max(DOCK_MIN.floatW, w), h: Math.max(DOCK_MIN.floatH, h) }); moved = true; }
-  }
-  if (moved) saveDock();
+// Where a floating window is drawn: wholly inside the browser window (shrunk if it has to be).
+// The saved size and place stay as they were, so a bigger window brings them back.
+function floatBox(f) {
+  const W = innerWidth, H = innerHeight, minY = ($('#ctxbar')?.getBoundingClientRect().bottom || 80) + 4;
+  const w = Math.max(DOCK_MIN.floatW, Math.min(f.w, W - 16)), h = Math.max(DOCK_MIN.floatH, Math.min(f.h, H - minY - 8));
+  return { x: clamp(f.x, 0, Math.max(0, W - w)), y: clamp(f.y, minY, Math.max(minY, H - h)), w, h };
 }
 window.addEventListener('resize', debounce(() => { dockSession.sig = ''; render(); }, 150));
 
@@ -334,21 +329,21 @@ document.addEventListener('pointerdown', e => {
   if (e.button !== 0) return;
   const bar = e.target.closest?.('.dfloat .dtabs');
   if (bar && !e.target.closest('button, .dtab')) {
-    const fi = +win.dataset.fi, L = dockClone(wsLayout()), f = L.floating[fi], x0 = e.clientX - f.x, y0 = e.clientY - f.y;
+    const fi = +win.dataset.fi, L = dockClone(wsLayout()), f = Object.assign(L.floating[fi], floatBox(L.floating[fi])), x0 = e.clientX - f.x, y0 = e.clientY - f.y;
     const minY = ($('#ctxbar')?.getBoundingClientRect().bottom || 80) + 4;
     e.preventDefault(); bar.setPointerCapture(e.pointerId);
     const mv = ev => { f.x = clamp(ev.clientX - x0, -f.w + 80, innerWidth - 80); f.y = clamp(ev.clientY - y0, minY, innerHeight - 40); win.style.left = f.x + 'px'; win.style.top = f.y + 'px'; };
-    const up = () => { bar.removeEventListener('pointermove', mv); bar.removeEventListener('pointerup', up); setLayout(L); };
-    bar.addEventListener('pointermove', mv); bar.addEventListener('pointerup', up);
+    const up = () => { bar.removeEventListener('pointermove', mv); bar.removeEventListener('pointerup', up); bar.removeEventListener('pointercancel', up); setLayout(L); };
+    bar.addEventListener('pointermove', mv); bar.addEventListener('pointerup', up); bar.addEventListener('pointercancel', up);
     return;
   }
   const grip = e.target.closest?.('[data-fgrip]');
   if (grip) {
-    const fi = +grip.dataset.fgrip, L = dockClone(wsLayout()), f = L.floating[fi], x0 = e.clientX, y0 = e.clientY, w0 = f.w, h0 = f.h;
+    const fi = +grip.dataset.fgrip, L = dockClone(wsLayout()), f = Object.assign(L.floating[fi], floatBox(L.floating[fi])), x0 = e.clientX, y0 = e.clientY, w0 = f.w, h0 = f.h;
     e.preventDefault(); grip.setPointerCapture(e.pointerId);
     const mv = ev => { f.w = Math.max(DOCK_MIN.floatW, w0 + ev.clientX - x0); f.h = Math.max(DOCK_MIN.floatH, h0 + ev.clientY - y0); win.style.width = f.w + 'px'; win.style.height = f.h + 'px'; };
-    const up = () => { grip.removeEventListener('pointermove', mv); grip.removeEventListener('pointerup', up); setLayout(L); };
-    grip.addEventListener('pointermove', mv); grip.addEventListener('pointerup', up);
+    const up = () => { grip.removeEventListener('pointermove', mv); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up); setLayout(L); };
+    grip.addEventListener('pointermove', mv); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', up);
   }
 });
 

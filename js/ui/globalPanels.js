@@ -27,7 +27,8 @@ registerPanel('library', {
   render: () => `<div class="pad"><div class="lib-tools"><input type="text" placeholder="Search blocks" value="${esc(ui.libSearch)}" data-input="libSearch" aria-label="Search blocks"></div>
     <div class="lib-panel-folders">${libraryFolders()}</div><div class="blocks lib-grid in-panel">${libraryGrid()}</div>
     <p class="hint">Click a block to add it to this quilt. Right-click for more.</p></div>`,
-  after: () => { if (ui.libCat === 'mine' && !_savedLib.length) loadSavedBlocks().then(() => { dockSession.html.clear(); renderInspector(); }); },
+  // the saved quilts are read once; then just this panel is redrawn
+  after: () => { if (ui.libCat === 'mine' && !_savedLibLoaded) loadSavedBlocks().then(() => { for (const h of $$('[data-host="library"]')) dockSession.html.delete(h); dockRender(); }); },
 });
 
 /* ---------- History: the undo steps, named ---------- */

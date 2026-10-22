@@ -2,7 +2,8 @@
    a popover from its swatch (pinnable as the Fabric Properties panel); the block library opens as
    a picker or as the Library panel. */
 
-function renderSidebar() { renderFabricPopover(); }
+// the fabric popover, and any panel showing fabrics (only panels whose content changed are redrawn)
+function renderSidebar() { renderFabricPopover(); if (typeof dockRender === 'function') dockRender(); }
 
 /* ---------- fabrics ---------- */
 const PRINT_LABELS = { solid: 'Solid', dots: 'Polka dot', speckle: 'Speckle', stripes: 'Stripe', gingham: 'Gingham', mottled: 'Mottled or batik', floral: 'Small floral' };
@@ -338,8 +339,9 @@ Actions.libraryPicker = async () => {
    Read from the quilts saved in this browser, newest first, leaving out the quilt you have open.
    A block takes this quilt's fabrics by position, the same way library blocks do: the source
    quilt's background stays background, its 2nd fabric becomes this quilt's 2nd, and so on. */
-let _savedLib = [];
+let _savedLib = [], _savedLibLoaded = false;
 async function loadSavedBlocks() {
+  _savedLibLoaded = true;
   const list = await listProjects().catch(() => []);
   _savedLib = list.filter(p => p.id !== ui.projectId && p.doc?.blockOrder?.length);
 }

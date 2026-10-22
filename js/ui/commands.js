@@ -50,7 +50,7 @@ let _pal = { list: [], i: 0, recent: [] };
 try { _pal.recent = JSON.parse(localStorage.getItem('quiltthing.v4.recentCmds') || '[]'); } catch {}
 Actions.commandPalette = () => {
   closeMenu();
-  openModal(`<div class="palette" role="combobox" aria-expanded="true" aria-haspopup="listbox"><div class="pal-in">${icon('search', 16)}<input type="text" id="pal-q" placeholder="Search commands, panels, blocks, fabrics…" aria-label="Search commands" aria-controls="pal-list" autocomplete="off" spellcheck="false"><kbd>Esc</kbd></div><div class="pal-list" id="pal-list" role="listbox" aria-label="Results"></div></div>`);
+  openModal(`<div class="palette"><div class="pal-in">${icon('search', 16)}<input type="text" id="pal-q" role="combobox" aria-expanded="true" aria-haspopup="listbox" aria-autocomplete="list" placeholder="Search commands, panels, blocks, fabrics…" aria-label="Search commands" aria-controls="pal-list" autocomplete="off" spellcheck="false"><kbd>Esc</kbd></div><div class="pal-list" id="pal-list" role="listbox" aria-label="Results"></div></div>`);
   $('#modal-root .modal').classList.add('palette-modal');
   const q = $('#pal-q');
   q.addEventListener('input', () => paletteFill(q.value));

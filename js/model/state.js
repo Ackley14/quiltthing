@@ -212,6 +212,7 @@ function loadRefs() {
   try { refImgs = JSON.parse(localStorage.getItem(STORE_REFS) || '{}') || {}; } catch { refImgs = {}; }
 }
 function saveRefs() {
+  if (typeof savePaused !== 'undefined' && savePaused) return false;
   try { localStorage.setItem(STORE_REFS, JSON.stringify(refImgs)); return true; } catch (e) { console.warn('picture save failed', e); return false; }
 }
 const saveRefsSoon = debounce(saveRefs, 400);
