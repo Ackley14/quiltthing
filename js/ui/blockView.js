@@ -253,7 +253,10 @@ function editorGuides(b) {
     for (const p of blockPieces(b, S, S)) s += `<path d="${polyToPath(p.pts)}" fill="none" stroke="rgba(20,30,40,.75)" stroke-width="${hair * 1.4}" stroke-dasharray="${hair * 5} ${hair * 3}" pointer-events="none"/>`;
   }
   // problem pieces are shown only with the Seam tool, so a block in progress isn't covered in red
-  if (ui.tool === 'seam') for (const pr of pieceProblems(b, S)) if (pr.kind !== 'tiny' || pr.crumb) s += `<path class="problem" d="${polyToPath(pr.piece.pts)}${pr.piece.holes.map(h => polyToPath(h)).join('')}" fill-rule="evenodd" stroke-width="${hair * 1.5}"/>`;
+  if (ui.tool === 'seam') for (const pr of pieceProblems(b, S)) {
+    if (pr.kind === 'sharp') s += `<circle class="sharp-tip" cx="${pr.at[0]}" cy="${pr.at[1]}" r="${u * 0.014}" stroke-width="${hair * 1.5}"/>`;
+    else if (pr.kind !== 'tiny' || pr.crumb) s += `<path class="problem" d="${polyToPath(pr.piece.pts)}${pr.piece.holes.map(h => polyToPath(h)).join('')}" fill-rule="evenodd" stroke-width="${hair * 1.5}"/>`;
+  }
   // selection: outline every selected shape; corner/edge handles when exactly one is selected
   const sel = selList();
   if (ui.tool === 'select') for (const i of sel) s += `<path class="sel-halo" d="${regionPathD(b.regions[i], k)}" stroke-width="${hair * 6}"/><path class="sel-outline" d="${regionPathD(b.regions[i], k)}" stroke-width="${hair * 3}"/>`;
@@ -263,7 +266,7 @@ function editorGuides(b) {
       const nb = r.pts[(i + 1) % r.pts.length];
       const bl = r.b?.[i] || 0;
       const mid = bl ? arcInfo([q[0] * k, q[1] * k], [nb[0] * k, nb[1] * k], bl).apex : [(q[0] + nb[0]) / 2 * k, (q[1] + nb[1]) / 2 * k];
-      s += `<rect class="eh${bl ? ' curved' : ''}" data-eh="${i}" x="${mid[0] - u * .011}" y="${mid[1] - u * .011}" width="${u * .022}" height="${u * .022}" rx="${u * .004}" stroke-width="${hair}"><title>Drag to curve this edge · double-click to straighten · Alt-click to add a corner here</title></rect>`;
+      s += `<rect class="eh${bl ? ' curved' : ''}" data-eh="${i}" x="${mid[0] - u * .011}" y="${mid[1] - u * .011}" width="${u * .022}" height="${u * .022}" rx="${u * .004}" stroke-width="${hair}"><title>Drag outward to bulge this edge, inward to scoop it · double-click to straighten · Alt-click to add a corner here</title></rect>`;
     });
     r.pts.forEach((q, i) => { s += `<circle class="vh" data-vh="${i}" cx="${q[0] * k}" cy="${q[1] * k}" r="${u * .014}" stroke-width="${hair * 1.2}"><title>Drag to move this corner · double-click to remove it</title></circle>`; });
   }
@@ -307,7 +310,7 @@ function drawOverlay() {
   }
   if (ui.seamPreview && _seamState.block === b.id && _seamState.s) {
     const sg = _seamState.s;
-    for (const [list, col] of [[sg.required, '#b5482f'], [sg.optional, '#2e7d4f']]) {
+    for (const [list, col] of [[sg.required, '#b5482f'], [sg.optional, '#2e7d4f'], [sg.curve?.seams || [], '#2c6fa8']]) {
       for (const [A, B] of list) s += `<line x1="${A[0] * k}" y1="${A[1] * k}" x2="${B[0] * k}" y2="${B[1] * k}" stroke="${col}" stroke-width="${hair * 3}" stroke-dasharray="${hair * 6} ${hair * 4}" stroke-linecap="round"/>`;
     }
   }
@@ -564,11 +567,11 @@ function edMove(e) {
     let bl = clamp(2 * s / L, -1, 1);
     if (e.shiftKey) bl = ARC_SNAPS.reduce((a, c) => Math.abs(c - bl) < Math.abs(a - bl) ? c : a);   // Shift: common arcs (and straight)
     else for (const snapTo of [0, QUARTER_BULGE, -QUARTER_BULGE, 1, -1]) if (Math.abs(bl - snapTo) < 0.05) bl = snapTo;
-    const st = $('#ed-status');
-    if (st) st.innerHTML = `${bl ? `<b>${arcLabel(bl)}</b>` : '<b>Straight</b>'}. Hold Shift to snap to common curves.`;
     if (!r.b) r.b = r.pts.map(() => 0);
     while (r.b.length < r.pts.length) r.b.push(0);
     r.b[dr.i] = round(bl, 4);
+    const st = $('#ed-status'), ori = r.pts.length > 2 ? signedArea(r.pts) : signedArea(regionRing(r, 1, 1));
+    if (st) st.innerHTML = `${bl ? `<b>${arcLabel(bl)}</b>, ${bl * ori < 0 ? 'bulging out' : 'curving in'}` : '<b>Straight</b>'}. ${ringSelfCrosses(regionRing(r, 1, 1)) ? 'The curves cross: the shape splits into separate pieces where they meet. ' : ''}Hold Shift to snap to common curves.`;
     dr.moved = true;
     refreshEditor(false);
     return;
@@ -871,20 +874,20 @@ function scheduleSeamCheck() {
 // how many pieces the seam suggestion would change, shown on the Seam tool instead of a popup
 function seamBadge(b) {
   const sg = _seamState.block === b.id && _seamState.key === blockKey(b) ? _seamState.s : null;
-  const n = sg ? sg.reqPieces + sg.optPieces : 0;
-  return n ? `<span class="badge${sg.required.length ? '' : ' soft'}">${n}</span>` : '';
+  const n = sg ? sg.reqPieces + sg.optPieces + (sg.curve?.leaves.length || 0) : 0;
+  return n ? `<span class="badge${sg.required.length || sg.curve ? '' : ' soft'}">${n}</span>` : '';
 }
 function seamDismissed(b) { return (ui.seamDismiss || {})[b.id] === blockKey(b); }
 function showSeamCard() {
   const card = $('#seam-card'), slot = $('#seam-tool-slot'), b = activeBlock();
   if (!card || !b) return;
   const sg = _seamState.s;
-  const has = sg && (sg.required.length || sg.optional.length), seamTool = ui.tool === 'seam';
+  const has = sg && (sg.required.length || sg.optional.length || sg.curve), seamTool = ui.tool === 'seam';
   const tb = $('#toolstrip [data-arg="seam"]');
   if (tb) {
     tb.querySelector('.badge')?.remove();
     tb.insertAdjacentHTML('beforeend', seamBadge(b));
-    const n = has ? sg.reqPieces + sg.optPieces : 0;
+    const n = has ? sg.reqPieces + sg.optPieces + (sg.curve?.leaves.length || 0) : 0;
     tb.setAttribute('aria-label', n ? `Seam line, ${plural(n, 'piece')} could use seams` : 'Seam line');
   }
   renderHud();   // the seam warning widget
@@ -894,12 +897,12 @@ function showSeamCard() {
   if (sg.required.length) lines.push(`${plural(sg.reqPieces, 'piece')} need${sg.reqPieces === 1 ? 's' : ''} set-in seams as drawn. ${plural(sg.required.length, 'seam line')} fix${sg.required.length === 1 ? 'es' : ''} that.`);
   if (sg.optional.length) lines.push(`${plural(sg.optPieces, 'piece')} need${sg.optPieces === 1 ? 's' : ''} a template. ${plural(sg.optional.length, 'more seam')} make${sg.optional.length === 1 ? 's' : ''} ${sg.optPieces === 1 ? 'it' : 'them'} rotary-cut.`);
   if (sg.setInAfter) lines.push('Some pieces still meet in a set-in (Y) seam.');
-  const total = sg.required.length + sg.optional.length;
-  card.innerHTML = `<div class="sc-body"><b>Seam suggestion</b><br>${lines.join('<br>')}
-    <div class="btn-row"><button class="btn small" data-act="seamPreview">${ui.seamPreview ? 'Hide preview' : 'Preview'}</button>
-    <button class="btn small primary" data-act="applySeams" data-arg="all">Add ${total === 1 ? 'seam' : `${total} seams`}</button>
-    ${sg.required.length && sg.optional.length ? '<button class="btn small" data-act="applySeams" data-arg="required">Only the required ones</button>' : ''}
-    <button class="btn small quiet" data-act="dismissSeams">Dismiss</button></div></div>`;
+  const total = sg.required.length + sg.optional.length, preview = `<button class="btn small" data-act="seamPreview">${ui.seamPreview ? 'Hide preview' : 'Preview'}</button>`;
+  card.innerHTML = `<div class="sc-body">${sg.curve ? curveCardHtml(b, sg.curve, preview) : ''}${total ? `${sg.curve ? '<div class="sc-sep"></div>' : ''}<b>Seam suggestion</b><br>${lines.join('<br>')}
+    <div class="btn-row">${preview}
+    <button class="btn small primary" data-act="applySeams" data-arg="straight">Add ${total === 1 ? 'seam' : `${total} seams`}</button>
+    ${sg.required.length && sg.optional.length ? '<button class="btn small" data-act="applySeams" data-arg="required">Only the required ones</button>' : ''}</div>` : ''}
+    <div class="btn-row"><button class="btn small quiet" data-act="dismissSeams">Dismiss</button></div></div>`;
   card.hidden = false;
   drawOverlay();
 }
@@ -907,21 +910,50 @@ Actions.toggleSeamLines = () => { ui.showSeamLines = ui.showSeamLines === false;
 Actions.seamPreview = () => { ui.seamPreview = !ui.seamPreview; saveUi(); showSeamCard(); };
 Actions.dismissSeams = () => { const b = activeBlock(); ui.seamDismiss = { ...(ui.seamDismiss || {}), [b.id]: blockKey(b) }; ui.seamPreview = false; saveUi(); showSeamCard(); };
 Actions.undismissSeams = () => { const b = activeBlock(); if (ui.seamDismiss) delete ui.seamDismiss[b.id]; saveUi(); showSeamCard(); };
+// mode: 'all' (every suggestion, the curve seams too), 'straight' (set-in and template ones), 'required', 'curve'
 Actions.applySeams = mode => {
-  const b = activeBlock(), sg = seamSuggestions(b);
-  const add = mode === 'required' ? sg.required : [...sg.required, ...sg.optional];
+  const b = activeBlock(), sg = seamSuggestions(b), curve = sg.curve?.seams || [];
+  const add = mode === 'required' ? sg.required : mode === 'curve' ? curve : [...sg.required, ...sg.optional, ...(mode === 'all' ? curve : [])];
   if (!add.length) { toast('No seams to add'); return; }
   b.seams = [...(b.seams || []), ...add];
   ui.seamPreview = false;
   commit();
   const an = analyzeBlock(b, blockFrameSize(b));
-  toast(an.setIn ? `Added ${plural(add.length, 'seam')}. Some Y-seams remain.` : `Added ${plural(add.length, 'seam')}`);
+  toast(an.setIn ? `Added ${plural(add.length, 'seam')}. Some Y-seams remain.` : an.curveIssue ? `Added ${plural(add.length, 'seam')}. Some curves still can't be sewn as drawn.` : `Added ${plural(add.length, 'seam')}`);
 };
 Actions.autoSeams = () => {
   const sg = seamSuggestions(activeBlock());
-  if (!sg.required.length && !sg.optional.length) { toast(sg.unresolved ? 'No straight seams found for those pieces' : 'Every piece is already rotary-cut'); return; }
+  if (!sg.required.length && !sg.optional.length && !sg.curve?.seams.length) { toast(sg.unresolved || sg.curve ? 'No straight seams found for those pieces' : 'Every piece is already rotary-cut'); return; }
   Actions.applySeams('all');
 };
+// The curved shapes that can't be sewn as drawn become appliqué, sewn on top of the pieced block.
+Actions.curvesToApplique = () => {
+  const b = activeBlock(), regs = seamSuggestions(b).curve?.regions || [];
+  if (!regs.length) return;
+  // appliqué sits on top of every pieced shape, so one drawn above it now sits behind it
+  const front = regs.some(i => b.regions.some((r, j) => j > i && !r.app && !regs.includes(j) && r.pts.length >= 2 && regionsOverlap(b, i, j)));
+  for (const i of regs) b.regions[i].app = true;
+  ui.seamPreview = false;
+  commit();
+  const one = regs.length === 1;
+  toast(`${one ? '1 shape is' : `${regs.length} shapes are`} appliqué now. ${one ? "It's" : "They're"} sewn on top of the pieced block.${front ? (one ? ' It now sits in front of the shapes above it.' : ' They now sit in front of the shapes above them.') : ''}`, 4000);
+};
+// The seam card's curved-shapes part: what's wrong, then the fixes, easiest first.
+function curveCardHtml(b, c, preview) {
+  const n = b.n, L = c.leaves, one = L.length === 1, whole = one && L[0].w > n - 1e-6 && L[0].h > n - 1e-6;
+  const mid = one && Math.abs(L[0].x + L[0].w / 2 - n / 2) < 0.1 * n && Math.abs(L[0].y + L[0].h / 2 - n / 2) < 0.1 * n;
+  const what = whole ? 'These curved shapes' : mid ? 'The curved shapes in the middle' : 'Some curved shapes';
+  const units = Object.entries(c.units).map(([t, k]) => `${k} ${UNIT_NAMES[t] || t}${k === 1 ? '' : 's'}`).join(' and ');
+  const peel = Object.keys(c.units).length === 1 && c.units.peel, them = c.regions.length === 1 ? 'it' : 'them';
+  let h = `<b>Curved shapes</b><br>${what} can't be sewn as drawn: ${CURVE_WHY[c.why] || CURVE_WHY.many}.`;
+  if (c.regions.length) h += `<br>Appliqué is the usual way to make ${peel ? 'an orange peel' : 'shapes like these'}: the shape${c.regions.length === 1 ? ' is' : 's are'} sewn on top of the block.
+    <div class="btn-row"><button class="btn small primary" data-act="curvesToApplique">Make ${them} appliqué</button></div>`;
+  if (c.seams.length) h += `<br><b>Advanced:</b> ${plural(c.seams.length, 'seam line')} piece${c.seams.length === 1 ? 's' : ''} ${whole ? 'it' : mid ? 'the middle' : 'this part'} as ${units}. ${c.cuts ? `They cut through ${plural(c.cuts, 'curved shape')}.` : 'They run between the curved shapes, not through them.'}
+    <div class="btn-row">${preview}<button class="btn small${c.regions.length ? '' : ' primary'}" data-act="applySeams" data-arg="curve">Add ${c.seams.length === 1 ? 'the seam' : `${c.seams.length} seams`}</button></div>`;
+  else if (c.regions.length) h += '<br>No straight seams piece them as drawn.';
+  else h += '<br>Change the shapes, or sew this part by hand.';
+  return h;
+}
 Actions.clearSeams = () => { const b = activeBlock(); b.seams = []; b.appSeams = []; commit(); };
 Actions.blockName = v => { const b = activeBlock(); if (b) { b.name = v.trim() || 'Untitled block'; commit(); } };
 Actions.blockGrid = v => {
@@ -1423,6 +1455,7 @@ function blockInspector() {
   if (r) {
     selh += section('Selected shape', `<label class="f">Fabric</label>${fabricPicker(r.fab, 'regionFab', { allowBg: true })}
       <label class="check" title="Sewn on top; doesn't cut the pieces underneath"><input type="checkbox" data-change="regionApp" ${r.app ? 'checked' : ''}> Appliqué</label>
+      ${!r.app && analyzeBlock(b, S).units.some(u => u.unit.regions?.includes(sel[0])) ? `<p class="hint warn">Its curves can't be pieced as drawn.</p>` : ''}
       <label class="f">Add copies around the centre</label>
       <div class="btn-row" style="margin-top:3px">${(hex ? [['rot2', '2'], ['rot3', '3'], ['rot6', '6']] : [['rot2', '2'], ['rot4', '4'], ['rot8', '8']]).map(([k, l]) => `<button class="btn small" data-act="regionCopies" data-arg="${k}">${l}</button>`).join('')}<button class="btn small" data-act="regionCopies" data-arg="h">Mirrored copy ↔</button><button class="btn small" data-act="regionCopies" data-arg="v">Mirrored copy ↕</button><button class="btn small" data-act="regionCopies" data-arg="4">4-way</button></div>`, { key: 'selshape' });
   }
@@ -1468,10 +1501,13 @@ function constructionSection(b, S) {
   for (const u of an.units) if (u.unit.type !== 'piece') units[u.unit.type] = (units[u.unit.type] || 0) + 1;
   const probs = pieceProblems(b, S);
   const how = an.setIn ? 'Has set-in (Y) seams. Add seam lines to avoid them.'
-    : pieces.length > 1 ? (an.height ? `Sews in ${plural(an.height, 'step')}${an.units.some(u => u.unit.type === 'curved') ? ', with curved seams' : ''}.` : 'Sews as one unit.') : 'One piece.';
+    : pieces.length > 1 ? (an.height ? `Sews in ${plural(an.height, 'step')}${an.units.some(u => CURVED_UNITS.has(u.unit.type)) ? ', with curved seams' : ''}.` : 'Sews as one unit.') : 'One piece.';
   let body = `<p class="${an.setIn ? 'hint warn' : 'hint'}">${plural(pieces.length, 'piece')} to cut. ${how}</p>
     <dl class="kv">${Object.entries(counts).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}${Object.entries(units).map(([k, v]) => `<dt>${esc(UNIT_NAMES[k] || k)}</dt><dd>${v}</dd>`).join('')}</dl>`;
-  for (const p of probs) body += `<p class="hint${p.kind === 'tiny' && !p.crumb ? '' : ' warn'}">${esc(p.msg)}</p>`;
+  if (an.curveIssue) body += `<p class="hint warn">Its curved shapes can't be sewn as drawn. The Seam tool shows how to fix that.</p>`;
+  for (const p of probs) if (p.kind !== 'curve' && p.kind !== 'sharp') body += `<p class="hint${p.kind === 'tiny' && !p.crumb ? '' : ' warn'}">${esc(p.msg)}</p>`;
+  const sharp = uniq(probs.filter(p => p.kind === 'sharp').map(p => p.piece)).length;
+  if (sharp) body += `<p class="hint">${plural(sharp, 'piece')} narrow${sharp === 1 ? 's' : ''} to a point under ${SHARP_DEG}° at the end of a curve. That's normal for curves: the tip disappears into the seam allowance.</p>`;
   return section('Construction', body, { key: 'construct', closed: true });
 }
 

@@ -377,6 +377,7 @@ function seamSuggestions(block) {
     if (!trial([...req2, ...opt2]).setIn) { res.required = req2; res.optional = opt2; res.extended = true; }
   }
   res.setInAfter = all.length ? trial([...res.required, ...res.optional]).setIn : false;
+  res.curve = curvedSeamSuggestions(block);
   if (_seamCache.size > 200) _seamCache.clear();
   _seamCache.set(key, res);
   return res;

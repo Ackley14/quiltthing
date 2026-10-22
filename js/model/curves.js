@@ -228,7 +228,7 @@ function curvesAnalyse(block, an, all) {
     if (t === 'curveComplex') {
       an.curveIssue = true;
       const regs = u.unit.regions = curveRegionsFor(block, u, an.size);
-      if (regs.some((i, k) => regs.slice(k + 1).some(j => curveOverlap(block, i, j)))) u.unit.why = 'many';
+      if (regs.some((i, k) => regs.slice(k + 1).some(j => regionsOverlap(block, i, j)))) u.unit.why = 'many';
     }
     for (const s of t === 'inset' ? [u.unit.seam] : CURVED_UNITS.has(t) ? u.unit.seams : []) for (const m of s.notches) for (const p of u.pieces) {
       if (![p.pts, ...p.holes].some(h => onRing(m.p, h, tol))) continue;
@@ -251,7 +251,32 @@ function curveRegionsFor(block, leaf, size) {
     return !!mp && sum(fromPC(mp), q => polyArea(q.outer) - sum(q.holes, polyArea)) > 1e-5 * size * size;
   });
 }
-function curveOverlap(block, i, j) {
+function regionsOverlap(block, i, j) {
   const mp = pcSafe('intersection', toPC(regionRing(block.regions[i], 1, 1)), toPC(regionRing(block.regions[j], 1, 1)));
   return !!mp && sum(fromPC(mp), q => polyArea(q.outer)) > 1e-5 * block.n * block.n;
+}
+
+// A drawn shape's outline (with its arcs) crossing or touching itself: the shape comes apart there.
+function ringSelfCrosses(ring) {
+  const n = ring.length, e = 1e-7 * Math.max(bounds(ring).w, bounds(ring).h, 1), cr = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  for (let i = 0; i < n; i++) for (let j = i + 2; j < n; j++) {
+    if (i === 0 && j === n - 1) continue;
+    const a = ring[i], b = ring[(i + 1) % n], c = ring[j], d = ring[(j + 1) % n];
+    if (dist(a, c) < e) return true;
+    if (Math.max(a[0], b[0]) < Math.min(c[0], d[0]) || Math.max(c[0], d[0]) < Math.min(a[0], b[0]) || Math.max(a[1], b[1]) < Math.min(c[1], d[1]) || Math.max(c[1], d[1]) < Math.min(a[1], b[1])) continue;
+    if (cr(a, b, c) * cr(a, b, d) < 0 && cr(c, d, a) * cr(c, d, b) < 0) return true;
+  }
+  return false;
+}
+
+/* ---------- fixes for curves that can't be sewn ----------
+   What the Seam tool offers for the curved parts that can't be sewn as drawn: the reason, the parts
+   (leaves, block grid units) and the drawn shapes that, made appliqué, clear all of them (regions;
+   empty when that wouldn't). null when every curved part can be sewn. */
+function curvedSeamSuggestions(block) {
+  const n = block.n, bad = analyzeBlock(block, n).units.filter(u => u.unit.type === 'curveComplex');
+  if (!bad.length) return null;
+  const regs = uniq(bad.flatMap(u => u.unit.regions || []));
+  const trial = { ...block, regions: block.regions.map((r, i) => (regs.includes(i) ? { ...r, app: true } : r)) };
+  return { why: bad[0].unit.why, leaves: bad.map(u => u.rect), seams: [], units: {}, cuts: 0, regions: regs.length && !analyzeBlock(trial, n).curveIssue ? regs : [] };
 }

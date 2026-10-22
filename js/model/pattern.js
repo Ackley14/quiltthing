@@ -192,7 +192,7 @@ function blockDiagramSvg(block, BS, paperIn, opts = {}) {
 
 const UNIT_NAMES = { hst: 'half-square triangle (HST) unit', qst: 'quarter-square triangle (QST) unit', goose: 'flying-geese unit', snowball: 'stitch-and-flip unit', curved: 'curved unit', hrt: 'half-rectangle triangle (HRT) unit', complex: 'set-in unit',
   peel: 'orange-peel unit', inset: 'inset circle unit', curveComplex: "curved part that can't be pieced" };
-const CURVE_WHY = { meet: 'curved seams meet inside it, away from its edges', cross: 'a curve crosses a straight seam', corner: 'a curved seam turns a corner', S: 'a set-in shape bends both ways', many: 'curved shapes overlap' };
+const CURVE_WHY = { meet: 'curved seams meet at a point inside, not at an edge', cross: 'a curve crosses a straight seam', corner: 'a curved seam turns a corner', S: 'a set-in shape bends both ways', many: 'curved shapes overlap' };
 
 // How to make one kind of unit: what it is, then lettered sub-steps (one action each).
 // n = units per block, copies = blocks. Every size is a cut or unfinished size.

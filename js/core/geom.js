@@ -86,7 +86,8 @@ function cleanPoly(p, keep) {
 /* ---------- true circular arcs ----------
    An edge A→B may carry a "bulge" = tan(θ/4) where θ is the arc's included angle
    (0 straight, ±0.4142 quarter circle, ±1 semicircle). Positive bulges toward the
-   normal n = (-dy, dx) of the travel direction. */
+   normal n = (-dy, dx) of the travel direction: inward on a ring that runs clockwise on
+   screen (positive signedArea, y down), so out when bulge × signedArea < 0. */
 const QUARTER_BULGE = Math.tan(Math.PI / 8);
 
 function arcInfo(A, B, bulge) {
