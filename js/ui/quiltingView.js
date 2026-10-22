@@ -64,7 +64,7 @@ Actions.addLayerMenu = (a, el) => openMenu(el, QUILT_TYPES.map(t => ({ label: t.
 Actions.addQuiltType = type => Actions.addQuiltLayer(type, { value: '' });
 Actions.qOpen = id => { ui.qOpen = ui.qOpen === id ? null : id; renderInspector(); };
 Actions.qPick = id => { ui.qOpen = id; saveUi(); renderInspector(); renderHud(); };
-// The blocks or fabrics a "Specific" layer can be limited to, with a tick for each.
+// The blocks or fabrics a layer set to Blocks or Fabrics can be limited to, with a tick for each.
 function qPickList(Q, L, i) {
   const blocks = L.area === 'pickBlocks', all = quiltPickables(Q)[blocks ? 'blocks' : 'fabrics'], on = new Set(quiltPicked(Q, L));
   if (!all.length) return `<p class="hint">${blocks ? 'No blocks are placed on the quilt.' : 'No plain fabric pieces on the quilt.'}</p>`;

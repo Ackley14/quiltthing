@@ -33,7 +33,7 @@ const QUILT_AREAS = [
   ['panel', 'Inset panel only'], ['aroundPanel', 'Centre, around the inset'],
   ['pickBlocks', 'Blocks'], ['pickFabrics', 'Fabrics'],
 ];
-// What "Specific blocks" and "Specific fabrics" can choose from: the blocks placed on the quilt, and
+// What the Blocks and Fabrics areas can choose from: the blocks placed on the quilt, and
 // the fabrics of the pieces that aren't inside a block (plain squares, tessellation shapes, setting
 // triangles, sashing, cornerstones, borders, panel frames).
 function quiltPickables(Q) {
