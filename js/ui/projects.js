@@ -94,10 +94,7 @@ Actions.openSaved = async id => {
     resetHistory(); saveNow(); render();
     toast(`Opened “${rec.name}”`);
   };
-  // the open design is autosaved, but it's replaced: check it's kept somewhere first
-  const cur = ui.projectId && await getProject(ui.projectId).catch(() => null);
-  if (cur && JSON.stringify(cur.doc) === snapshot()) go();
-  else confirmModal('Open this quilt?', `The design you have open now${cur ? ' has changes that aren\'t saved' : ' isn\'t saved in this browser'}. Opening “${esc(rec.name)}” replaces it.`, 'Open', go);
+  confirmReplace(`Opening “${esc(rec.name)}” replaces it.`, 'Open', go);
 };
 Actions.renameSaved = async id => {
   const rec = await getProject(id); if (!rec) return;
@@ -117,3 +114,12 @@ Actions.deleteSaved = async id => {
     Actions.openBrowser();
   }, true);
 };
+
+// Something is about to replace the open design. It's autosaved, but only one design is kept that
+// way: go ahead if nothing would be lost (an untouched sample, or a saved copy that matches), else ask.
+async function confirmReplace(what, okLabel, go) {
+  if (isPristineSample()) return go();
+  const cur = ui.projectId && await getProject(ui.projectId).catch(() => null);
+  if (cur && JSON.stringify(cur.doc) === snapshot()) return go();
+  confirmModal('Replace the open design?', `The design you have open now${cur ? ' has changes that aren\'t saved' : ' isn\'t saved in this browser'}. ${what}`, okLabel, go);
+}

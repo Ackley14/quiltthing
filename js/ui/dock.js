@@ -381,14 +381,16 @@ document.addEventListener('pointerdown', e => {
 /* ---------- dragging tabs to dock them somewhere else ---------- */
 let dockDrag = null;
 document.addEventListener('pointerdown', e => {
-  if (e.button !== 0 || dockLocked() || e.target.closest?.('.dtab-x, [data-split], #flyout-layer')) return;
+  if (e.button !== 0 || e.target.closest?.('.dtab-x, [data-split], #flyout-layer')) return;
   const tab = e.target.closest?.('.dtab[data-dtab]');
   if (tab) {
     const fw = tab.closest('.dfloat'), F = fw && wsLayout().floating[+fw.dataset.fi];
+    if (dockLocked() && !(F && F.tabs.length === 1)) return;
     // a window's only tab carries the whole window: over the canvas it moves it, over a dock it docks it
     dockDrag = { id: tab.dataset.dtab, ids: [tab.dataset.dtab], x: e.clientX, y: e.clientY, on: false, fromFloat: F && F.tabs.length === 1 ? { fi: +fw.dataset.fi, ...floatBox(F) } : null };
     return;
   }
+  if (dockLocked()) return;
   // the empty part of a docked group's tab bar moves the whole group
   const bar = e.target.closest?.('.dock-side .dtabs, #dock-bottom .dtabs');
   if (bar && !e.target.closest('button')) {
@@ -407,12 +409,12 @@ document.addEventListener('pointermove', e => {
   }
   dockDrag.target = dockDrag.fromFloat && !floatMayDock(e) ? null : dockDropTarget(e.clientX, e.clientY);
   if (dockDrag.fromFloat && !dockDrag.target) { const w = $(`.dfloat[data-fi="${dockDrag.fromFloat.fi}"]`); if (w) { w.style.left = `${dockDrag.fromFloat.x + e.clientX - dockDrag.x}px`; w.style.top = `${dockDrag.fromFloat.y + e.clientY - dockDrag.y}px`; } }
-  showDropTarget(dockDrag.target, dockDrag.ids.map(panelTitle).join(', '), e);
+  showDropTarget(dockDrag.target, dockDrag.fromFloat && !dockDrag.target ? '' : dockDrag.ids.map(panelTitle).join(', '), e);
 });
 // the ghost label beside the pointer (kept on screen) and the outline of where the drop goes
 function showDropTarget(t, name, e) {
   const ghost = $('#drop-layer .drop-ghost'), hl = $('#drop-layer .drop-hl'); if (!ghost) return;
-  ghost.textContent = `${name}${t?.label ? ` → ${t.label}` : ''}`;
+  ghost.textContent = `${name}${t?.label ? ` → ${t.label}` : ''}`; ghost.hidden = !ghost.textContent;
   const gw = ghost.offsetWidth, gh = ghost.offsetHeight;
   const gx = e.clientX + 12 + gw > innerWidth - 4 ? e.clientX - 12 - gw : e.clientX + 12, gy = Math.min(e.clientY + 10, innerHeight - gh - 4);
   ghost.style.transform = `translate(${Math.max(4, gx)}px, ${gy}px)`;
@@ -430,13 +432,17 @@ const endDockDrag = e => {
     if (f) { f.x = Math.round(d.fromFloat.x + e.clientX - d.x); f.y = Math.round(d.fromFloat.y + e.clientY - d.y); setLayout(L); }
     return;
   }
-  if (!d.target || e.type === 'pointercancel') { announce('Panel left where it was'); return; }
+  if (!d.target || e.type === 'pointercancel') { if (d.fromFloat) { dockSession.sig = ''; render(); } announce('Panel left where it was'); return; }
   setLayout(dockMoveMany(dockClone(wsLayout()), d.ids, d.target, d.id));
   announce(`${d.ids.map(panelTitle).join(', ')} moved`);
 };
 document.addEventListener('pointerup', endDockDrag);
 document.addEventListener('pointercancel', endDockDrag);
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && dockDrag?.on) { e.stopPropagation(); dockDrag = null; document.body.classList.remove('dock-dragging'); $('#drop-layer').innerHTML = ''; } }, true);
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || !dockDrag?.on) return;
+  e.stopPropagation(); const d = dockDrag; dockDrag = null; document.body.classList.remove('dock-dragging'); $('#drop-layer').innerHTML = '';
+  if (d.fromFloat) { dockSession.sig = ''; render(); }   // the window goes back where it was
+}, true);
 // A floating window docks only somewhere meant for docking: a dock, an icon strip, another window's
 // tab bar, the window's outer edges (a new column), or the strip just above the status bar (the bottom
 // dock). Over the canvas it just moves. Holding Ctrl keeps it floating.

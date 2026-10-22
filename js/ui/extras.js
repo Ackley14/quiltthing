@@ -277,11 +277,13 @@ document.addEventListener('keydown', e => {
 $('#main')?.addEventListener('wheel', e => {
   if (!(e.ctrlKey || e.metaKey) || !['fabric', 'pattern'].includes(ui.view)) return;
   e.preventDefault();
+  if (Date.now() - _docWheelAt > 250) _docWheel = 0;
+  _docWheelAt = Date.now();
   _docWheel += e.deltaY;   // a trackpad sends many small steps: add them up to one notch
   if (Math.abs(_docWheel) < 80) return;
   Actions.docZoomBy(_docWheel < 0 ? 'in' : 'out', null, null, e); _docWheel = 0;
 }, { passive: false });
-let _docWheel = 0;
+let _docWheel = 0, _docWheelAt = 0;
 
 // the options bar names the document tool while it isn't the plain Select
 function docToolChip() {

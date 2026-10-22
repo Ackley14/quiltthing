@@ -42,12 +42,15 @@ Actions.qZoomBy = dir => qzSet(dir === 'fit' ? 1 : qzZoom() * (dir === 'in' ? 1.
 function qzPanBy(dx, dy) { const s = qzState(); if (s.z <= 1) return; s.cx += dx; s.cy += dy; qzApply(); }
 
 // after each render of a quilt canvas: restore its zoom and listen for zooming and panning
+// How much a wheel or pinch event zooms: one mouse-wheel notch is about 1.2×; a trackpad's many small
+// steps add up to the same for the same movement.
+function wheelZoomFactor(e) { const d = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1); return Math.exp(-clamp(d, -300, 300) * 0.0018); }
 function qzAttach(root) {
   const svg = QZ_VIEWS.includes(ui.view) && root?.querySelector('svg.quilt-svg');
   if (!svg) return;
   qzApply(svg);
   svg.addEventListener('wheel', e => {
-    if (e.ctrlKey || e.metaKey) { e.preventDefault(); qzSet(qzZoom() * (e.deltaY < 0 ? 1.2 : 1 / 1.2), svgPoint(svg, e)); return; }
+    if (e.ctrlKey || e.metaKey) { e.preventDefault(); qzSet(qzZoom() * wheelZoomFactor(e), svgPoint(svg, e)); return; }
     if (qzZoom() > 1) {
       e.preventDefault();
       const px = 1 / svg.getScreenCTM().a;
@@ -92,10 +95,10 @@ window.addEventListener('blur', () => { _qz.space = false; });
 function qzNavTool() { const t = ui.view === 'layout' ? ui.layoutTool : ui.view === 'quilting' ? (ui.qTool || 'hand') : null; return t === 'hand' || t === 'zoom' ? t : null; }
 
 // the grey margins around the drawing: the wheel acts as it would over the drawing (and never zooms the page)
-$('#docwrap')?.addEventListener('wheel', e => {
+$('#docarea')?.addEventListener('wheel', e => {
   if (!['block', 'layout', 'quilting'].includes(ui.view)) return;
   const svg = $('#main .canvas-wrap > svg');
-  if (!svg || svg.contains(e.target) || !e.target.closest?.('#main')) return;
+  if (!svg || svg.contains(e.target) || !e.target.closest?.('#main, #hud, #doctabs, .rulers, .ruler')) return;
   if (e.ctrlKey || e.metaKey) e.preventDefault();
   const clone = new WheelEvent('wheel', { deltaX: e.deltaX, deltaY: e.deltaY, deltaMode: e.deltaMode, clientX: e.clientX, clientY: e.clientY, ctrlKey: e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey, altKey: e.altKey, cancelable: true, bubbles: false });
   svg.dispatchEvent(clone);

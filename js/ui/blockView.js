@@ -1023,9 +1023,18 @@ function shapeOffset(b, pts, want, firstPts) {
   const fr = isHexBlock(b) ? hexFrame(b.n) : [[0, 0], [b.n, b.n]];
   const fx0 = Math.min(...fr.map(p => p[0])), fx1 = Math.max(...fr.map(p => p[0])), fy0 = Math.min(...fr.map(p => p[1])), fy1 = Math.max(...fr.map(p => p[1]));
   const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-  const fits = k => x0 + k * st[0] >= fx0 - 1e-9 && x1 + k * st[0] <= fx1 + 1e-9 && y0 + k * st[1] >= fy0 - 1e-9 && y1 + k * st[1] <= fy1 + 1e-9;
-  const lim = Math.ceil(b.n / Math.min(st[0], st[1])) + 1;
-  for (let k = 1; k <= lim; k++) for (const s of [k, -k]) if (fits(s) && !taken(s * st[0], s * st[1])) return [s * st[0], s * st[1]];
+  // inside the frame: the square, or for a hexagon block the hexagon itself (it's convex: every point on
+  // the inner side of every edge)
+  const side = (A, B, x, y) => (B[0] - A[0]) * (y - A[1]) - (B[1] - A[1]) * (x - A[0]);
+  const cx = fr.reduce((s, p) => s + p[0], 0) / fr.length, cy = fr.reduce((s, p) => s + p[1], 0) / fr.length;
+  const hexIn = isHexBlock(b) ? (x, y) => fr.every((A, i) => { const B = fr[(i + 1) % fr.length], inner = Math.sign(side(A, B, cx, cy)); return side(A, B, x, y) * inner >= -1e-6; }) : null;
+  const fits = (dx, dy) => x0 + dx >= fx0 - 1e-9 && x1 + dx <= fx1 + 1e-9 && y0 + dy >= fy0 - 1e-9 && y1 + dy <= fy1 + 1e-9 && (!hexIn || pts.every(([x, y]) => hexIn(x + dx, y + dy)));
+  // lattice steps: across (1, 0) and down (the square's (0, 1), or the 60° lattice's (½, √3/2)); nearest first, down-right first
+  const down = tri ? [0.5, TRI_H] : [0, 1], lim = b.n + 1, spots = [];
+  for (let i = -lim; i <= lim; i++) for (let j = -lim; j <= lim; j++) if (i || j) { const dx = i + j * down[0], dy = j * down[1]; spots.push([dx, dy, Math.hypot(dx, dy) - (dx > 0 && dy > 0 ? 0.01 : 0)]); }
+  spots.sort((a, c) => a[2] - c[2]);
+  const start = Math.max(0, want - 1);   // repeated pastes start further out
+  for (let n = 0; n < spots.length; n++) { const [dx, dy] = spots[(n + start) % spots.length]; if (fits(dx, dy) && !taken(dx, dy)) return [round(dx, 6), round(dy, 6)]; }
   return [0, 0];
 }
 Actions.selDup = () => {
@@ -1274,7 +1283,7 @@ function edWheel(e) {
     refreshRef(); saveRefsSoon();
     return;
   }
-  if (e.ctrlKey || e.metaKey) { e.preventDefault(); setZoom(edZoom() * (e.deltaY < 0 ? 1.2 : 1 / 1.2), svgPoint(svg, e)); return; }
+  if (e.ctrlKey || e.metaKey) { e.preventDefault(); setZoom(edZoom() * wheelZoomFactor(e), svgPoint(svg, e)); return; }
   if (edZoom() > 1) {
     e.preventDefault();
     const px = 1 / svg.getScreenCTM().a;

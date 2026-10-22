@@ -497,7 +497,9 @@ function toast(msg, ms = 2600) {
   t.setAttribute('role', 'status');
   const span = document.createElement('span'); span.textContent = msg; t.appendChild(span);
   $('#toast-root').appendChild(t);
-  setTimeout(() => t.remove(), ms);
+  let tm = setTimeout(() => t.remove(), ms);
+  t.addEventListener('mouseenter', () => clearTimeout(tm));
+  t.addEventListener('mouseleave', () => { tm = setTimeout(() => t.remove(), 2000); });
   return t;
 }
 
@@ -532,7 +534,8 @@ Actions.loadTessSample = () => confirmModal('Load the Hexie Bloom sample?', "Thi
   ui.projectId = null; loadTessSample().then(() => toast('Hexie Bloom loaded')).catch(err => toast(err.message));
 });
 Actions.saveProject = () => { exportProject(); toast('Project file downloaded'); };
-Actions.openProject = () => {
+Actions.openProject = () => confirmReplace('Opening a project file replaces it. Save a copy first (File, Save) to keep it.', 'Choose a file', pickProjectFile);
+function pickProjectFile() {
   const inp = document.createElement('input');
   inp.type = 'file'; inp.accept = '.json,application/json';
   inp.onchange = () => {
@@ -552,7 +555,7 @@ Actions.openProject = () => {
     });
   };
   inp.click();
-};
+}
 
 /* ---------- export ---------- */
 function exportSvgString(opts = {}) {

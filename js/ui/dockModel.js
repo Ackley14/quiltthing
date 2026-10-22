@@ -211,11 +211,13 @@ function dockOpen(L, id, def) {
 // Add a panel to a column: a new group under the tallest open group while there's room, otherwise a tab in it.
 function dockAddToColumn(L, id, zone, ci) {
   const c = L[zone][ci], open = c.groups.map((g, i) => i).filter(i => !c.groups[i].folded), all = open.length ? open : c.groups.map((g, i) => i);
-  // Properties is the workspace's main panel: split it only when it has the column to itself
-  const pool = all.filter(i => !c.groups[i].tabs.includes('props') || c.groups[i].h > 0.99).length ? all.filter(i => !c.groups[i].tabs.includes('props') || c.groups[i].h > 0.99) : all;
-  const gi = pool.reduce((b, i) => (c.groups[i].h >= c.groups[b].h - 1e-9 ? i : b), pool[0]), big = c.groups[gi];
-  const crowded = c.groups.length >= 3 || (big && big.h < 0.3);
-  return dockMove(L, id, { zone, col: ci, group: gi, how: crowded ? 'tab' : 'below' });
+  // Split the tallest group when both halves stay usable (Properties, the main panel, needs more);
+  // otherwise join a group as a tab: the last one that isn't Properties.
+  const gi = all.reduce((b, i) => (c.groups[i].h >= c.groups[b].h - 1e-9 ? i : b), all[0]), big = c.groups[gi];
+  const isProps = g => g.tabs.includes('props');
+  if (big && c.groups.length < 3 && big.h >= (isProps(big) ? 0.8 : 0.6)) return dockMove(L, id, { zone, col: ci, group: gi, how: 'below' });
+  const tabTo = [...all].reverse().find(i => !isProps(c.groups[i])) ?? all[all.length - 1];
+  return dockMove(L, id, { zone, col: ci, group: tabTo, how: 'tab' });
 }
 function dockActivate(L, id) { const at = dockFind(L, id); if (at) at.g.active = id; return L; }
 
