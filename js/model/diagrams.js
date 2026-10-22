@@ -155,7 +155,9 @@ function usageThumbSvg(use, px = 54, unit = 'px') {
 // (finished + 2·sa): raw edges, dog ears, points sa in from the edge, then the trimmed unit.
 // Lines mean the same in every sketch: red dashes = sewing line, thin solid ink = drawn or cut
 // line, grey dashes = finished size (sa in from the raw edge). Pieces lying wrong side up (placed
-// right sides together) are drawn see-through. Each panel is labelled with the sub-step letter(s)
+// right sides together) are drawn see-through. Panels that lay the pieces out pull them apart like
+// the exploded block diagrams, never overlapping (howtoSpread); they keep the placed cut outlines in
+// `sep`, which unitHowToPanels returns for checking. Each panel is labelled with the sub-step letter(s)
 // of `unitMethodText` it shows, with a 2–6-word caption; more than 3 panels wrap to two rows.
 //
 // unitHowToSvg(type, info), info = {
@@ -173,11 +175,17 @@ const HOWTO_INK = '#2b3a4a', HOWTO_RED = '#b5482f', HOWTO_GREY = '#8a95a3', HOWT
 const HOWTO_LABELS = {
   hst: ['a–c', 'd', 'e'], goose: ['a–c', 'd', 'e', 'f', 'g'], gooseFlip: ['a–b', 'c', 'd', 'e'],
   qst: ['a–c', 'd', 'e', 'e'], qst3: ['a', 'b', 'c–d'], snowball: ['a–c', 'd', 'e'], hrt: ['a', 'b', 'c', 'd'], curved: ['a', 'b–c', 'd–e'],
+  peel: ['a', 'b–c', 'd–e', 'f'], inset: ['a', 'b', 'c–d', 'e–f'],
 };
 
 function unitHowToSvg(type, a, b, widthIn) {
   const info = a && typeof a === 'object' && a.sample ? a : { sample: howtoDemoSample(type, a, b), sa: 0.25, widthIn };
-  if (!info.sample) return '';
+  const panels = unitHowToPanels(type, info);
+  return panels.length ? howtoLayout(panels, info.widthIn || 4.5, info.legend !== false, info.sa ?? 0.25) : '';
+}
+// The labelled panels of a method sketch, before layout (empty when there's no sketch).
+function unitHowToPanels(type, info) {
+  if (!info.sample) return [];
   const g = howtoGeom(info);
   let panels, key = type;
   switch (type) {
@@ -187,11 +195,13 @@ function unitHowToSvg(type, a, b, widthIn) {
     case 'snowball': panels = howtoSnowball(g); break;
     case 'hrt': panels = howtoHrt(g); break;
     case 'curved': panels = howtoCurved(g); break;
-    default: return '';
+    case 'peel': panels = howtoPeel(g); break;
+    case 'inset': panels = howtoInset(g); break;
+    default: return [];
   }
-  if (!panels?.length) return '';
+  if (!panels?.length) return [];
   panels.forEach((p, i) => { p.label = (info.labels || HOWTO_LABELS[key])[i] ?? ''; });
-  return howtoLayout(panels, info.widthIn || 4.5, info.legend !== false, g.sa);
+  return panels;
 }
 
 // Everything the stage builders need, in inches, with the unit's top-left raw corner at (0, 0).
@@ -199,10 +209,11 @@ function howtoGeom(info) {
   const s = info.sample, r = s.rect, sa = info.sa ?? 0.25, u = s.unit;
   const lum = f => luminance(fabricHex(f));
   const fabs = uniq((u.fabs || []).map(resolveFab)).sort((p, q) => lum(q) - lum(p));
-  const pieces = (s.pieces || []).map(p => ({ pts: p.pts.map(([x, y]) => [x - r.x + sa, y - r.y + sa]), fab: resolveFab(p.fab), curved: !!p.curved, src: p }));
+  const map = ([x, y]) => [x - r.x + sa, y - r.y + sa];
+  const pieces = (s.pieces || []).map(p => ({ pts: p.pts.map(map), holes: (p.holes || []).map(h => h.map(map)), fab: resolveFab(p.fab), curved: !!p.curved, src: p }));
   return {
     sa, D: sa * Math.SQRT2, W: r.w, H: r.h, UW: r.w + 2 * sa, UH: r.h + 2 * sa, S: fmtLen(sa), unit: u, rect: r,
-    fabs, lt: fabs[0], dk: fabs[fabs.length - 1], lum, pieces,
+    fabs, lt: fabs[0], dk: fabs[fabs.length - 1], lum, pieces, map, of: src => pieces.find(p => p.src === src),
   };
 }
 
@@ -222,7 +233,8 @@ function howtoDemoSample(type, a, b) {
     case 'curved': {
       const R = 4, arc = [...Array(13)].map((_, i) => { const t = i / 12 * Math.PI / 2; return [R * Math.cos(t), R * Math.sin(t)]; });
       const pie = { pts: [[0, 0], ...arc], fab: b, curved: true }, L = { pts: [[R, 0], [6, 0], [6, 6], [0, 6], ...arc.slice().reverse().slice(0, -1)], fab: a, curved: true };
-      return { rect: sq(6), pieces: [pie, L], unit: { type, fabs: [a, b], order: [pie, L] } };
+      const seam = { run: arc, convex: pie, concave: L, notches: [{ p: arc[6], d: [-Math.SQRT1_2, Math.SQRT1_2] }] };
+      return { rect: sq(6), pieces: [pie, L], unit: { type, fabs: [a, b], order: [pie, L], seams: [seam] } };
     }
   }
   return null;
@@ -388,6 +400,57 @@ function howtoAlong(path, t) {   // point and unit direction at fraction t of a 
   return { p: path[0], dir: [1, 0] };
 }
 
+// The gap between two cut outlines ({ outer, holes }), or −1 where they overlap: edges crossing, or
+// a point of one inside the other's fabric.
+function howtoGap(A, B) {
+  const a = bounds(A.outer), b = bounds(B.outer);
+  const far = Math.max(a.minX - b.maxX, b.minX - a.maxX, a.minY - b.maxY, b.minY - a.maxY);
+  if (far > 0.5) return far;
+  const cloth = (q, X) => pointInPoly(q, X.outer) && !X.holes.some(h => pointInPoly(q, h));
+  if (B.outer.some(q => cloth(q, A)) || A.outer.some(q => cloth(q, B))) return -1;
+  const cr = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+  let d = Infinity;
+  for (const r of [A.outer, ...A.holes]) for (const t of [B.outer, ...B.holes]) for (let i = 0; i < r.length; i++) {
+    const p = r[i], q = r[(i + 1) % r.length];
+    for (let j = 0; j < t.length; j++) {
+      const u = t[j], v = t[(j + 1) % t.length];
+      if (cr(p, q, u) * cr(p, q, v) < 0 && cr(u, v, p) * cr(u, v, q) < 0) return -1;
+      d = Math.min(d, segDist(p, u, v), segDist(u, p, q));
+    }
+  }
+  return d;
+}
+// Pieces pulled apart like the exploded block diagrams: each moves straight out from the unit's
+// centre, along the line to its own centre, further step by step until no two cut outlines come
+// within a small gap; past the cap they go in a row instead, in sewing order. list: [{ pts, cut?,
+// holes? }] (cut: the outline as drawn, the piece's seam allowance outline by default; holes: its
+// cut lines inside). → per piece { outer, holes, off } placed.
+function howtoSpread(g, list, order = list.map((_, i) => i)) {
+  const gap = 0.06 * Math.max(g.W, g.H), c = [g.UW / 2, g.UH / 2];
+  const cuts = list.map(p => ({ outer: p.cut || seamOutline(p.pts, g.sa), holes: p.holes || [] }));
+  const dirs = list.map(p => { const m = centroid(p.pts), v = [m[0] - c[0], m[1] - c[1]]; return Math.hypot(...v) < 1e-3 * Math.max(g.W, g.H) ? [0, 0] : v; });
+  const at = offs => cuts.map((q, i) => ({ outer: translatePoly(q.outer, ...offs[i]), holes: q.holes.map(h => translatePoly(h, ...offs[i])), off: offs[i] }));
+  const clear = P => P.every((a, i) => P.slice(i + 1).every(b => howtoGap(a, b) >= gap));
+  for (let f = 0.15; f < 3 + 1e-9; f += 0.15) { const P = at(dirs.map(v => [v[0] * f, v[1] * f])); if (clear(P)) return P; }
+  const offs = [];
+  let x = 0;
+  for (const i of order) { const b = bounds(cuts[i].outer); offs[i] = [x - b.minX, c[1] - (b.minY + b.maxY) / 2]; x += b.w + gap; }
+  return at(offs);
+}
+// The matching marks on a piece of a curved unit: a tick across the allowance, from the sewing
+// line to the cut line, at each of the unit's marks on its outline (white on dark fabric).
+function howtoNotches(t, g, p, off = [0, 0]) {
+  const u = g.unit, tol = 1e-3 * Math.max(g.W, g.H), e = 1e-3 * Math.max(g.W, g.H), rings = [p.pts, ...(p.holes || [])];
+  const cloth = q => pointInPoly(q, p.pts) && !(p.holes || []).some(h => pointInPoly(q, h));
+  for (const sm of u.type === 'inset' ? [u.seam] : u.seams || []) for (const m of sm.notches || []) {
+    const q = g.map(m.p);
+    if (!rings.some(r => ringDist(q, r) < tol)) continue;
+    const n = cloth([q[0] - m.d[1] * e, q[1] + m.d[0] * e]) ? [m.d[1], -m.d[0]] : [-m.d[1], m.d[0]];
+    t.line([q[0] + off[0], q[1] + off[1]], [q[0] + n[0] * g.sa + off[0], q[1] + n[1] * g.sa + off[1]], g.lum(p.fab) < 0.4 ? 'paper' : 'cut');
+  }
+}
+const howtoMove = (ps, off) => translatePoly(ps, off[0], off[1]);
+
 /* drawing: a pen in inches. k = print px per inch (0 = measuring pass: collect points only) */
 function howtoPen(k, hatch) {
   const pts = [];
@@ -398,18 +461,21 @@ function howtoPen(k, hatch) {
   const pen = {
     pts, k, w, get svg() { return s; },
     // fabric: o.wrong = wrong side up (see-through); o.ghost = cut away; o.shade = two layers overlapping; o.edge = outline only
+    // o.holes: rings cut out of it (a piece with an opening)
     poly(ps, fill, o = {}) {
       if (!ps || ps.length < 3) return;
-      if (o.shade || o.edge) { s += `<path d="M${ps.map(P).join('L')}Z" fill="${o.shade ? HOWTO_INK : 'none'}"${o.shade ? ' fill-opacity=".28"' : ''} ${stroke(HOWTO_INK, 0.55)} stroke-linejoin="round"/>`; return; }
+      const d = `M${ps.map(P).join('L')}Z${(o.holes || []).map(h => `M${h.map(P).join('L')}Z`).join('')}" fill-rule="evenodd`;
+      if (o.shade || o.edge) { s += `<path d="${d}" fill="${o.shade ? HOWTO_INK : 'none'}"${o.shade ? ' fill-opacity=".28"' : ''} ${stroke(HOWTO_INK, 0.55)} stroke-linejoin="round"/>`; return; }
       s += o.ghost
-        ? `<path d="M${ps.map(P).join('L')}Z" fill="#ffffff" fill-opacity=".72" ${stroke(HOWTO_INK, 0.6, [1.6, 1.2])}/>`
+        ? `<path d="${d}" fill="#ffffff" fill-opacity=".72" ${stroke(HOWTO_INK, 0.6, [1.6, 1.2])}/>`
         : o.wrong && hatch   // wrong side up: paler, with a faint hatch
-          ? `<g><path d="M${ps.map(P).join('L')}Z" fill="${fabricFill(fill)}"/><path d="M${ps.map(P).join('L')}Z" fill="#ffffff" fill-opacity=".25"/><path d="M${ps.map(P).join('L')}Z" fill="url(#${hatch}-${luminance(fabricHex(fill)) > 0.5 ? 'd' : 'l'})" ${stroke(HOWTO_INK, 0.55)} stroke-linejoin="round"/></g>`
-          : `<path d="M${ps.map(P).join('L')}Z" fill="${fabricFill(fill)}" ${stroke(HOWTO_INK, 0.55)} stroke-linejoin="round"/>`;
+          ? `<g><path d="${d}" fill="${fabricFill(fill)}"/><path d="${d}" fill="#ffffff" fill-opacity=".25"/><path d="${d}" fill="url(#${hatch}-${luminance(fabricHex(fill)) > 0.5 ? 'd' : 'l'})" ${stroke(HOWTO_INK, 0.55)} stroke-linejoin="round"/></g>`
+          : `<path d="${d}" fill="${fabricFill(fill)}" ${stroke(HOWTO_INK, 0.55)} stroke-linejoin="round"/>`;
     },
+    ring(ps, holes, fill, o = {}) { pen.poly(ps, fill, { ...o, holes }); },
     path(ps, kind) { if (ps.length > 1) s += `<path d="M${ps.map(P).join('L')}" fill="none" ${pen.style(kind)} stroke-linejoin="round"/>`; },
     line(a, b, kind = 'cut') { pen.path([a, b], kind); },
-    style: kind => kind === 'sew' ? stroke(HOWTO_RED, 1, [2.6, 1.6]) : kind === 'ruler' ? stroke(HOWTO_RULER, 0.7) : stroke(HOWTO_INK, 0.8),
+    style: kind => kind === 'sew' ? stroke(HOWTO_RED, 1, [2.6, 1.6]) : kind === 'ruler' ? stroke(HOWTO_RULER, 0.7) : kind === 'paper' ? stroke('#ffffff', 0.9) : stroke(HOWTO_INK, 0.8),
     fin(g) { const r = howtoRect(g.sa, g.sa, g.W, g.H); s += `<path d="M${r.map(P).join('L')}Z" fill="none" ${stroke(HOWTO_GREY, 0.75, [2, 1.5])}/>`; },
     ruler(ps) { s += `<path d="M${ps.map(P).join('L')}Z" fill="${HOWTO_RULER}" fill-opacity=".14" ${stroke(HOWTO_RULER, 0.8)}/>`; },
     // short arrow (px long) from p along unit vector d
@@ -615,22 +681,21 @@ function howtoQst3(g) {
   const at = (x, y) => tris.find(p => { const d = dirOf(p); return d[0] * x + d[1] * y > 0.7; });
   const top = at(0, -1), left = at(-1, 0), bottom = at(0, 1), right = at(1, 0);
   if (!top || !left || !bottom || !right) return [];
-  const e = 0.1 * U + sa, gap = 0.12 * U + sa;
+  const gap = 0.12 * U + sa, sp = howtoSpread(g, tris.map(p => ({ pts: p.pts, cut: howtoGrow(p.pts, sa) })));
   const halves = [[top, left], [bottom, right]];
   const near = (a, b) => dist(a, b) < 1e-6 * U;
+  const halfAt = ([p, q]) => {
+    const shared = p.pts.filter(a => q.pts.some(b => near(a, b))), outer = [...p.pts, ...q.pts].filter(a => !shared.some(b => near(a, b)));
+    const corner = shared.find(a => !near(a, c)) || shared[0], m = centroid([corner, ...outer]), v = [m[0] - c[0], m[1] - c[1]], l = Math.hypot(...v);
+    return { shared, half: howtoGrow([corner, ...outer], sa), off: [v[0] / l * gap / 2, v[1] / l * gap / 2] };
+  };
   return [
-    { cap: 'Lay out the triangles', draw: t => {
-      for (const p of tris) { const d = dirOf(p); t.poly(translatePoly(howtoGrow(p.pts, sa), d[0] * e, d[1] * e), p.fab); }
-    } },
-    { cap: 'Sew pairs into halves', draw: t => {
+    { cap: 'Lay out the triangles', sep: sp, draw: t => { tris.forEach((p, i) => t.poly(sp[i].outer, p.fab)); } },
+    { cap: 'Sew pairs into halves', sep: halves.map(h => { const x = halfAt(h); return { outer: howtoMove(x.half, x.off), holes: [] }; }), draw: t => {
       for (const [p, q] of halves) {
-        const shared = p.pts.filter(a => q.pts.some(b => near(a, b)));
-        const outer = [...p.pts, ...q.pts].filter(a => !shared.some(b => near(a, b)));
-        const corner = shared.find(a => !near(a, c)) || shared[0];
-        const half = howtoGrow([corner, ...outer], sa), m = centroid([corner, ...outer]);
-        const v = [m[0] - c[0], m[1] - c[1]], l = Math.hypot(...v), dx = v[0] / l * gap / 2, dy = v[1] / l * gap / 2;
+        const { shared, half, off } = halfAt([p, q]);
         const away = g.lum(p.fab) >= g.lum(q.fab) ? p : q;
-        const mv = ps => translatePoly(ps, dx, dy);
+        const mv = ps => howtoMove(ps, off);
         for (const ear of howtoEars(away.pts, shared[0], shared[1], half, sa)) t.poly(mv(ear), away.fab);
         for (const x of [p, q]) t.poly(mv(howtoClip(half, shared[0], shared[1], centroid(x.pts))), x.fab);
       }
@@ -694,15 +759,16 @@ function howtoHrt(g) {
     for (const f of faces) t.poly(f.pts, f.fab);
     t.fin(g);
   };
+  // the two rectangles side by side, each with its cut diagonal
+  let x0 = 0;
+  const rects = [lt, dk].map(p => {
+    const cut = howtoGrow(p.pts, sa), bb = bounds(cut), m = translatePoly(cut, x0 - bb.minX, -bb.minY), r = { p, box: howtoRect(x0, 0, bb.w, bb.h), hyp: m.map((q, i) => [q, m[(i + 1) % 3]]).sort((u, w) => dist(...w) - dist(...u))[0] };
+    x0 += bb.w + Math.max(bb.w * 0.25, 2 * sa);
+    return r;
+  });
   return [
-    { cap: 'Cut on the same diagonal', size: 'both right side up', draw: t => {
-      let x = 0;
-      for (const p of [lt, dk]) {
-        const cut = howtoGrow(p.pts, sa), bb = bounds(cut), m = translatePoly(cut, x - bb.minX, -bb.minY);
-        const hyp = m.map((q, i) => [q, m[(i + 1) % 3]]).sort((u, w) => dist(...w) - dist(...u))[0];
-        t.poly(howtoRect(x, 0, bb.w, bb.h), p.fab); t.line(...hyp);
-        x += bb.w + Math.max(bb.w * 0.25, 2 * sa);
-      }
+    { cap: 'Cut on the same diagonal', size: 'both right side up', sep: rects.map(r => ({ outer: r.box, holes: [] })), draw: t => {
+      for (const r of rects) { t.poly(r.box, r.p.fab); t.line(...r.hyp); }
     } },
     { cap: `Edges cross ${S} in: sew`, draw: t => {
       t.poly(howtoGrow(dk.pts, sa), dk.fab); t.poly(howtoGrow(lt.pts, sa).map(mirror), lt.fab, { wrong: 1 });
@@ -713,51 +779,110 @@ function howtoHrt(g) {
   ];
 }
 
-// curved piecing: convex piece (pie) + concave piece (L), or rings added smallest first
+// Curved piecing, one seam at a time in the unit's sewing order: a pie and its L, rings, or a tree
+// of pieces. Panel a lays the pieces out numbered; panel b shows the last seam, with the concave
+// piece (or the part sewn so far) on top; panel c the pressed unit.
 function howtoCurved(g) {
-  const { sa, UW, UH } = g, cx = [UW / 2, UH / 2];
-  if (g.pieces.length < 2 || !g.unit.order) return [];
-  // the convex piece (pie) comes first, then the others outward from the corner it sits in
-  const convex = p => { const q = howtoCorners(p.pts); let sg = 0; return q.every((a, i) => { const b = q[(i + 1) % q.length], c = q[(i + 2) % q.length], cr = Math.sign((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0])); sg = sg || cr; return !cr || cr === sg; }); };
-  const byArea = g.pieces.slice().sort((p, q) => polyArea(p.pts) - polyArea(q.pts)), first = byArea.find(convex) || byArea[0];
-  const pivot = howtoRect(sa, sa, g.W, g.H).sort((a, b) => dist(a, centroid(first.pts)) - dist(b, centroid(first.pts)))[0];
-  const ps = [first, ...g.pieces.filter(p => p !== first).sort((p, q) => dist(centroid(p.pts), pivot) - dist(centroid(q.pts), pivot))];
-  const m0 = centroid(first.pts), v = [cx[0] - m0[0], cx[1] - m0[1]], vl = Math.hypot(...v) || 1, dir = [v[0] / vl, v[1] / vl];
-  const gap = 3.2 * sa + 0.04 * Math.max(g.W, g.H), many = ps.length > 2;
-  // a tick across the cut edge at the middle of each curved seam (the finger-pressed crease)
-  const creases = (t, p, off) => {
-    for (const path of howtoSeamPaths(g, p.pts)) {
-      const { p: m, dir: d } = howtoAlong(path, 0.5);
-      let n = [-d[1], d[0]];
-      if (pointInPoly([m[0] + n[0] * 1e-3, m[1] + n[1] * 1e-3], p.pts)) n = [-n[0], -n[1]];
-      const at = k => [m[0] + n[0] * k + off[0], m[1] + n[1] * k + off[1]];
-      t.line(at(sa - t.w(3)), at(sa + t.w(3)));
-    }
-  };
+  const { sa, UW, UH } = g, u = g.unit;
+  if (g.pieces.length < 2 || !u.order) return [];
+  const ps = u.order.map(g.of).filter(Boolean), many = ps.length > 2;
+  if (ps.length !== g.pieces.length) return [];
+  const sp = howtoSpread(g, ps);
+  const k = ps.length - 1, q = ps[k], seam = u.seams?.[k - 1], done = ps.slice(0, k);
+  const next = seam ? done.find(p => p.src === seam.convex || p.src === seam.concave) || done[k - 1] : done[k - 1];
+  const qTop = !seam || !seam.convex || seam.concave === q.src;
+  const path = seam ? seam.run.map(g.map) : howtoSeamPaths(g, q.pts)[0] || [];
+  const part = (t, o) => { t.poly(seamOutline(next.pts, sa), next.fab, o); for (const d of done.filter(d => d !== next).reverse()) t.poly(howtoExtend(g, d.pts), d.fab, o); };
   return [
-    { cap: many ? 'Crease centres; sew 1, 2, 3…' : 'Crease the curve centres', draw: t => {
+    { cap: many ? 'Snip marks; sew 1, 2, 3…' : 'Snip the matching marks', sep: sp, draw: t => {
       ps.forEach((p, i) => {
-        const off = [dir[0] * gap * i, dir[1] * gap * i];
-        t.poly(translatePoly(seamOutline(p.pts, sa), ...off), p.fab);
-        for (const path of howtoSeamPaths(g, p.pts)) t.path(translatePoly(path, ...off), 'sew');
-        creases(t, p, off);
-        if (many) { const c = centroid(p.pts); t.text([c[0] + off[0], c[1] + off[1]], String(i + 1), { size: 8, bold: true, base: 'central', fill: inkOn(fabricHex(p.fab)) }); }
+        const off = sp[i].off;
+        t.poly(sp[i].outer, p.fab);
+        for (const pa of howtoSeamPaths(g, p.pts)) t.path(howtoMove(pa, off), 'sew');
+        howtoNotches(t, g, p, off);
+        if (many) { const c = labelSpot(p.pts); t.text([c[0] + off[0], c[1] + off[1]], String(i + 1), { size: 8, bold: true, base: 'central', fill: inkOn(fabricHex(p.fab)) }); }
       });
     } },
-    { cap: many ? 'Add each ring: pin, sew' : 'Concave on top: pin, sew', draw: t => {
-      // the pieces sewn so far (innermost ones pressed flat), the next concave piece on top
-      const q = ps[ps.length - 1], done = ps.slice(0, -1), p = done[done.length - 1];
-      t.poly(seamOutline(p.pts, sa), p.fab);
-      for (const d of done.slice(0, -1).reverse()) t.poly(howtoExtend(g, d.pts), d.fab);
-      t.poly(seamOutline(q.pts, sa), q.fab, { wrong: 1 });
-      for (const path of howtoSeamPaths(g, q.pts)) {
-        t.path(path, 'sew');
-        for (const k of [0.03, 0.5, 0.97]) { const { p: m, dir: d } = howtoAlong(path, k); t.pin(m, [-d[1], d[0]]); }
-      }
+    { cap: many ? 'Add each piece: pin, sew' : qTop && seam?.convex ? 'Concave on top: pin, sew' : 'Pin at the marks, sew', draw: t => {
+      if (qTop) { part(t, {}); t.poly(seamOutline(q.pts, sa), q.fab, { wrong: 1 }); }
+      else { t.poly(seamOutline(q.pts, sa), q.fab); part(t, { wrong: 1 }); }
+      t.path(path, 'sew');
+      for (const f of [0.03, 0.5, 0.97]) { const { p: m, dir: d } = howtoAlong(path, f); t.pin(m, [-d[1], d[0]]); }
     } },
-    { cap: 'Press to the convex piece', size: fmtSize(UW, UH), draw: t => {
+    { cap: 'Press, trim', size: fmtSize(UW, UH), draw: t => {
       for (const p of ps.slice().reverse()) t.poly(howtoExtend(g, p.pts), p.fab);
       t.fin(g);
+    } },
+  ];
+}
+
+// Orange peel: a lens-shaped petal with its tips in opposite corners and a corner piece each side,
+// sewn one corner at a time.
+function howtoPeel(g) {
+  const { sa, UW, UH } = g, u = g.unit, petal = g.of(u.petal), [c1, c2] = u.corners.map(g.of);
+  if (!petal || !c1 || !c2) return [];
+  const [s1, s2] = u.seams.map(x => x.run.map(g.map)), tips = u.tips.map(g.map), sp = howtoSpread(g, [c1, petal, c2]);
+  const pins = (t, path) => { for (const f of [0.03, 0.5, 0.97]) { const { p: m, dir: d } = howtoAlong(path, f); t.pin(m, [-d[1], d[0]]); } };
+  // the ruler's line through both tips, out to the raw edges
+  const [A, B] = tips, v = [B[0] - A[0], B[1] - A[1]], ts = [[0, 0], [0, UW], [1, 0], [1, UH]].map(([ax, val]) => (Math.abs(v[ax]) > 1e-9 ? (val - A[ax]) / v[ax] : NaN)).filter(Number.isFinite);
+  const inBox = tt => { const q = [A[0] + v[0] * tt, A[1] + v[1] * tt]; return q[0] > -1e-6 && q[0] < UW + 1e-6 && q[1] > -1e-6 && q[1] < UH + 1e-6; };
+  const lo = Math.max(...ts.filter(tt => tt <= 0 && inBox(tt))), hi = Math.min(...ts.filter(tt => tt >= 1 && inBox(tt)));
+  return [
+    { cap: 'Snip the matching marks', sep: sp, draw: t => {
+      [c1, petal, c2].forEach((p, i) => {
+        t.poly(sp[i].outer, p.fab);
+        for (const pa of howtoSeamPaths(g, p.pts)) t.path(howtoMove(pa, sp[i].off), 'sew');
+        howtoNotches(t, g, p, sp[i].off);
+      });
+    } },
+    { cap: 'Corner on top: pin, sew', draw: t => {
+      t.poly(seamOutline(petal.pts, sa), petal.fab); t.poly(seamOutline(c1.pts, sa), c1.fab, { wrong: 1 });
+      t.path(s1, 'sew'); pins(t, s1);
+    } },
+    { cap: 'Press; add the other corner', draw: t => {
+      t.poly(seamOutline(petal.pts, sa), petal.fab); t.poly(howtoExtend(g, c1.pts), c1.fab);
+      t.poly(seamOutline(c2.pts, sa), c2.fab, { wrong: 1 });
+      t.path(s2, 'sew'); pins(t, s2);
+    } },
+    { cap: 'Trim, tips at the corners', size: fmtSize(UW, UH), draw: t => {
+      for (const p of [petal, c1, c2]) t.poly(howtoExtend(g, p.pts), p.fab);
+      t.fin(g);
+      t.ruler(howtoRect(0, 0, UW, UH));
+      if (Number.isFinite(lo) && Number.isFinite(hi)) t.line([A[0] + v[0] * lo, A[1] + v[1] * lo], [A[0] + v[0] * hi, A[1] + v[1] * hi], 'ruler');
+      for (const q of tips) t.dot(q);
+    } },
+  ];
+}
+
+// Inset circle: a circle or oval set into a round opening in the unit's main piece, one closed seam.
+function howtoInset(g) {
+  const { sa, UW, UH } = g, u = g.unit, inner = g.of(u.inner), outer = g.of(u.outer);
+  if (!inner || !outer || outer.holes.length !== 1) return [];
+  const hole = outer.holes[0], holeCut = holeCutLines(hole, sa), ring = [...hole, hole[0]];
+  const sp = howtoSpread(g, [{ pts: outer.pts, cut: howtoRect(0, 0, UW, UH), holes: holeCut }, { pts: inner.pts }]);
+  const L = polylineLength(ring), clips = Math.max(8, Math.floor(L / 0.5));
+  const cloth = q => !pointInPoly(q, hole);
+  return [
+    { cap: 'Snip the matching marks', sep: sp, draw: t => {
+      t.ring(sp[0].outer, sp[0].holes, outer.fab); t.path(howtoMove(ring, sp[0].off), 'sew'); howtoNotches(t, g, outer, sp[0].off);
+      t.poly(sp[1].outer, inner.fab); t.path(howtoMove(ring, sp[1].off), 'sew'); howtoNotches(t, g, inner, sp[1].off);
+    } },
+    { cap: 'Clip the opening', draw: t => {
+      t.ring(howtoRect(0, 0, UW, UH), holeCut, outer.fab); t.path(ring, 'sew');
+      // clips from the cut edge halfway to the sewing line, every ½"
+      for (let i = 0; i < clips; i++) {
+        const { p: m, dir: d } = howtoAlong(ring, (i + 0.5) / clips), e = 1e-3 * Math.max(g.W, g.H);
+        const n = cloth([m[0] - d[1] * e, m[1] + d[0] * e]) ? [d[1], -d[0]] : [-d[1], d[0]];
+        t.line([m[0] + n[0] * sa, m[1] + n[1] * sa], [m[0] + n[0] * sa / 2, m[1] + n[1] * sa / 2]);
+      }
+    } },
+    { cap: 'Opening on top: pin, sew', draw: t => {
+      t.poly(seamOutline(inner.pts, sa), inner.fab); t.ring(howtoRect(0, 0, UW, UH), holeCut, outer.fab, { wrong: 1 });
+      t.path(ring, 'sew');
+      for (let i = 0; i < 8; i++) { const { p: m, dir: d } = howtoAlong(ring, i / 8); t.pin(m, [-d[1], d[0]]); }
+    } },
+    { cap: 'Press, trim', size: fmtSize(UW, UH), draw: t => {
+      t.poly(howtoRect(0, 0, UW, UH), outer.fab); t.poly(inner.pts, inner.fab); t.fin(g);
     } },
   ];
 }

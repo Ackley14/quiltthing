@@ -366,7 +366,7 @@ function blockStepsHtml(block, BS, sa, copies = 1) {
     const u = list[0].unit;
     let text = unitMethodText(u.type, list[0], list.length, sa, copies);
     // sketch of the method at the unit's real size, in its own fabrics; the line key only under the block's first sketch
-    const howto = ['hst', 'qst', 'goose', 'snowball', 'curved', 'hrt'].includes(u.type) ? unitHowToSvg(u.type, { sample: list[0], sa, legend: !sketched }) : '';
+    const howto = ['hst', 'qst', 'goose', 'snowball', 'curved', 'hrt', 'peel', 'inset'].includes(u.type) ? unitHowToSvg(u.type, { sample: list[0], sa, legend: !sketched }) : '';
     if (howto) { text += `<div class="howto-wrap">${howto}</div>`; sketched = true; }
     steps.push({ text, diag: blockDiagramSvg(block, BS, STEP_DIAG_IN, { level: an.height + 1, highlight: new Set(list), dim: true }) });
   }
