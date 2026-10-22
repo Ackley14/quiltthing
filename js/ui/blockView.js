@@ -1493,14 +1493,14 @@ Actions.selGeom = (v, el) => {
 // Hexagon orientation: one setting for the whole quilt (all its hexagons point the same way), the same
 // one as Layout's Hexagons orientation.
 function hexOrientField() {
-  const t = doc.layout.tess, flat = t.orient === 1, other = doc.layout.mode === 'tess' && t.shape !== 'hex';
+  const t = doc.layout.tess, flat = t.orient === 1, other = t.shape !== 'hex';
   return `<div class="f"><span class="f-l">Orientation</span><div class="seg" role="group" aria-label="Hexagon orientation">
     <button aria-pressed="${!flat}" data-act="hexOrient" data-arg="0" ${other ? 'disabled' : ''}>Pointy top</button><button aria-pressed="${flat}" data-act="hexOrient" data-arg="1" ${other ? 'disabled' : ''}>Flat top</button></div>
-    ${other ? '<p class="hint">Set by the hexagon layout; this quilt uses other tiles.</p>' : ''}</div>`;
+    ${other ? '<p class="hint">Set with a hexagon tessellation (Layout, Tessellation, Hexagons).</p>' : ''}</div>`;
 }
 Actions.hexOrient = v => {
   const t = doc.layout.tess, o = +v === 1 ? 1 : 0;
-  if (t.orient === o || (doc.layout.mode === 'tess' && t.shape !== 'hex')) return;
+  if (t.orient === o || t.shape !== 'hex') return;
   Actions.tessOrient(o);
 };
 Actions.geomLock = v => { ui.geomLock = !!v; saveUi(); };

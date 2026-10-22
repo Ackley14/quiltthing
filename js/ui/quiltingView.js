@@ -84,7 +84,7 @@ Actions.qPickItem = (v, el) => {
 };
 Actions.qPickAll = arg => {
   const [i, on] = arg.split('|'), L = doc.quilting.layers[+i]; if (!L) return;
-  L.pick = on === '1' ? quiltPickables(Qnow())[L.area === 'pickBlocks' ? 'blocks' : 'fabrics'] : [];
+  if (on === '1') delete L.pick; else L.pick = [];
   commit(on === '1' ? 'Quilting: all chosen' : 'Quilting: none chosen');
 };
 Actions.qToggleShow = i => { const L = doc.quilting.layers[+i]; if (L) { L.visible = !L.visible; commit(); } };

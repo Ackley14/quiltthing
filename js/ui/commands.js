@@ -11,7 +11,7 @@ const CMD_PLACES = () => [
   { label: 'Seam allowance', path: 'Fabric & cutting › Seams and appliqué', act: 'goSection', arg: 'fabric|sewing' },
   { label: 'Default fabric width and how it is bought', path: 'Fabric & cutting › Default fabric', act: 'goSection', arg: 'fabric|fabdefaults' },
   ...(ui.view === 'layout' && ui.selCell && cellContent(ui.selCell)?.b ? [] : [{ label: ui.view === 'layout' ? 'Rotate block (in Blocks)' : 'Rotate block 90°', path: 'Blocks', act: 'goRotateBlock' }]),
-  ...(isHexBlock(activeBlock()) || (doc.layout.mode === 'tess' && doc.layout.tess.shape === 'hex') ? [{ label: 'Hexagons: pointy top', path: 'Blocks › Orientation', act: 'hexOrient', arg: '0', checked: doc.layout.tess.orient !== 1 }, { label: 'Hexagons: flat top', path: 'Blocks › Orientation', act: 'hexOrient', arg: '1', checked: doc.layout.tess.orient === 1 }] : []),
+  ...(doc.layout.tess.shape === 'hex' && (isHexBlock(activeBlock()) || doc.layout.mode === 'tess') ? [{ label: 'Hexagons: pointy top', path: 'Blocks › Orientation', act: 'hexOrient', arg: '0', checked: doc.layout.tess.orient !== 1 }, { label: 'Hexagons: flat top', path: 'Blocks › Orientation', act: 'hexOrient', arg: '1', checked: doc.layout.tess.orient === 1 }] : []),
   { label: 'Shopping list', path: 'Fabric & cutting', act: 'goFabPane', arg: 'shop' },
   { label: 'Cutting plan', path: 'Fabric & cutting', act: 'goFabPane', arg: 'cut' },
   { label: 'Back of the quilt', path: 'Quilting', act: 'goQSide', arg: 'back' },

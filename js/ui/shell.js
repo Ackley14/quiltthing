@@ -337,7 +337,7 @@ function applyBinding(el) {
 // A length box. opts.step adds − and + buttons that change it by that much.
 function lenField(label, path, opts = {}) {
   const v = getPath(doc, path);
-  const input = `<input type="text" inputmode="decimal" data-bind="${path}" data-type="len" value="${esc(inputLen(v))}"${opts.aria ? ` aria-label="${esc(opts.aria)}"` : ''}${opts.min !== undefined ? ` data-min="${opts.min}"` : ''}${opts.max !== undefined ? ` data-max="${opts.max}"` : ''} title="Accepts 4.5, 4 1/2, 4½, 11.4cm, sums like 3 + 1/4, or +1/4, *2, 50%">`;
+  const input = `<input type="text" inputmode="decimal" data-bind="${path}" data-type="len" value="${esc(inputLen(v))}"${opts.step ? ` data-step="${opts.step}"` : ''}${opts.aria ? ` aria-label="${esc(opts.aria)}"` : ''}${opts.min !== undefined ? ` data-min="${opts.min}"` : ''}${opts.max !== undefined ? ` data-max="${opts.max}"` : ''} title="Accepts 4.5, 4 1/2, 4½, 11.4cm, sums like 3 + 1/4, or +1/4, *2, 50%">`;
   if (!opts.step) return `<label class="f">${label}${opts.suffix ? ` <span class="muted">${opts.suffix}</span>` : ''}${input}</label>`;
   const arg = d => `${path}|${d}|${opts.min ?? 0}|${opts.max ?? 1e9}`;
   // small up/down arrows inside the box (the arrow keys in the box step finer)
@@ -347,15 +347,26 @@ function lenField(label, path, opts = {}) {
 document.addEventListener('mousedown', e => { if (e.target.closest?.('.spin-b button')) e.preventDefault(); });
 document.addEventListener('pointerdown', e => {
   const b = e.target.closest?.('.spin-b button'); if (!b || e.button !== 0) return;
-  const arg = b.dataset.arg, sel = `.spin-b button[data-arg="${CSS.escape(arg)}"]`;
-  let rep = null;
-  const hold = setTimeout(() => { rep = setInterval(() => { const cur = $(sel); if (cur) { Actions.lenStep(arg); } else stop(); }, 110); }, 450);
-  const stop = () => { clearTimeout(hold); clearInterval(rep); removeEventListener('pointerup', stop); removeEventListener('pointercancel', stop); };
-  addEventListener('pointerup', stop); addEventListener('pointercancel', stop);
+  // a value typed in the box (not saved yet) is saved first, so the step goes from it
+  const box = b.closest('.spin')?.querySelector('input'), arg0 = b.dataset.arg;
+  // saving it redraws the panel, so the click would land on a new button: step now, and skip that click
+  if (box && document.activeElement === box) { box.blur(); nextCommitLabel = b.getAttribute('aria-label'); Actions.lenStep(arg0); nextCommitLabel = null; _spinStepAt = Date.now(); }
+  const arg = b.dataset.arg, sel = `.spin-b button[data-arg="${CSS.escape(arg)}"]`, base = undoStack.past.length;
+  let rep = null, ticks = 0;
+  const hold = setTimeout(() => { rep = setInterval(() => { if ($(sel) && ticks++ < 200) Actions.lenStep(arg); else stop(); }, 110); }, 450);
+  const stop = () => {
+    clearTimeout(hold); clearInterval(rep);
+    for (const [t, f] of [['pointerup', stop], ['pointercancel', stop], ['blur', stop]]) removeEventListener(t, f);
+    // the whole hold (and the click that ends it) is one undo step
+    if (ticks) setTimeout(() => { const extra = undoStack.past.length - base - 1; if (extra > 0) { undoStack.past.splice(base + 1, extra); histLabels.past.splice(base + 1, extra); saveHistory(); renderInspector(); } }, 60);
+  };
+  addEventListener('pointerup', stop); addEventListener('pointercancel', stop); addEventListener('blur', stop);
 });
-Actions.lenStep = arg => {
-  const [path, d, lo, hi] = arg.split('|'), v = +getPath(doc, path) || 0;
-  setPath(doc, path, clamp(Math.round((v + +d) * 8) / 8, +lo, +hi));
+let _spinStepAt = 0;
+Actions.lenStep = (arg, el, e) => {
+  if (e && Date.now() - _spinStepAt < 500) return;   // the click after a step already made on press
+  const [path, d, lo, hi] = arg.split('|'), v = +getPath(doc, path) || 0, eighths = Math.abs(+d * 8 - Math.round(+d * 8)) < 1e-6;
+  setPath(doc, path, clamp(eighths ? Math.round((v + +d) * 8) / 8 : round(v + +d, 4), +lo, +hi));
   commit();
 };
 function numField(label, path, opts = {}) {

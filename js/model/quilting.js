@@ -187,7 +187,8 @@ function quiltLayerPaths(Q, layer) {
     const raw = globalQuiltRaw(Q, layer);
     // the ditch in chosen shapes keeps each seam that runs inside or along the shape's edge whole
     // (cutting along the edge itself would keep some sides and drop others)
-    out = layer.type === 'ditch' ? areas.flatMap(A => A.polys ? ditchInPolys(raw, A.polys) : clipToArea(raw, A)) : areas.flatMap(A => clipToArea(raw, A));
+    if (layer.type === 'ditch' && areas.length && areas.every(A => A.polys)) out = ditchInPolys(raw, areas.flatMap(A => A.polys));
+    else out = areas.flatMap(A => clipToArea(raw, A));
   } else out = areas.flatMap(A => clipToArea(quiltAreaRaw(Q, layer, A, avoid), A));
   if (avoid.length) out = out.flatMap(pl => polylineVsPolys(pl, avoid, false));
   out = out.filter(r => r.length > 1);
@@ -197,12 +198,33 @@ function quiltLayerPaths(Q, layer) {
 // Ditch seams for chosen shapes: a straight seam is kept whole when its middle is inside one of the
 // shapes or on its edge; longer runs (around appliqué) are trimmed to the shapes as usual.
 function ditchInPolys(raw, polys) {
-  const onEdge = (pt, poly) => poly.some((a, i) => { const b = poly[(i + 1) % poly.length]; return distToSegment(pt, a, b) < 1e-4; });
-  const inOrOn = pt => polys.some(P => onEdge(pt, P.pts) || pointInPoly(pt, P.pts));
-  const out = [];
+  const EPS = 1e-4, out = [];
   for (const pl of raw) {
-    if (pl.length === 2) { const m = [(pl[0][0] + pl[1][0]) / 2, (pl[0][1] + pl[1][1]) / 2]; if (inOrOn(m)) out.push(pl); }
-    else out.push(...polylineVsPolys(pl, polys, true));
+    if (pl.length !== 2) { out.push(...polylineVsPolys(pl, polys, true)); continue; }
+    const [a, b] = pl, dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
+    if (L < EPS) continue;
+    const ux = dx / L, uy = dy / L, sx0 = Math.min(a[0], b[0]) - EPS, sx1 = Math.max(a[0], b[0]) + EPS, sy0 = Math.min(a[1], b[1]) - EPS, sy1 = Math.max(a[1], b[1]) + EPS;
+    const tOf = p => ((p[0] - a[0]) * ux + (p[1] - a[1]) * uy) / L, off = p => Math.abs((p[0] - a[0]) * uy - (p[1] - a[1]) * ux);
+    const iv = [];
+    for (const P of polys) {
+      const bb = P.bb; if (bb.x > sx1 || bb.x + bb.w < sx0 || bb.y > sy1 || bb.y + bb.h < sy0) continue;
+      // along the piece's edge
+      P.pts.forEach((c, i) => { const d = P.pts[(i + 1) % P.pts.length]; if (off(c) < EPS && off(d) < EPS) { const lo = Math.max(0, Math.min(tOf(c), tOf(d))), hi = Math.min(1, Math.max(tOf(c), tOf(d))); if (hi - lo > EPS / L) iv.push([lo, hi]); } });
+      // through the piece's inside
+      for (const run of polylineVsPolys(pl, [P], true)) {
+        if (run.length < 2) continue;
+        const m = [(run[0][0] + run[run.length - 1][0]) / 2, (run[0][1] + run[run.length - 1][1]) / 2];
+        if (!pointInPoly(m, P.pts) || P.pts.some((c, i) => distToSegment(m, c, P.pts[(i + 1) % P.pts.length]) < EPS)) continue;
+        const lo = Math.max(0, Math.min(tOf(run[0]), tOf(run[run.length - 1]))), hi = Math.min(1, Math.max(tOf(run[0]), tOf(run[run.length - 1])));
+        if (hi - lo > EPS / L) iv.push([lo, hi]);
+      }
+    }
+    if (!iv.length) continue;
+    iv.sort((p, q) => p[0] - q[0]);
+    let [lo, hi] = iv[0];
+    const emit = (s, e) => out.push([[a[0] + dx * s, a[1] + dy * s], [a[0] + dx * e, a[1] + dy * e]]);
+    for (const [s, e] of iv.slice(1)) { if (s <= hi + EPS / L) hi = Math.max(hi, e); else { emit(lo, hi); [lo, hi] = [s, e]; } }
+    emit(lo, hi);
   }
   return out;
 }
@@ -518,16 +540,24 @@ function outlineRaw(Q, sp, n) {
 // Lines that only cross are left alone. Cached until the design changes.
 const _qrCache = { snap: null, val: null };
 function quiltResolvedPaths(Q) {
-  const snap = snapshot();
+  // colours don't change where stitching goes: leave them out of the cache key
+  const snap = JSON.stringify(doc, (k, v) => (k === 'color' ? undefined : v));
   if (_qrCache.snap === snap && _qrCache.val) return _qrCache.val;
-  const cell = 2, grid = new Map(), keyOf = (x, y) => `${Math.floor(x / cell)},${Math.floor(y / cell)}`;
-  const add = (a, b) => {
-    const s = [a, b], x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
-    for (let i = Math.floor(x0 / cell); i <= Math.floor(x1 / cell); i++) for (let j = Math.floor(y0 / cell); j <= Math.floor(y1 / cell); j++) { const k = `${i},${j}`; if (!grid.has(k)) grid.set(k, []); grid.get(k).push(s); }
+  // kept segments filed by the straight line they lie on (direction, and distance from the origin
+  // across it): only segments on the same line can overlap, so a lookup is a few probes
+  // ...and by position along that line in 2" steps, so a long line full of short stitches stays quick
+  // (numeric keys; a neighbouring line or step is looked at only when a value sits near a rounding edge)
+  const AQ = 2e-3, OQ = 2e-3, PC = 2, index = new Map();
+  const K = (i, j, q) => (i * 400003 + (j + 200000)) * 1024 + (q + 512);
+  const lineOf = (a, b) => {
+    let ang = Math.atan2(b[1] - a[1], b[0] - a[0]); if (ang < 0) ang += Math.PI; if (ang >= Math.PI - AQ / 2) ang -= Math.PI;
+    const c = Math.cos(ang), s = Math.sin(ang), pa = c * a[0] + s * a[1], pb = c * b[0] + s * b[1], fi = ang / AQ, fj = (-s * a[0] + c * a[1]) / OQ;
+    return { i: Math.round(fi), j: Math.round(fj), ni: Math.abs(fi - Math.round(fi)) > 0.3 ? Math.sign(fi - Math.round(fi)) : 0, nj: Math.abs(fj - Math.round(fj)) > 0.3 ? Math.sign(fj - Math.round(fj)) : 0, p0: Math.floor(Math.min(pa, pb) / PC), p1: Math.floor(Math.max(pa, pb) / PC) };
   };
+  const add = (a, b) => { const l = lineOf(a, b); for (let q = l.p0; q <= l.p1; q++) { const k = K(l.i, l.j, q); const arr = index.get(k); if (arr) arr.push([a, b]); else index.set(k, [[a, b]]); } };
   const near = (a, b) => {
-    const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]), out = new Set();
-    for (let i = Math.floor(x0 / cell); i <= Math.floor(x1 / cell); i++) for (let j = Math.floor(y0 / cell); j <= Math.floor(y1 / cell); j++) for (const s of grid.get(`${i},${j}`) || []) out.add(s);
+    const l = lineOf(a, b), out = [], is = l.ni ? [l.i, l.i + l.ni] : [l.i], js = l.nj ? [l.j, l.j + l.nj] : [l.j];
+    for (const i of is) for (const j of js) for (let q = l.p0; q <= l.p1; q++) { const arr = index.get(K(i, j, q)); if (arr) for (const s of arr) out.push(s); }
     return out;
   };
   const EPS = 1e-3;
@@ -577,10 +607,11 @@ function quiltResolvedPaths(Q) {
 function quiltingSvg(Q, layers = doc.quilting.layers, scaleHint = 1) {
   const w = Math.max(Q.W, Q.H) * 0.0022 * scaleHint;
   let s = '<g class="quilting" pointer-events="none" fill="none" stroke-linecap="round" stroke-linejoin="round">';
-  const resolved = layers === doc.quilting.layers ? quiltResolvedPaths(Q) : null;
-  layers.forEach((L, li) => {
+  // the settled lines for every view: the front, the back and the pattern (looked up by layer)
+  const resolved = quiltResolvedPaths(Q), at = new Map(doc.quilting.layers.map((L, i) => [L, i]));
+  layers.forEach(L => {
     if (!L.visible) return;
-    const paths = resolved ? resolved[li] : quiltLayerPaths(Q, L);
+    const paths = at.has(L) ? resolved[at.get(L)] || [] : quiltLayerPaths(Q, L);
     const d = paths.map(pl => 'M' + pl.map(([x, y]) => `${round(x, 3)},${round(y, 3)}`).join('L')).join('');
     s += `<path d="${d}" stroke="${L.color}" stroke-width="${round(w, 4)}" stroke-dasharray="${round(w * 3, 4)} ${round(w * 1.6, 4)}"/>`;
   });
@@ -631,6 +662,12 @@ function quiltingStats(Q) {
   return { per, total, threadYds: total * 2 * 1.15 / 36 };
 }
 
+// "in the Star and Nine-patch blocks" / "in the pieces of Teal (outside the blocks)"; names escaped
+function pickedWhere(L) {
+  const ids = quiltPicked(Qnow(), L);
+  if (!ids.length) return 'nowhere yet (nothing is chosen)';
+  return L.area === 'pickBlocks' ? `in the ${listWords(ids.map(id => esc(doc.blocks[id].name)))} blocks` : `in the pieces of ${listWords(ids.map(id => esc(fabricLabel(id))))} (outside the blocks)`;
+}
 // "A", "A and B", "A, B and C"
 function listWords(a) { return a.length <= 1 ? (a[0] || 'chosen') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`; }
 function quiltingInstructions(L) {
@@ -638,8 +675,7 @@ function quiltingInstructions(L) {
   const where = { all: 'across the whole quilt', center: 'in the quilt centre (inside the borders)', borders: 'in the borders only',
     panel: 'in the inset panel (including its frames)', aroundPanel: 'in the quilt centre, around the inset panel',
     blocks: 'in the blocks', plain: 'in the plain squares and setting triangles', sashing: 'in the sashing' }[L.area]
-    || (L.area === 'pickBlocks' ? `in the ${listWords(quiltPicked(Qnow(), L).map(id => doc.blocks[id].name))} blocks`
-      : L.area === 'pickFabrics' ? `in the pieces of ${listWords(quiltPicked(Qnow(), L).map(id => fabricLabel(id)))} (outside the blocks)` : '');
+    || (L.area === 'pickBlocks' || L.area === 'pickFabrics' ? pickedWhere(L) : '');
   const ang = Math.round(((L.angle % 180) + 180) % 180);
   const dirWord = ang === 90 ? 'vertical' : ang === 0 ? 'horizontal' : `${ang}°`;
   switch (L.type) {

@@ -560,15 +560,25 @@ Actions.bgFab = id => { doc.layout.background = id; commit(); };
 // The other orientation is a different grid of shapes. Each painted shape and hexagon block goes to the
 // shape of the new grid nearest where it was, so the design stays put and only the shapes change.
 function tessCentres() {
-  _Q = null;
-  const Q = Qnow(), m = new Map(), cx = Q.W / 2, cy = Q.H / 2;
+  // build the tessellation even when the quilt is set straight or on point right now
+  const mode = doc.layout.mode; let Q;
+  try { doc.layout.mode = 'tess'; _Q = null; Q = buildQuilt(); } finally { doc.layout.mode = mode; _Q = null; }
+  const m = new Map(), cx = Q.W / 2, cy = Q.H / 2;
   for (const tl of Q.tiles) if (tl.tkey != null && tl.role !== 'fill') { const [x, y] = centroid(tl.full || tl.pts); m.set(tl.tkey, [x - cx, y - cy]); }
   for (const c of Q.cells) if (c.hex && c.key[0] === 't') m.set(c.key.slice(1), [c.cx - cx, c.cy - cy]);
   return m;
 }
-function nearestKey(m, [x, y], used, within) {
+function centreGrid(m, cell) {
+  const g = new Map();
+  for (const [k, [a, b]] of m) { const key = `${Math.floor(a / cell)},${Math.floor(b / cell)}`; if (!g.has(key)) g.set(key, []); g.get(key).push([k, a, b]); }
+  return { g, cell };
+}
+function nearestKey(G, [x, y], used, within) {
   let best = null, bd = within;
-  for (const [k, [a, b]] of m) { if (used.has(k)) continue; const d = Math.hypot(a - x, b - y); if (d < bd) { bd = d; best = k; } }
+  const i0 = Math.floor(x / G.cell), j0 = Math.floor(y / G.cell), r = Math.ceil(within / G.cell);
+  for (let i = i0 - r; i <= i0 + r; i++) for (let j = j0 - r; j <= j0 + r; j++) for (const [k, a, b] of G.g.get(`${i},${j}`) || []) {
+    if (used.has(k)) continue; const d = Math.hypot(a - x, b - y); if (d < bd) { bd = d; best = k; }
+  }
   return best;
 }
 Actions.tessOrient = v => {
@@ -576,16 +586,18 @@ Actions.tessOrient = v => {
   if (t.orient === o) return;
   const before = tessCentres();
   t.orient = o;
-  const after = tessCentres(), reach = 1.2 * t.size * Math.max(1, t.ratio || 1);
+  const after = tessCentres(), reach = 1.2 * t.size * Math.max(1, t.ratio || 1), G = centreGrid(after, Math.max(0.5, reach));
+  let lost = 0;
   for (const field of ['colors', 'blocks']) {
     const old = t[field] || {}, moved = {}, used = new Set();
     // shapes nearest the centre first, so the middle of the design lines up best
     const keys = Object.keys(old).filter(k => before.has(k)).sort((a, b) => Math.hypot(...before.get(a)) - Math.hypot(...before.get(b)));
-    for (const k of keys) { const q = nearestKey(after, before.get(k), used, reach); if (q != null) { moved[q] = old[k]; used.add(q); } }
+    for (const k of keys) { const q = nearestKey(G, before.get(k), used, reach); if (q != null) { moved[q] = old[k]; used.add(q); } else lost++; }
     if (t[field]) t[field] = moved;
   }
   const lab = tessShape(t.shape).orientLabels[o];
   commit(`${tessShape(t.shape).label.replace(/ \(.*\)$/, '')}: ${lab.toLowerCase()}`);
+  if (lost) toast(`${plural(lost, 'shape')} near the edges had no matching place and went back to the base fabric`, 4000);
 };
 /* ---------- inspector ---------- */
 function rotIcon(r, flip) {

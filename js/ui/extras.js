@@ -69,9 +69,10 @@ document.addEventListener('keydown', e => {
   const path = el.dataset.bind, cur = path ? parseLenExpr(el.value, getPath(doc, path)) : parseLenExpr(el.value);
   if (!Number.isFinite(cur)) return;
   // inches: 1/8" (Shift 1", Alt 1/16"); centimetres: 0.5 cm (Shift 1 cm, Alt 1 mm)
-  const step = ui.units === 'cm' ? (e.shiftKey ? 1 : e.altKey ? 0.1 : 0.5) / 2.54 : e.shiftKey ? 1 : e.altKey ? 1 / 16 : 1 / 8;
+  const own = +el.dataset.step || 0;   // a box with arrows steps by the same amount as its arrows
+  const step = own && !e.altKey && !e.shiftKey ? own : ui.units === 'cm' ? (e.shiftKey ? 1 : e.altKey ? 0.1 : 0.5) / 2.54 : e.shiftKey ? 1 : e.altKey ? 1 / 16 : 1 / 8;
   const lo = el.dataset.min !== undefined ? +el.dataset.min : 0, hi = el.dataset.max !== undefined ? +el.dataset.max : Infinity;
-  const v = clamp(Math.round((cur + (e.key === 'ArrowUp' ? step : -step)) / step) * step, lo, hi);
+  const v = clamp(own && !e.altKey && !e.shiftKey ? round(cur + (e.key === 'ArrowUp' ? step : -step), 4) : Math.round((cur + (e.key === 'ArrowUp' ? step : -step)) / step) * step, lo, hi);
   el.value = inputLen(v);
   el.dataset.stepped = '1';
 }, true);
