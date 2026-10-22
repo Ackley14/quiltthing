@@ -1501,6 +1501,6 @@ function hexOrientField() {
 Actions.hexOrient = v => {
   const t = doc.layout.tess, o = +v === 1 ? 1 : 0;
   if (t.orient === o || (doc.layout.mode === 'tess' && t.shape !== 'hex')) return;
-  t.orient = o; commit(o ? 'Hexagons: flat top' : 'Hexagons: pointy top');
+  Actions.tessOrient(o);
 };
 Actions.geomLock = v => { ui.geomLock = !!v; saveUi(); };

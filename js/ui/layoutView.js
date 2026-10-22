@@ -527,6 +527,37 @@ Actions.bindingFab = id => { doc.layout.binding.fabric = id || null; commit(); }
 Actions.bindingNone = () => { doc.layout.binding.fabric = null; commit(); };
 Actions.bgFab = id => { doc.layout.background = id; commit(); };
 
+/* ---------- turning the tessellation (pointy/flat, rows/columns) ---------- */
+// The other orientation is a different grid of shapes. Each painted shape and hexagon block goes to the
+// shape of the new grid nearest where it was, so the design stays put and only the shapes change.
+function tessCentres() {
+  _Q = null;
+  const Q = Qnow(), m = new Map(), cx = Q.W / 2, cy = Q.H / 2;
+  for (const tl of Q.tiles) if (tl.tkey != null && tl.role !== 'fill') { const [x, y] = centroid(tl.full || tl.pts); m.set(tl.tkey, [x - cx, y - cy]); }
+  for (const c of Q.cells) if (c.hex && c.key[0] === 't') m.set(c.key.slice(1), [c.cx - cx, c.cy - cy]);
+  return m;
+}
+function nearestKey(m, [x, y], used, within) {
+  let best = null, bd = within;
+  for (const [k, [a, b]] of m) { if (used.has(k)) continue; const d = Math.hypot(a - x, b - y); if (d < bd) { bd = d; best = k; } }
+  return best;
+}
+Actions.tessOrient = v => {
+  const t = doc.layout.tess, o = +v === 1 ? 1 : 0;
+  if (t.orient === o) return;
+  const before = tessCentres();
+  t.orient = o;
+  const after = tessCentres(), reach = 1.2 * t.size * Math.max(1, t.ratio || 1);
+  for (const field of ['colors', 'blocks']) {
+    const old = t[field] || {}, moved = {}, used = new Set();
+    // shapes nearest the centre first, so the middle of the design lines up best
+    const keys = Object.keys(old).filter(k => before.has(k)).sort((a, b) => Math.hypot(...before.get(a)) - Math.hypot(...before.get(b)));
+    for (const k of keys) { const q = nearestKey(after, before.get(k), used, reach); if (q != null) { moved[q] = old[k]; used.add(q); } }
+    if (t[field]) t[field] = moved;
+  }
+  const lab = tessShape(t.shape).orientLabels[o];
+  commit(`${tessShape(t.shape).label.replace(/ \(.*\)$/, '')}: ${lab.toLowerCase()}`);
+};
 /* ---------- inspector ---------- */
 function rotIcon(r, flip) {
   return `<svg viewBox="0 0 24 24"><g transform="rotate(${r * 90} 12 12) ${flip ? 'translate(24 0) scale(-1 1)' : ''}"><rect x="3" y="3" width="18" height="18" fill="#efe9de" stroke="#8a94a0"/><path d="M3 3h18L3 21z" fill="#1f3a5f"/><circle cx="7" cy="7" r="2" fill="#e0a930"/></g></svg>`;
@@ -553,7 +584,7 @@ function layoutInspector() {
     const t = L.tess, sh = tessShape(t.shape);
     h += section('Shape & size', `<label class="f">Shape<select data-change="tessShape">${TESS_SHAPES.map(s => `<option value="${s.key}" ${s.key === t.shape ? 'selected' : ''}>${s.label}</option>`).join('')}</select></label>
       <div class="f-row">${lenField(t.shape === 'hex' || t.shape === 'tumbling' || t.shape === 'triangle' ? 'Side length' : 'Width', 'layout.tess.size', { min: 0.5, max: 40, step: 0.25 })}
-        <label class="f">Orientation<select data-bind="layout.tess.orient" data-type="int">${sh.orientLabels.map((l, i) => `<option value="${i}" ${t.orient === i ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+        <label class="f">Orientation<select data-change="tessOrient">${sh.orientLabels.map((l, i) => `<option value="${i}" ${t.orient === i ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
       ${['zigzag', 'brick', 'diamond'].includes(t.shape) ? `<div class="f-row">${numField('Height ÷ width', 'layout.tess.ratio', { min: 0.2, max: 4, step: 0.05 })}${t.shape === 'zigzag' ? numField('Lean ÷ width', 'layout.tess.lean', { min: 0, max: 2, step: 0.05 }) : ''}</div>` : ''}
       <div class="f-row">${lenField('Centre width', 'layout.tess.width', { min: 2, max: 200, step: round(tessPeriod(t)[0], 3) })}${lenField('Centre height', 'layout.tess.height', { min: 2, max: 200, step: round(tessPeriod(t)[1], 3) })}</div>
       <div class="f-row">${nudgeField('Nudge across', 'offX', tessPeriod(t)[0])}${nudgeField('Nudge down', 'offY', tessPeriod(t)[1])}</div>
