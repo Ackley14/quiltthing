@@ -185,12 +185,30 @@ function quiltLayerPaths(Q, layer) {
   let out;
   if (GLOBAL_QUILT_TYPES.includes(layer.type)) {
     const raw = globalQuiltRaw(Q, layer);
-    out = areas.flatMap(A => clipToArea(raw, A));
+    // the ditch in chosen shapes keeps each seam that runs inside or along the shape's edge whole
+    // (cutting along the edge itself would keep some sides and drop others)
+    out = layer.type === 'ditch' ? areas.flatMap(A => A.polys ? ditchInPolys(raw, A.polys) : clipToArea(raw, A)) : areas.flatMap(A => clipToArea(raw, A));
   } else out = areas.flatMap(A => clipToArea(quiltAreaRaw(Q, layer, A, avoid), A));
   if (avoid.length) out = out.flatMap(pl => polylineVsPolys(pl, avoid, false));
   out = out.filter(r => r.length > 1);
   cache.set(key, out);
   return out;
+}
+// Ditch seams for chosen shapes: a straight seam is kept whole when its middle is inside one of the
+// shapes or on its edge; longer runs (around appliqué) are trimmed to the shapes as usual.
+function ditchInPolys(raw, polys) {
+  const onEdge = (pt, poly) => poly.some((a, i) => { const b = poly[(i + 1) % poly.length]; return distToSegment(pt, a, b) < 1e-4; });
+  const inOrOn = pt => polys.some(P => onEdge(pt, P.pts) || pointInPoly(pt, P.pts));
+  const out = [];
+  for (const pl of raw) {
+    if (pl.length === 2) { const m = [(pl[0][0] + pl[1][0]) / 2, (pl[0][1] + pl[1][1]) / 2]; if (inOrOn(m)) out.push(pl); }
+    else out.push(...polylineVsPolys(pl, polys, true));
+  }
+  return out;
+}
+function distToSegment([px, py], [ax, ay], [bx, by]) {
+  const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy, t = L2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L2)) : 0;
+  return Math.hypot(px - ax - t * dx, py - ay - t * dy);
 }
 function clipToArea(raw, A) {
   const out = [];
@@ -495,15 +513,77 @@ function outlineRaw(Q, sp, n) {
   return raw;
 }
 
+// The visible layers' stitching with overlaps settled: going down the list, any stretch of a line that
+// lies exactly along a line already kept (a higher layer's, or earlier in the same layer) is dropped.
+// Lines that only cross are left alone. Cached until the design changes.
+const _qrCache = { snap: null, val: null };
+function quiltResolvedPaths(Q) {
+  const snap = snapshot();
+  if (_qrCache.snap === snap && _qrCache.val) return _qrCache.val;
+  const cell = 2, grid = new Map(), keyOf = (x, y) => `${Math.floor(x / cell)},${Math.floor(y / cell)}`;
+  const add = (a, b) => {
+    const s = [a, b], x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
+    for (let i = Math.floor(x0 / cell); i <= Math.floor(x1 / cell); i++) for (let j = Math.floor(y0 / cell); j <= Math.floor(y1 / cell); j++) { const k = `${i},${j}`; if (!grid.has(k)) grid.set(k, []); grid.get(k).push(s); }
+  };
+  const near = (a, b) => {
+    const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]), out = new Set();
+    for (let i = Math.floor(x0 / cell); i <= Math.floor(x1 / cell); i++) for (let j = Math.floor(y0 / cell); j <= Math.floor(y1 / cell); j++) for (const s of grid.get(`${i},${j}`) || []) out.add(s);
+    return out;
+  };
+  const EPS = 1e-3;
+  // the parts of segment a→b not lying along any kept segment, as [t0, t1] ranges of a→b
+  const free = (a, b) => {
+    const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
+    if (L < 1e-9) return [];
+    const ux = dx / L, uy = dy / L, cover = [];
+    for (const [c, d] of near(a, b)) {
+      // both ends of the kept segment on a→b's line?
+      const off = p => Math.abs((p[0] - a[0]) * uy - (p[1] - a[1]) * ux);
+      if (off(c) > EPS || off(d) > EPS) continue;
+      const tc = ((c[0] - a[0]) * ux + (c[1] - a[1]) * uy) / L, td = ((d[0] - a[0]) * ux + (d[1] - a[1]) * uy) / L;
+      const lo = Math.max(0, Math.min(tc, td)), hi = Math.min(1, Math.max(tc, td));
+      if (hi - lo > EPS / L) cover.push([lo, hi]);
+    }
+    if (!cover.length) return [[0, 1]];
+    cover.sort((p, q) => p[0] - q[0]);
+    const out = []; let t = 0;
+    for (const [lo, hi] of cover) { if (lo > t + EPS / L) out.push([t, lo]); t = Math.max(t, hi); }
+    if (t < 1 - EPS / L) out.push([t, 1]);
+    return out;
+  };
+  const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  const val = doc.quilting.layers.map(L => {
+    if (!L.visible) return null;
+    const res = [];
+    for (const pl of quiltLayerPaths(Q, L)) {
+      let cur = null;
+      const kept = [];
+      for (let i = 0; i + 1 < pl.length; i++) {
+        const a = pl[i], b = pl[i + 1];
+        for (const [t0, t1] of free(a, b)) {
+          const p0 = t0 === 0 ? a : lerp(a, b, t0), p1 = t1 === 1 ? b : lerp(a, b, t1);
+          if (cur && Math.hypot(cur[cur.length - 1][0] - p0[0], cur[cur.length - 1][1] - p0[1]) < 1e-9) cur.push(p1);
+          else { cur = [p0, p1]; res.push(cur); }
+          kept.push([p0, p1]);
+        }
+      }
+      for (const [p0, p1] of kept) add(p0, p1);   // this path's own pieces count from the next path on
+    }
+    return res.filter(r => r.length > 1);
+  });
+  _qrCache.snap = snap; _qrCache.val = val;
+  return val;
+}
 function quiltingSvg(Q, layers = doc.quilting.layers, scaleHint = 1) {
   const w = Math.max(Q.W, Q.H) * 0.0022 * scaleHint;
   let s = '<g class="quilting" pointer-events="none" fill="none" stroke-linecap="round" stroke-linejoin="round">';
-  for (const L of layers) {
-    if (!L.visible) continue;
-    const paths = quiltLayerPaths(Q, L);
+  const resolved = layers === doc.quilting.layers ? quiltResolvedPaths(Q) : null;
+  layers.forEach((L, li) => {
+    if (!L.visible) return;
+    const paths = resolved ? resolved[li] : quiltLayerPaths(Q, L);
     const d = paths.map(pl => 'M' + pl.map(([x, y]) => `${round(x, 3)},${round(y, 3)}`).join('L')).join('');
     s += `<path d="${d}" stroke="${L.color}" stroke-width="${round(w, 4)}" stroke-dasharray="${round(w * 3, 4)} ${round(w * 1.6, 4)}"/>`;
-  }
+  });
   return s + '</g>';
 }
 
@@ -541,8 +621,9 @@ function quiltBackSvg(Q, opts = {}) {
 
 function quiltingStats(Q) {
   let total = 0;
-  const per = doc.quilting.layers.map(L => {
-    const len = sum(quiltLayerPaths(Q, L), polylineLength);
+  const resolved = quiltResolvedPaths(Q);
+  const per = doc.quilting.layers.map((L, li) => {
+    const len = sum(resolved[li] || quiltLayerPaths(Q, L), polylineLength);
     if (L.visible) total += len;
     return { layer: L, length: len };
   });
