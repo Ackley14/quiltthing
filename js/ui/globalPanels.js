@@ -33,12 +33,12 @@ registerPanel('library', {
 /* ---------- History: the undo steps, named ---------- */
 function historyPanel() {
   const past = histLabels.past, fut = histLabels.future, cur = undoStack.past.length;
-  const rows = [`<div class="hist-row${cur === 0 ? ' on' : ''}" role="option" aria-selected="${cur === 0}" data-act="histGo" data-arg="0"><span class="hist-n">${icon('history', 13)}</span><span>Start</span></div>`];
-  past.forEach((l, i) => rows.push(`<div class="hist-row${cur === i + 1 ? ' on' : ''}" role="option" aria-selected="${cur === i + 1}" data-act="histGo" data-arg="${i + 1}"><span class="hist-n">${i + 1}</span><span>${esc(l)}</span></div>`));
-  for (let j = fut.length - 1, k = cur + 1; j >= 0; j--, k++) rows.push(`<div class="hist-row undone" role="option" aria-selected="false" data-act="histGo" data-arg="${k}"><span class="hist-n">${k}</span><span>${esc(fut[j])}</span></div>`);
+  const rows = [`<button class="hist-row${cur === 0 ? ' on' : ''}" aria-current="${cur === 0}" data-act="histGo" data-arg="0"><span class="hist-n">${icon('history', 13)}</span><span>Start</span></button>`];
+  past.forEach((l, i) => rows.push(`<button class="hist-row${cur === i + 1 ? ' on' : ''}" aria-current="${cur === i + 1}" data-act="histGo" data-arg="${i + 1}"><span class="hist-n">${i + 1}</span><span>${esc(l)}</span></button>`));
+  for (let j = fut.length - 1, k = cur + 1; j >= 0; j--, k++) rows.push(`<button class="hist-row undone" data-act="histGo" data-arg="${k}" aria-label="${esc(fut[j])} (undone)"><span class="hist-n">${k}</span><span>${esc(fut[j])}</span></button>`);
   return `<div class="panel-tools"><span class="pt-note">${plural(past.length, 'step')}${fut.length ? ` · ${fut.length} undone` : ''}</span><span class="grow"></span>
     <button class="btn small quiet" data-act="undo" ${past.length ? '' : 'disabled'} title="Undo (Ctrl+Z)">${icon('undo', 14)}</button><button class="btn small quiet" data-act="redo" ${fut.length ? '' : 'disabled'} title="Redo (Ctrl+Shift+Z)">${icon('redo', 14)}</button></div>
-    <div class="hist-list" role="listbox" aria-label="Undo history">${rows.join('')}</div>
+    <div class="hist-list" aria-label="Undo history">${rows.join('')}</div>
     <p class="hint pad">Click a step to go back to it. Making a new change after going back drops the steps after it.</p>`;
 }
 registerPanel('history', { title: 'History', short: 'History', icon: 'history', render: historyPanel, after: host => host.querySelector('.hist-row.on')?.scrollIntoView({ block: 'nearest' }) });
@@ -54,10 +54,24 @@ Actions.histGo = n => {
 };
 
 /* ---------- Issues: every warning in one place ---------- */
-let _issues = { key: '', list: [] };
+let _issues = { key: '', list: [], pending: false };
+// The last list worked out; a newer one is computed when the browser is idle, then the status chip
+// and the Issues panel update.
 function issueList() {
   const key = undoStack.current + '|' + ui.units;
-  if (_issues.key === key) return _issues.list;
+  if (_issues.key !== key && !_issues.pending) {
+    _issues.pending = true;
+    (window.requestIdleCallback || (f => setTimeout(f, 200)))(() => {
+      _issues.pending = false;
+      const k = undoStack.current + '|' + ui.units, list = computeIssues();
+      const changed = JSON.stringify(list) !== JSON.stringify(_issues.list);
+      _issues = { key: k, list, pending: false };
+      if (changed) { renderStatus(); dockRender(); }
+    }, { timeout: 1500 });
+  }
+  return _issues.list;
+}
+function computeIssues() {
   const list = [];
   try {
     const Q = Qnow();
@@ -70,7 +84,6 @@ function issueList() {
     const bg = doc.layout.background;
     for (const f of doc.fabrics) if (f.id !== bg && blockUsesFabric(f.id) && contrastRatio(f.color, fabricHex(BG)) < 1.6) list.push({ text: `${f.name} has low contrast with the background.`, where: 'Fabrics', act: 'fabricPopover', arg: f.id });
   } catch (e) { console.error(e); }
-  _issues = { key, list };
   return list;
 }
 const blockUsesFabric = id => Object.values(doc.blocks).some(b => b.kind === 'drawn' && b.regions.some(r => r.fab === id));
@@ -80,7 +93,13 @@ registerPanel('issues', {
   render: () => { const list = issueList(); return list.length ? `<div class="issue-list">${list.map(x => `<div class="issue">${icon('warn', 14)}<div class="issue-t"><span>${esc(x.text)}</span><span class="muted">${esc(x.where)}</span></div><button class="btn small" data-act="${x.act}" ${x.arg !== undefined ? `data-arg="${esc(x.arg)}"` : ''}>Show me</button></div>`).join('')}</div>` : panelNote('Nothing to check. The quilt is ready to cut and print.'); },
 });
 Actions.showSeamIssue = id => { ui.activeBlock = id; ui.view = 'block'; ui.tool = 'seam'; saveUi(); render(); };
-Actions.focusTitle = () => { const t = $('#doc-title'); t?.focus(); t?.select(); };
+Actions.focusTitle = () => {
+  const t = $('#doc-title');
+  if (t && t.offsetParent !== null) { t.focus(); t.select(); return; }
+  openModal(`<h2>Quilt name</h2><label class="f">Name<input type="text" id="rename-quilt" value="${esc(doc.meta.title)}"></label><div class="actions"><button class="btn" data-act="closeModal">Cancel</button><button class="btn primary" data-act="renameQuiltOk">Rename</button></div>`);
+  setTimeout(() => { const i = $('#rename-quilt'); i?.select(); i?.addEventListener('keydown', e => { if (e.key === 'Enter') Actions.renameQuiltOk(); }); }, 30);
+};
+Actions.renameQuiltOk = () => { const v = $('#rename-quilt')?.value.trim(); closeModal(); if (v) { doc.meta.title = v; commit('Rename quilt'); } };
 
 /* ---------- Navigator: zoom for the canvas ---------- */
 registerPanel('navigator', {

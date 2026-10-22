@@ -49,6 +49,10 @@ const ICON_PATHS = {
   sliders: '<path d="M2.5 4.5h11M2.5 11.5h11"/><circle cx="5.5" cy="4.5" r="1.6" fill="var(--bg-panel, #fff)"/><circle cx="10.5" cy="11.5" r="1.6" fill="var(--bg-panel, #fff)"/>',
   check: '<path d="M3 8.5l3 3 7-7"/>',
   left: '<path d="M10 4l-4 4 4 4"/>',
+  hand: '<path d="M5.5 8V3.8a1 1 0 0 1 2 0V7.5M7.5 7V3a1 1 0 0 1 2 0v4M9.5 7.2V4a1 1 0 0 1 2 0v5c0 3-1.6 5-4.2 5-1.6 0-2.6-.8-3.4-2L2.6 9.3a1 1 0 0 1 1.6-1.2L5.5 9.5"/>',
+  zoomin: '<circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2l3.3 3.3M5 7h4M7 5v4"/>',
+  pointer: '<path d="M4 2.5l8.5 5.2-3.9.9-1.9 3.9z"/>',
+  lock: '<rect x="3.5" y="7" width="9" height="7" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/>',
   minus: '<path d="M3 8h10"/>',
   search: '<circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2l3.3 3.3"/>',
   panelLeft: '<rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M6 2.5v11"/>',
@@ -216,6 +220,7 @@ function renderStatus() {
   if (src) { src.classList.add('moved'); left.appendChild(src); }
   const issues = typeof issueCount === 'function' ? issueCount() : 0;
   bar.querySelector('.sb-r').innerHTML = `<span class="sb-pos" id="sb-pos" title="Pointer position, from the top left"></span>
+    ${typeof dockSession !== 'undefined' && dockSession.hidden ? '<button class="sb-chip sb-hidden" data-act="toggleHidePanels" title="Show panels (Ctrl+.)">Panels hidden · show</button>' : ''}
     ${issues ? `<button class="sb-chip warn" data-act="openPanel" data-arg="issues" title="Things to check">${icon('warn', 13)} ${plural(issues, 'issue')}</button>` : ''}
     ${ui.view === 'block' ? `<button class="sb-chip" data-act="toggleSnap" aria-pressed="${!ui.snapOff}" title="Snap points to the grid">Snap ${ui.snapOff ? 'off' : 'on'}</button>` : ''}
     <button class="sb-chip" data-act="setUnits" data-arg="${ui.units === 'cm' ? 'in' : 'cm'}" title="Switch units">${ui.units === 'cm' ? 'cm' : 'inches'}</button>`;
@@ -324,6 +329,8 @@ function section(title, body, opts = {}) {
 }
 // The context bar (undo/redo, then the tool's options, the selection's commands and the step's
 // actions) and the tool strip.
+// Hand and Zoom: on every canvas, after the workspace's own tools.
+const NAV_TOOLS = [{ key: 'hand', label: 'Hand', kb: 'H', icon: 'hand' }, { key: 'zoom', label: 'Zoom', kb: 'Z', icon: 'zoomin' }];
 function renderToolbar() {
   const V = Views[ui.view] || Views.block;
   const undoRedo = `<div class="cz cz-hist"><button class="tool icon-only" data-act="undo" ${undoStack.past.length ? '' : 'disabled'} aria-label="Undo" title="Undo (Ctrl+Z)">${icon('undo')}</button><button class="tool icon-only" data-act="redo" ${undoStack.future.length ? '' : 'disabled'} aria-label="Redo" title="Redo (Ctrl+Shift+Z)">${icon('redo')}</button></div>`;
@@ -332,20 +339,23 @@ function renderToolbar() {
   const strip = $('#toolstrip');
   strip.hidden = !T;
   if (T) preserveFocus(strip, () => {
-    strip.innerHTML = T.list.map(t => `<button class="stool" data-act="${T.act}" data-arg="${t.key}" aria-pressed="${T.active === t.key}" title="${t.label} (${t.kb})" aria-label="${t.label}" aria-keyshortcuts="${t.kb}">${icon(t.icon, 20)}<span class="stool-l">${t.label}</span>${t.badge || ''}</button>`).join('');
+    strip.innerHTML = T.list.map(t => t.sep ? '<span class="stool-sep" role="separator"></span>' : `<button class="stool" data-act="${T.act}" data-arg="${t.key}" aria-pressed="${T.active === t.key}" title="${t.label} (${t.kb})" aria-label="${t.label}" aria-keyshortcuts="${t.kb}">${icon(t.icon, 20)}<span class="stool-l">${t.label}</span>${t.badge || ''}</button>`).join('');
   });
 }
 // View switches shared by the canvas steps, at the right end of the tool row.
-function viewToggles() {
-  const v = ui.view, t = (act, arg, label, on, title = '') => `<button class="tool toggle" data-act="${act}" ${arg ? `data-arg="${arg}"` : ''} aria-pressed="${!!on}"${title ? ` title="${title}"` : ''}>${label}</button>`;
-  const value = t('toggleUi', 'grayscale', 'Value', ui.grayscale, 'Value view: greys only (G)');
-  if (v === 'block' && activeBlock()?.kind === 'drawn') return t('toggleSeamLines', '', 'Seam lines', ui.showSeamLines !== false) + t('toggleUi', 'showPieces', 'Cut pieces', ui.showPieces) + t('toggleUi', 'showCentre', 'Centre lines', ui.showCentre) + value;
-  if (v === 'block') return t('toggleUi', 'showPieces', 'Cut pieces', ui.showPieces) + value;
-  const qz = '';   // zoom is its own HUD widget
-  if (v === 'layout') return t('toggleUi', 'seamLines', 'Piece outlines', ui.seamLines) + value + t('toggleUi', 'showQuilting', 'Quilting', ui.showQuilting && doc.quilting.layers.length).replace('<button', `<button ${doc.quilting.layers.length ? '' : 'disabled'}`) + qz;
-  if (v === 'quilting') return (ui.qSide === 'back' ? '' : t('toggleUi', 'qFade', 'Fade quilt', ui.qFade)) + value + qz;
-  return '';
+// How the canvas is shown: each switch as { label, act, arg, on, title, disabled }.
+function viewToggleItems() {
+  const v = ui.view, value = { label: 'Value', act: 'toggleUi', arg: 'grayscale', on: ui.grayscale, title: 'Value view: greys only (G)' };
+  if (v === 'block' && activeBlock()?.kind === 'drawn') return [{ label: 'Seam lines', act: 'toggleSeamLines', on: ui.showSeamLines !== false }, { label: 'Cut pieces', act: 'toggleUi', arg: 'showPieces', on: ui.showPieces }, { label: 'Centre lines', act: 'toggleUi', arg: 'showCentre', on: ui.showCentre }, value];
+  if (v === 'block') return [{ label: 'Cut pieces', act: 'toggleUi', arg: 'showPieces', on: ui.showPieces }, value];
+  if (v === 'layout') return [{ label: 'Piece outlines', act: 'toggleUi', arg: 'seamLines', on: ui.seamLines }, value, { label: 'Quilting', act: 'toggleUi', arg: 'showQuilting', on: ui.showQuilting && doc.quilting.layers.length, disabled: !doc.quilting.layers.length }];
+  if (v === 'quilting') return [...(ui.qSide === 'back' ? [] : [{ label: 'Fade quilt', act: 'toggleUi', arg: 'qFade', on: ui.qFade }]), value];
+  return [];
 }
+function viewToggles() {
+  return viewToggleItems().map(t => `<button class="tool toggle" data-act="${t.act}" ${t.arg ? `data-arg="${t.arg}"` : ''} aria-pressed="${!!t.on}"${t.title ? ` title="${t.title}"` : ''}${t.disabled ? ' disabled' : ''}>${t.label}</button>`).join('');
+}
+Actions.viewMenu = (a, el) => openMenu(el, viewToggleItems().map(t => ({ ...tick(t.label, t.act, t.arg, t.on), disabled: t.disabled })));
 
 /* ---------- modals, menus, toasts ---------- */
 let _modalClose = null, _modalReturn = null;
@@ -386,8 +396,10 @@ function confirmModal(title, body, okLabel, onOk, danger) {
 let _menuEl = null;
 // Items: { label, act, arg, kb, danger, checked (true/false shows a tick column), disabled }, '-' for a
 // divider, or { header } for a small group title. opts.align: 'left' drops the menu from the anchor's left edge.
+let _menuReturn = null;
 function openMenu(anchor, items, opts = {}) {
   closeMenu();
+  _menuReturn = document.activeElement !== document.body ? document.activeElement : (anchor?.focus ? anchor : null);
   const m = document.createElement('div');
   m.className = 'menu';
   m.setAttribute('role', 'menu');
@@ -407,7 +419,7 @@ function openMenu(anchor, items, opts = {}) {
   _menuEl = m;
   setTimeout(() => m.querySelector('button')?.focus(), 10);
 }
-function closeMenu() { if (!_menuEl) return false; _menuEl.remove(); _menuEl = null; return true; }
+function closeMenu(restore) { if (!_menuEl) return false; _menuEl.remove(); _menuEl = null; if (restore && _menuReturn?.isConnected) _menuReturn.focus(); return true; }
 let _swallowClick = false;
 document.addEventListener('pointerdown', e => {
   if (!_menuEl || _menuEl.contains(e.target)) return;
@@ -436,12 +448,6 @@ Actions.undo = () => { if (!undo()) toast('Nothing to undo'); };
 Actions.redo = () => { if (!redo()) toast('Nothing to redo'); };
 Actions.toggleUnits = () => { ui.units = ui.units === 'cm' ? 'in' : 'cm'; saveUi(); render(); toast(ui.units === 'cm' ? 'Showing centimetres' : 'Showing inches'); };
 Actions.toggleSec = (key, el) => { const cur = key in ui.collapsed ? ui.collapsed[key] : el?.dataset.def === '1'; ui.collapsed[key] = !cur; saveUi(); render(); };
-Actions.toggleDrawer = which => {
-  const cls = which === 'sidebar' ? 'show-sidebar' : 'show-inspector';
-  const on = !document.body.classList.contains(cls);
-  document.body.classList.remove('show-sidebar', 'show-inspector');
-  document.body.classList.toggle(cls, on);
-};
 Actions.setUi = (arg) => { const [k, v] = arg.split('='); ui[k] = v === 'true' ? true : v === 'false' ? false : v; saveUi(); render(); };
 Actions.toggleUi = k => { ui[k] = !ui[k]; saveUi(); render(); };
 
@@ -569,7 +575,7 @@ document.addEventListener('keydown', e => {
   const inField = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
   const ctrl = e.ctrlKey || e.metaKey;
   if (e.key === 'Escape') {
-    if (closeMenu() || closeModal()) return;
+    if (closeMenu(true) || closeModal()) return;
     if (ui.fabPop) { Actions.closeFabricPopover(); return; }
     Views[ui.view]?.key?.(e);
     return;

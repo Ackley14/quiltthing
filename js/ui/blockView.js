@@ -1,7 +1,7 @@
 /* Block editor view. Drawn blocks (square, or hexagon for hexagon tessellations): paint /
    select / polygon / rectangle / triangle / seam / text tools on a square or triangular
    lattice, with an optional tracing picture. Compound blocks: pick slots and fill them from
-   the sidebar. */
+   the Blocks panel. */
 
 const BLOCK_TOOLS = [
   { key: 'paint', label: 'Paint', kb: 'V', icon: 'paint' },
@@ -23,7 +23,7 @@ Views.block = {
   tools() {
     const b = activeBlock();
     if (!b || b.kind === 'compound') return null;
-    return { act: 'blockTool', active: ui.tool, list: BLOCK_TOOLS.map(t => ({ ...t, badge: t.key === 'seam' ? seamBadge(b) : '' })) };
+    return { act: 'blockTool', active: ui.tool, list: [...BLOCK_TOOLS.map(t => ({ ...t, badge: t.key === 'seam' ? seamBadge(b) : '' })), { sep: true }, ...NAV_TOOLS] };
   },
   docs() { const b = activeBlock(); return [{ label: b ? b.name : 'No block open', on: true, icon: 'blocks' }]; },
   // the context bar: a mode bar while drawing, otherwise the tool's options or the selection's commands
@@ -42,9 +42,15 @@ Views.block = {
       const ib = (act, arg, ic, label) => `<button class="tool icon-only" data-act="${act}" ${arg ? `data-arg="${arg}"` : ''} title="${label}" aria-label="${label}">${icon(ic)}</button>`;
       opts = `<span class="tb-label">${plural(sel.length, 'shape')}</span>${fabBtn('selFabricMenu', fs.length === 1 ? fs[0] : null, fs.length > 1)}
         ${ib('selDup', '', 'dup', 'Duplicate (Ctrl+D)')}${ib('selRotate', 'cw', 'rotate', 'Rotate 90° (E)')}${ib('selMirror', 'h', 'mirror', 'Flip horizontal (X)')}${ib('selMirror', 'v', 'flipv', 'Flip vertical (Y)')}${ib('selOrder', 'front', 'front', 'Bring to front')}${ib('selOrder', 'back', 'back', 'Send to back')}${ib('selDelete', '', 'trash', 'Delete (Del)')}`;
-    } else if (ui.tool === 'paint' || ui.tool === 'fill') opts = `<span class="tb-label">${ui.tool === 'fill' ? 'Fill with' : 'Paint with'}</span>${fabBtn('paintFabricMenu', ui.fabric)}`;
+    } else if (ui.tool === 'select') opts = '<span class="tb-hint">Click a shape to select it. Shift-click or drag a box to select several.</span>';
+    else if (ui.tool === 'text') opts = '<span class="tb-hint">Type the words and choose the font in Properties, then click where they go.</span>';
+    else if (ui.tool === 'hand') opts = '<span class="tb-hint">Drag to move around when zoomed in. Space-drag does the same with any tool.</span>';
+    else if (ui.tool === 'zoom') opts = `<span class="tb-hint">Click to zoom in, Alt-click to zoom out.</span><button class="tool small" data-act="edZoomBy" data-arg="fit">Fit</button>`;
+    else if (ui.tool === 'erase') opts = '<span class="tb-hint">Click a shape or seam line to remove it, or drag across several.</span>';
+    else if (ui.tool === 'paint' || ui.tool === 'fill') opts = `<span class="tb-label">${ui.tool === 'fill' ? 'Fill with' : 'Paint with'}</span>${fabBtn('paintFabricMenu', ui.fabric)}`;
     else if (ui.tool !== 'select') opts = `<button class="tool toggle" data-act="toggleSnap" aria-pressed="${!ui.snapOff}" title="Snap points to the grid">Snap</button>`;
-    return `${opts}
+    const tl = [...BLOCK_TOOLS, ...NAV_TOOLS].find(t => t.key === ui.tool);
+    return `${tl ? `<span class="tool-chip">${icon(tl.icon, 16)}${tl.label}</span>` : ''}${opts}
       ${refImgs[b.id] ? `<span class="sep"></span><button class="tool toggle" data-act="refAdjustToggle" aria-pressed="${!!ui.refAdjust}" title="Drag to move the tracing picture, scroll to resize it">Move picture</button>` : ''}
       <span id="seam-tool-slot"></span>`;
   },
@@ -54,11 +60,11 @@ Views.block = {
     const S = b.kind === 'drawn' ? blockFrameSize(b) : doc.layout.blockSize, m = S * 0.07;   // margin doubles as room to start a box-select
     if (b.kind === 'compound') {
       return `<div class="stage"><div class="canvas-wrap"><svg id="editor" class="editor" viewBox="${-m} ${-m} ${S + 2 * m} ${S + 2 * m}">${blockSvg(b, S, S, { slots: true, activeSlot: ui.activeSlot, pieces: ui.showPieces })}</svg></div>
-        <div class="status-bar">${ui.activeSlot != null ? `Pick a block on the left for slot ${ui.activeSlot + 1}.` : 'Click a slot, then pick a block for it.'}</div></div>`;
+        <div class="status-bar">${ui.activeSlot != null ? `Pick a block in the Blocks panel for slot ${ui.activeSlot + 1}.` : 'Click a slot, then pick a block for it.'}</div></div>`;
     }
     return `<div class="stage"><div class="canvas-wrap"><svg id="editor" class="editor tool-${ui.refAdjust && refImgs[b.id] ? 'ref' : ui.tool}" viewBox="${edViewBox(S).map(v => round(v, 4)).join(' ')}" aria-label="Block editor"><g ${edTurn(b, S)}><g id="ed-c">${editorShapes(b)}</g></g><g id="ed-ref" pointer-events="none">${refImageSvg(b, S)}</g><g ${edTurn(b, S)}><g id="ed-g">${editorGuides(b)}</g><g id="ed-ov" pointer-events="none"></g></g></svg>
         <div id="seam-card" class="seam-card" hidden></div></div>
-      <button id="seam-flag" class="seam-flag" data-act="blockTool" data-arg="seam" hidden>${icon('warn', 18)}</button>
+
       <div class="status-bar" id="ed-status">${blockStatus(b)}</div></div>`;
   },
   afterMain(el) {
@@ -248,7 +254,7 @@ function editorGuides(b) {
   if (ui.tool === 'seam') for (const pr of pieceProblems(b, S)) if (pr.kind !== 'tiny') s += `<path class="problem" d="${polyToPath(pr.piece.pts)}${pr.piece.holes.map(h => polyToPath(h)).join('')}" fill-rule="evenodd" stroke-width="${hair * 1.5}"/>`;
   // selection: outline every selected shape; corner/edge handles when exactly one is selected
   const sel = selList();
-  if (ui.tool === 'select') for (const i of sel) s += `<path class="sel-outline" d="${regionPathD(b.regions[i], k)}" stroke-width="${hair * 3}"/>`;
+  if (ui.tool === 'select') for (const i of sel) s += `<path class="sel-halo" d="${regionPathD(b.regions[i], k)}" stroke-width="${hair * 6}"/><path class="sel-outline" d="${regionPathD(b.regions[i], k)}" stroke-width="${hair * 3}"/>`;
   const r = sel.length === 1 ? b.regions[sel[0]] : null;
   if (r && ui.tool === 'select') {
     r.pts.forEach((q, i) => {
@@ -320,6 +326,8 @@ function blockStatus(b) {
     case 'arc': return isHexBlock(b) || b.lattice === 'tri' ? 'Quarter circles need a square grid.' : '<b>Quarter circle</b>: click a square, or drag from a corner for a bigger one.';
     case 'tri': return b.lattice === 'tri' || isHexBlock(b) ? '<b>Triangle</b>: click inside a lattice triangle. Shift for half size.' : '<b>Triangle</b>: click near a corner of a square. Shift for half size.';
     case 'fill': return `<b>Fill</b> with ${fab}: click empty space to fill it with a new shape, or a shape to repaint it.`;
+    case 'hand': return `<b>Hand</b>: drag to move around the block when zoomed in.`;
+    case 'zoom': return `<b>Zoom</b>: click to zoom in, Alt-click to zoom out. 0 fits the block.`;
     case 'erase': return '<b>Eraser</b>: click a shape or seam line to remove it, or drag across several.';
     case 'seam': return ui.drawing.length ? 'Now click a point on another line. Esc cancels.' : '<b>Seam line</b>: click a point on any edge, then on another. Through appliqué or lettering it cuts them too. Click a seam to remove it.';
   }
@@ -345,6 +353,7 @@ function selList() {
 function setSel(list) {
   ui.selRegions = uniq(list.filter(i => i != null));
   ui.selRegion = ui.selRegions.length ? ui.selRegions[ui.selRegions.length - 1] : null;
+  if (typeof renderHud === 'function') queueMicrotask(renderHud);
 }
 function selBounds(b, list = selList()) {
   return bounds(list.flatMap(i => b.regions[i].pts));
@@ -395,7 +404,8 @@ function edDown(e) {
   const svg = e.currentTarget;
   const p = evtGrid(e, b), fine = e.shiftKey;
   const tool = ui.tool;
-  if (e.button === 1 || (ed.space && e.button === 0)) {
+  if (ui.tool === 'zoom' && e.button === 0) { setZoom(edZoom() * (e.altKey ? 1 / 1.5 : 1.5), svgPoint(svg, e)); return; }
+  if (e.button === 1 || ((ed.space || ui.tool === 'hand') && e.button === 0)) {
     e.preventDefault();
     svg.setPointerCapture(e.pointerId);
     ed.drag = { kind: 'pan', x: e.clientX, y: e.clientY, cx: ed.cx, cy: ed.cy, px: 1 / svg.getScreenCTM().a };
@@ -805,7 +815,7 @@ function blockViewKey(e) {
     if (k === 'x') { Actions.selMirror('h'); return; }
     if (k === 'y') { Actions.selMirror('v'); return; }
   }
-  const tool = BLOCK_TOOLS.find(t => t.kb.toLowerCase() === k);
+  const tool = [...BLOCK_TOOLS, ...NAV_TOOLS].find(t => t.kb.toLowerCase() === k);
   if (tool && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); Actions.blockTool(tool.key); }
 }
 
@@ -870,11 +880,7 @@ function showSeamCard() {
     const n = has ? sg.reqPieces + sg.optPieces : 0;
     tb.setAttribute('aria-label', n ? `Seam line, ${plural(n, 'piece')} could use seams` : 'Seam line');
   }
-  const flag = $('#seam-flag');
-  if (flag) {
-    flag.hidden = !(sg?.required.length && !seamTool);
-    if (!flag.hidden) { const t = `${plural(sg.reqPieces, 'piece')} need${sg.reqPieces === 1 ? 's' : ''} seam lines. Click to see.`; flag.title = t; flag.setAttribute('aria-label', t); }
-  }
+  renderHud();   // the seam warning widget
   if (slot) slot.innerHTML = has && seamTool && seamDismissed(b) ? `<button class="tool" data-act="undismissSeams" title="Show the seam suggestion again">Seam suggestion</button>` : '';
   if (!has || !seamTool || seamDismissed(b)) { card.hidden = true; drawOverlay(); return; }
   const lines = [];
@@ -1325,7 +1331,7 @@ Actions.slotFlip = (v, el) => { const s = activeBlock().slots[+el.dataset.arg]; 
 /* ---------- inspector ---------- */
 function blockInspector() {
   const b = activeBlock();
-  if (!b) return section('Block', '<p class="hint">Pick a block on the left, or add one.</p>');
+  if (!b) return panelNote('No block is open. Pick one in the Blocks panel, or add one.', ['openPanel', 'blocks'], 'Show the Blocks panel');
   const S = b.kind === 'drawn' ? blockFrameSize(b) : doc.layout.blockSize;
   const hex = isHexBlock(b);
   const hexGrids = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24].concat(b.n).filter((v, i, a) => a.indexOf(v) === i).sort((x, y) => x - y);

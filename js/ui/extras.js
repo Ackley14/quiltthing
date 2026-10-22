@@ -3,12 +3,14 @@
    and the selection-size HUD widget. */
 
 /* ---------- welcome: one screen for new people and for v3 users ---------- */
-function welcomeV4() {
-  const v3 = !!localStorage.getItem('quiltthing.v3.ui');
+function welcomeV4(whatsNew) {
+  const v3 = !!localStorage.getItem('quiltthing.v3.ui') || whatsNew;
+  // starting over replaces the design in this browser, so only offer it when there's nothing to lose
+  const fresh = !whatsNew && !v3;
   const theme = t => `<button class="btn${prefs.theme === t ? ' primary' : ''}" data-act="welcomeTheme" data-arg="${t}" aria-pressed="${prefs.theme === t}">${t === 'dark' ? 'Dark' : 'Light'}</button>`;
   openModal(`<h2>${v3 ? 'Welcome to the new Quilt Designer' : 'Quilt Designer'}</h2>
     <p>${v3 ? 'Everything you had is here, in a new layout. Your quilts, fabrics and saved designs carry over.' : 'Design blocks, lay out a quilt and print the pattern. Your work saves in this browser.'}</p>
-    ${v3 ? `<div class="moved"><h4>Where things moved</h4><ul>
+    ${v3 ? `<div class="welcome-moved"><h4>Where things moved</h4><ul>
       <li><b>Steps</b> are the tabs at the top: Blocks, Layout, Quilting, Fabric &amp; cutting, Pattern.</li>
       <li><b>Tools</b> are the strip down the left; their options are in the bar above the canvas.</li>
       <li><b>Fabrics and blocks</b> are panels on the left; <b>settings</b> are in Properties on the right.</li>
@@ -18,13 +20,14 @@ function welcomeV4() {
     <div class="welcome-prefs"><span>Look</span><div class="btn-row" style="margin:0">${theme('dark')}${theme('light')}</div>
       <label class="f" style="margin:0">Around the quilt<select data-change="setSurround">${Object.entries(SURROUNDS).map(([k, [l]]) => `<option value="${k}" ${prefs.surround === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label class="check" style="margin:0"><input type="checkbox" data-change="welcomeLarge" ${prefs.density === 'large' ? 'checked' : ''}> Larger text</label></div>
-    <div class="actions welcome-actions"><button class="btn" data-act="welcomeBlank">Start blank</button><button class="btn" data-act="welcomeClassic">Start from a classic block</button><span class="grow"></span><button class="btn primary" data-act="closeModal">${v3 ? 'Carry on' : 'Explore the sample'}</button></div>`,
+    <div class="actions welcome-actions">${fresh ? '<button class="btn" data-act="welcomeBlank">Start blank</button><button class="btn" data-act="welcomeClassic">Start from a classic block</button>' : ''}<button class="btn" data-act="startTour">Take a quick tour</button><span class="grow"></span><button class="btn primary" data-act="closeModal">${whatsNew ? 'Close' : v3 ? 'Carry on' : 'Explore the sample'}</button></div>`,
     () => { prefs.welcomed = true; ui.seenTour = true; savePrefs(); saveUi(); });
   $('#modal-root .modal').classList.add('wide');
 }
-Actions.welcomeTheme = t => { prefs.theme = t; savePrefs(); applyPrefs(); render(); welcomeV4(); };
+Actions.welcomeTheme = t => { prefs.theme = t; savePrefs(); applyPrefs(); render(); welcomeV4(_welcomeWhatsNew); };
+let _welcomeWhatsNew = false;
 Actions.welcomeLarge = v => { prefs.density = v ? 'large' : 'standard'; savePrefs(); applyPrefs(); render(); };
-Actions.whatsNew = () => { const w = prefs.welcomed; welcomeV4(); prefs.welcomed = w; };
+Actions.whatsNew = () => { _welcomeWhatsNew = true; welcomeV4(true); };
 
 /* ---------- second tab: warn when the design changes somewhere else ---------- */
 window.addEventListener('storage', e => {
@@ -62,11 +65,17 @@ document.addEventListener('keydown', e => {
   e.preventDefault();
   const path = el.dataset.bind, cur = parseLenExpr(el.value, getPath(doc, path));
   if (!Number.isFinite(cur)) return;
-  const step = (e.shiftKey ? 1 : e.altKey ? 1 / 16 : 1 / 8) * (ui.units === 'cm' ? 2.54 / 2.54 : 1);
+  // inches: 1/8" (Shift 1", Alt 1/16"); centimetres: 0.5 cm (Shift 1 cm, Alt 1 mm)
+  const step = ui.units === 'cm' ? (e.shiftKey ? 1 : e.altKey ? 0.1 : 0.5) / 2.54 : e.shiftKey ? 1 : e.altKey ? 1 / 16 : 1 / 8;
   const lo = el.dataset.min !== undefined ? +el.dataset.min : 0, hi = el.dataset.max !== undefined ? +el.dataset.max : Infinity;
   const v = clamp(Math.round((cur + (e.key === 'ArrowUp' ? step : -step)) / step) * step, lo, hi);
   el.value = inputLen(v);
-  el.dispatchEvent(new Event('change', { bubbles: true }));
+  el.dataset.stepped = '1';
+}, true);
+// a stepped value saves when the field is left (Enter leaves it too)
+document.addEventListener('focusout', e => {
+  const el = e.target;
+  if (el.matches?.('input[data-type="len"][data-stepped]')) { delete el.dataset.stepped; if (el.value !== el.dataset.was) el.dispatchEvent(new Event('change', { bubbles: true })); }
 }, true);
 // a length that can't be read: say so on the field and keep the old value
 function lenFieldError(el, raw) {
@@ -102,3 +111,100 @@ HUD_WIDGETS.selsize = {
     return `<div class="hud-info"><b>${esc(name)}</b> · ${fmtSize(bb.w * k, bb.h * k)} finished</div>`;
   },
 };
+
+/* ---------- names for undo steps made on the canvas or with keys (History panel) ---------- */
+const TOOL_STEP = { paint: 'Paint', fill: 'Fill', erase: 'Erase', polygon: 'Draw shape', rect: 'Draw rectangle', tri: 'Draw triangle', arc: 'Draw quarter circle', seam: 'Seam line', text: 'Add text' };
+function gestureName(e) {
+  if (ui.view === 'block') {
+    if (ui.tool === 'select') return e.target.closest?.('[data-vh], [data-eh]') ? 'Reshape shape' : 'Move shapes';
+    return TOOL_STEP[ui.tool] || null;
+  }
+  if (ui.view === 'layout') {
+    if (e.button === 2) return 'Clear position';
+    return { place: 'Place block', paintcell: 'Paint', select: 'Move panel' }[layoutTool()] || null;
+  }
+  return null;
+}
+document.addEventListener('pointerdown', e => { if (e.target.closest?.('#main')) gestureLabel = gestureName(e); }, true);
+document.addEventListener('pointerup', () => setTimeout(() => { gestureLabel = null; }, 0), true);
+document.addEventListener('drop', e => { if (e.target.closest?.('#main')) { nextCommitLabel = dragBlockId ? 'Place block' : 'Paint'; setTimeout(() => { nextCommitLabel = null; }, 0); } }, true);
+const KEY_STEP = { Delete: 'Delete', Backspace: 'Delete', ArrowUp: 'Nudge', ArrowDown: 'Nudge', ArrowLeft: 'Nudge', ArrowRight: 'Nudge' };
+document.addEventListener('keydown', e => {
+  if (e.target.closest?.('input, select, textarea')) return;
+  const k = e.key.toLowerCase(), ctrl = e.ctrlKey || e.metaKey;
+  const name = KEY_STEP[e.key] || (ctrl ? { d: 'Duplicate', v: 'Paste', x: 'Cut' }[k] : ui.view === 'block' ? { q: 'Rotate', e: 'Rotate', x: 'Flip', y: 'Flip' }[k] : ui.view === 'layout' ? { r: 'Turn block', f: 'Flip block' }[k] : null);
+  if (name) { nextCommitLabel = name; setTimeout(() => { nextCommitLabel = null; }, 0); }
+}, true);
+
+/* ---------- HUD: seam help (the warning triangle) ---------- */
+HUD_WIDGETS.seam = {
+  label: 'Seam warning', corner: 'bl', ws: ['block'],
+  html: () => {
+    const b = activeBlock(); if (!b || b.kind !== 'drawn' || ui.tool === 'seam') return '';
+    const sg = _seamState.block === b.id && _seamState.key === blockKey(b) ? _seamState.s : null;
+    if (!sg?.required.length) return '';
+    const t = `${plural(sg.reqPieces, 'piece')} need${sg.reqPieces === 1 ? 's' : ''} set-in seams as drawn. Click for the Seam tool.`;
+    return `<button class="seam-flag" data-act="blockTool" data-arg="seam" title="${t}" aria-label="${t}">${icon('warn', 18)}<span>Seams</span></button>`;
+  },
+};
+
+document.addEventListener('keydown', e => {
+  if (!e.shiftKey || e.ctrlKey || e.metaKey || e.altKey || e.code !== 'Digit1' || e.target.closest?.('input, select, textarea') || $('#modal-root').innerHTML) return;
+  e.preventDefault();
+  if (ui.view === 'block') Actions.edZoomBy('fit'); else if (['layout', 'quilting'].includes(ui.view)) Actions.qZoomBy('fit');
+}, true);
+
+const TOUR = [
+  ['#ws-tabs', 'Steps', 'Work moves left to right: draw blocks, lay out the quilt, plan the quilting, then fabric & cutting and the printed pattern. Keys 1 to 5 jump between them.'],
+  ['#toolstrip', 'Tools', 'Drawing and painting tools. The bar above the canvas shows the options for the tool you pick.'],
+  ['#dock-right', 'Panels', 'Settings for whatever is selected are in Properties. Panels can be folded, moved or closed; the Window menu brings any panel back.'],
+  ['#appbar [data-act="commandPalette"]', 'Search', 'Press Ctrl K and type what you want to do, like "border", "print" or "palette".'],
+];
+let _tour = -1;
+Actions.startTour = () => { closeModal(); _tour = 0; showTour(); };
+function showTour() {
+  $('#tour')?.remove();
+  if (_tour < 0 || _tour >= TOUR.length) { _tour = -1; return; }
+  const [sel, title, text] = TOUR[_tour], el = $(sel);
+  const r = el?.offsetParent !== null ? el.getBoundingClientRect() : { left: innerWidth / 2, top: innerHeight / 3, width: 0, height: 0, right: innerWidth / 2, bottom: innerHeight / 3 };
+  const box = document.createElement('div');
+  box.id = 'tour'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', `Tour: ${title}`);
+  box.innerHTML = `<div class="tour-hl" style="left:${r.left - 4}px;top:${r.top - 4}px;width:${r.width + 8}px;height:${r.height + 8}px"></div>
+    <div class="tour-card"><b>${title}</b> <span class="muted">${_tour + 1} of ${TOUR.length}</span><p>${text}</p><div class="btn-row"><button class="btn small" data-act="tourEnd">Close</button><span class="grow"></span>${_tour ? '<button class="btn small" data-act="tourStep" data-arg="-1">Back</button>' : ''}<button class="btn small primary" data-act="tourStep" data-arg="1">${_tour === TOUR.length - 1 ? 'Done' : 'Next'}</button></div></div>`;
+  document.body.appendChild(box);
+  const card = box.querySelector('.tour-card'), below = r.bottom + 12 + 160 < innerHeight;
+  card.style.top = `${below ? r.bottom + 12 : Math.max(12, r.top - card.offsetHeight - 12)}px`;
+  card.style.left = `${clamp(r.left, 12, innerWidth - card.offsetWidth - 12)}px`;
+  card.querySelector('.primary').focus();
+}
+Actions.tourStep = d => { _tour += +d; showTour(); };
+Actions.tourEnd = () => { _tour = -1; $('#tour')?.remove(); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && _tour >= 0) Actions.tourEnd(); });
+
+document.addEventListener('keydown', e => {
+  const t = e.target.closest?.('#ws-tabs [role="tab"]');
+  if (!t || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+  e.preventDefault();
+  const tabs = $$('#ws-tabs [role="tab"]'), i = tabs.indexOf(t);
+  const j = e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+  Actions.view(tabs[j].dataset.arg);
+  setTimeout(() => $(`#ws-tabs [data-arg="${tabs[j].dataset.arg}"]`)?.focus(), 0);
+});
+
+/* ---------- documents: the Hand tool drags the page ---------- */
+Actions.docTool = t => { ui.docTool = t; saveUi(); renderView(); };
+document.addEventListener('pointerdown', e => {
+  if (!['fabric', 'pattern'].includes(ui.view) || ui.docTool !== 'hand' || e.button !== 0 || !e.target.closest?.('#main') || e.target.closest('button, input, select, a')) return;
+  const m = $('#main'), x0 = e.clientX, y0 = e.clientY, sx = m.scrollLeft, sy = m.scrollTop;
+  e.preventDefault(); m.setPointerCapture(e.pointerId); m.classList.add('dragging');
+  const mv = ev => { m.scrollLeft = sx - (ev.clientX - x0); m.scrollTop = sy - (ev.clientY - y0); };
+  const up = () => { m.removeEventListener('pointermove', mv); m.removeEventListener('pointerup', up); m.classList.remove('dragging'); };
+  m.addEventListener('pointermove', mv); m.addEventListener('pointerup', up);
+});
+// tool keys where the workspace has no key handler of its own
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.('input, select, textarea') || $('#modal-root').innerHTML) return;
+  const k = e.key.toLowerCase();
+  if (ui.view === 'quilting' && (k === 'h' || k === 'z')) Actions.qTool(k === 'h' ? 'hand' : 'zoom');
+  if (['fabric', 'pattern'].includes(ui.view) && (k === 'h' || k === 'v')) Actions.docTool(k === 'h' ? 'hand' : 'pointer');
+});

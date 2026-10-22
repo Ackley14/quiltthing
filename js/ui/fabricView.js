@@ -26,6 +26,7 @@ function seamSettingsHtml() {
 }
 
 Views.fabric = {
+  tools() { return { act: 'docTool', active: ui.docTool || 'pointer', list: [{ key: 'pointer', label: 'Select', kb: 'V', icon: 'pointer' }, { key: 'hand', label: 'Hand', kb: 'H', icon: 'hand' }] }; },
   docs() { const cut = ui.fabPane === 'cut'; return [{ label: 'Shopping list', on: !cut, act: 'fabPane', arg: 'shop', icon: 'list' }, { label: 'Cutting plan', on: cut, act: 'fabPane', arg: 'cut', icon: 'cut' }]; },
   docTools() { return ui.fabPane === 'cut' ? `<button class="tool toggle small" data-act="toggleCutMaps" aria-pressed="${ui.cutDiagrams !== false}">Cutting maps</button>` : ''; },
   options() {

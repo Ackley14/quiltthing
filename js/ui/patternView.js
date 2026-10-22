@@ -1,11 +1,12 @@
 /* Pattern view: live preview of the printable pattern + cover details. */
 
 Views.pattern = {
+  tools() { return { act: 'docTool', active: ui.docTool || 'pointer', list: [{ key: 'pointer', label: 'Select', kb: 'V', icon: 'pointer' }, { key: 'hand', label: 'Hand', kb: 'H', icon: 'hand' }] }; },
   docs() { return [{ label: `${doc.meta.title || 'Quilt'} · pattern`, on: true, icon: 'pages' }]; },
   options() {
     const a4 = ui.patternPage === 'a4';
     // before printing: anything that would make a poor pattern
-    const Q = Qnow(), warn = [...Q.warnings, ...seamWarnings(), ...(doc.meta.title === 'Untitled quilt' ? ['The quilt has no name yet (top left).'] : [])];
+    const Q = Qnow(), warn = [...Q.warnings, ...seamWarnings(), ...(doc.meta.title === 'Untitled quilt' ? ['The quilt has no name yet. Name it in Properties.'] : [])];
     return `<button class="btn primary small" data-act="printPattern" title="In the print dialog: Save as PDF for a file, scale 100%, background graphics on">${icon('print', 14)} Print pattern</button><span class="sep"></span>
       <span class="tb-label">Paper</span>
       <div class="seg" role="group" aria-label="Paper size"><button aria-pressed="${!a4}" data-act="setUi" data-arg="patternPage=letter">US Letter</button><button aria-pressed="${a4}" data-act="setUi" data-arg="patternPage=a4">A4</button></div>
@@ -116,9 +117,9 @@ function pagesPanel() {
   let h = '';
   for (const p of pages) {
     const cont = p.cont;
-    h += `<div class="page-row${cont ? ' cont' : ''}" role="option" tabindex="0" data-act="goPage" data-arg="${p.i}" data-page="${p.i}"><span class="pg-n">${p.i + 1}</span><span class="pg-t">${cont ? 'continued' : esc(p.title)}</span></div>`;
+    h += `<button class="page-row${cont ? ' cont' : ''}" data-act="goPage" data-arg="${p.i}" data-page="${p.i}" aria-label="Page ${p.i + 1}: ${esc(p.title)}${cont ? ', continued' : ''}"><span class="pg-n">${p.i + 1}</span><span class="pg-t">${cont ? 'continued' : esc(p.title)}</span></button>`;
   }
-  return `<div class="panel-tools"><span class="pt-note">${plural(pages.length, 'page')} · ${ui.patternPage === 'a4' ? 'A4' : 'US Letter'}</span></div><div class="page-list" role="listbox" aria-label="Pages">${h}</div>`;
+  return `<div class="panel-tools"><span class="pt-note">${plural(pages.length, 'page')} · ${ui.patternPage === 'a4' ? 'A4' : 'US Letter'}</span></div><div class="page-list" aria-label="Pages">${h}</div>`;
 }
 Actions.goPage = i => { $$('#pattern-preview .page')[+i]?.scrollIntoView({ block: 'start' }); markCurrentPage(); };
 // highlight the page in view, and say "Page n of N" in the status bar
@@ -126,7 +127,7 @@ function markCurrentPage() {
   const pages = $$('#pattern-preview .page'), box = $('#main').getBoundingClientRect();
   let cur = 0;
   pages.forEach((pg, i) => { if (pg.getBoundingClientRect().top < box.top + box.height / 3) cur = i; });
-  $$('.page-row').forEach(r => r.setAttribute('aria-selected', +r.dataset.page === cur));
+  $$('.page-row').forEach(r => r.setAttribute('aria-current', +r.dataset.page === cur));
   const st = $('#statusbar .sb-l');
   if (st && ui.view === 'pattern') st.textContent = pages.length ? `Page ${cur + 1} of ${pages.length}` : '';
 }

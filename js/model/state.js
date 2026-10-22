@@ -107,6 +107,7 @@ const undoStack = { past: [], future: [], current: null, max: 200 };
 // past[i]. Kept beside the stack (v3 reads the same saved history and knows nothing of labels).
 const histLabels = { past: [], future: [] };
 let nextCommitLabel = null;   // set by the action dispatcher just before a command runs
+let gestureLabel = null;      // set while a drag on the canvas is under way ("Paint", "Move shapes")
 let onDocChanged = () => {};          // set by the app shell (re-render + caches)
 
 function snapshot() { return JSON.stringify(doc); }
@@ -117,7 +118,7 @@ function resetHistory() { undoStack.past = []; undoStack.future = []; histLabels
 function commit(label) {
   const s = snapshot();
   if (s === undoStack.current) { onDocChanged(false); return; }
-  if (undoStack.current !== null) { undoStack.past.push(undoStack.current); histLabels.past.push(label || nextCommitLabel || 'Change'); }
+  if (undoStack.current !== null) { undoStack.past.push(undoStack.current); histLabels.past.push(label || nextCommitLabel || gestureLabel || 'Change'); }
   if (undoStack.past.length > undoStack.max) { undoStack.past.shift(); histLabels.past.shift(); }
   undoStack.future = []; histLabels.future = [];
   undoStack.current = s;

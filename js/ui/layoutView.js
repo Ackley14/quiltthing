@@ -20,7 +20,7 @@ function layoutTool() {
 Views.layout = {
   tools() {
     const hexMode = doc.layout.mode === 'tess';
-    return { act: 'layoutTool', active: layoutTool(), list: LAYOUT_TOOLS.filter(t => !(hexMode && t.key === 'place' && !tessCanPlace())) };
+    return { act: 'layoutTool', active: layoutTool(), list: [...LAYOUT_TOOLS.filter(t => !(hexMode && t.key === 'place' && !tessCanPlace())), { sep: true }, ...NAV_TOOLS] };
   },
   docs() { return [{ label: `${doc.meta.title || 'Quilt'} · layout`, on: true, icon: 'quilt' }]; },
   options() {
@@ -42,8 +42,11 @@ Views.layout = {
           <button class="tool" data-act="cellRotate">Rotate 90°</button><button class="tool" data-act="cellFlip">Flip</button><button class="tool" data-act="cellEdit">Edit block</button>
           ${pb && pb.id !== c.b ? `<button class="tool" data-act="cellReplace">Replace with ${esc(pb.name)}</button>` : ''}<button class="tool danger" data-act="cellClear">Clear</button>`
         : `<span class="tb-label">${c?.fab ? `Plain ${esc(fabricLabel(c.fab))}` : 'Empty position'}</span>${pb && cellOk ? `<button class="tool" data-act="cellReplace">Put ${esc(pb.name)} here</button>` : ''}${c?.fab ? '<button class="tool danger" data-act="cellClear">Clear</button>' : ''}`;
-    } else opts = '<span class="tb-label">Click a position to change it</span>';
-    return opts;
+    } else opts = '<span class="tb-hint">Click a position on the quilt to select it; drag an inset panel to move it.</span>';
+    const tl = [...LAYOUT_TOOLS, ...NAV_TOOLS].find(t => t.key === tool);
+    if (tool === 'hand') opts = '<span class="tb-hint">Drag to move around the quilt when zoomed in.</span>';
+    if (tool === 'zoom') opts = `<span class="tb-hint">Click to zoom in, Alt-click to zoom out.</span><button class="tool small" data-act="qZoomBy" data-arg="fit">Fit</button>`;
+    return `${tl ? `<span class="tool-chip">${icon(tl.icon, 16)}${tl.label}</span>` : ''}${opts}`;
   },
   main() {
     const Q = Qnow(), tool = layoutTool();
@@ -83,7 +86,7 @@ Views.layout = {
   key(e) {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key.toLowerCase();
-    const t = LAYOUT_TOOLS.find(x => x.kb.toLowerCase() === k);
+    const t = [...LAYOUT_TOOLS, ...NAV_TOOLS].find(x => x.kb.toLowerCase() === k);
     if (t && !(k === 'b' && doc.layout.mode === 'tess' && !tessCanPlace())) { Actions.layoutTool(t.key); return; }
     if (e.key === 'Escape') { ui.selCell = null; renderView(); return; }
     const key = ui.selCell || lay.hoverKey;
@@ -121,6 +124,8 @@ function layoutHint(tool) {
   if (tool === 'place' && tessHexBlocks()) return 'Click or drag to place. Click again to turn. Right-click to clear.';
   if (tool === 'place') return 'Click or drag to place. Click again to turn, Shift to mirror. Right-click to clear.';
   if (tool === 'paintcell') return doc.layout.mode === 'tess' ? 'Click or drag to paint shapes. Right-click to reset.' : 'Paint plain squares or setting triangles. Right-click to clear.';
+  if (tool === 'hand') return 'Drag to move around the quilt when zoomed in.';
+  if (tool === 'zoom') return 'Click to zoom in, Alt-click to zoom out. 0 fits the quilt.';
   return 'Click a position to change it.';
 }
 
@@ -157,7 +162,7 @@ function applyTool(key, first, e) {
   }
   if (!isBlockKey(key)) return false;
   const b = placeBlock();
-  if (!b) { if (first) toast('Pick a block in the sidebar first'); return false; }
+  if (!b) { if (first) toast('Pick a block in the Blocks panel first'); return false; }
   if (!keyAcceptsBlock(key, b)) {
     if (first) toast(isHexBlock(b) ? 'Hexagon blocks go in a hexagon tessellation' : 'Hexagons take hexagon blocks');
     return false;
@@ -305,7 +310,7 @@ function blockCellKeys() {
 }
 Actions.fillLayout = mode => {
   const b = placeBlock();
-  if (!b) { toast('Pick a block in the sidebar first'); return; }
+  if (!b) { toast('Pick a block in the Blocks panel first'); return; }
   const keys = blockCellKeys().filter(k => keyAcceptsBlock(k, b));
   if (!keys.length) { toast(isHexBlock(b) ? 'Hexagon blocks go in the hexagons of a hexagon tessellation' : 'No square block positions here'); return; }
   for (const k of keys) {
@@ -326,7 +331,7 @@ Actions.hexTurns = kind => {
 };
 Actions.alternateWith = () => {
   const b = placeBlock(), sel = ui.altWith;
-  if (!b || !sel) { toast('Pick a block in the sidebar, and something to alternate with'); return; }
+  if (!b || !sel) { toast('Pick a block in the Blocks panel, and something to alternate with'); return; }
   const second = sel.startsWith('fab:') ? { fab: sel.slice(4) } : { b: sel, r: 0, f: false };
   for (const c of Qnow().cells.filter(c => c.key[0] !== 'p')) {
     const odd = doc.layout.mode === 'onpoint' ? c.key[1] === 'B' : (c.row + c.col) % 2 === 1;
@@ -601,8 +606,8 @@ function quiltParts() {
 function quiltPanel() {
   const parts = quiltParts(), cur = parts.some(p => p.key === ui.quiltPart) ? ui.quiltPart : 'setting', Q = Qnow();
   return `<div class="panel-tools"><span class="pt-note"><b>${fmtSize(Q.W, Q.H)}</b> finished</span><span class="grow"></span><button class="btn small" data-act="quiltAddMenu" aria-haspopup="menu">${icon('plus', 14)} Add ${icon('down', 12)}</button></div>
-    <div class="part-list" role="listbox" aria-label="Parts of the quilt">${parts.map(p => `<div class="part-row" role="option" tabindex="0" aria-selected="${p.key === cur}" data-act="quiltPart" data-arg="${p.key}">
-      <span class="part-ic">${p.fab ? swatchHtml(p.fab, 18) : icon(p.icon, 16)}</span><span class="part-t"><b>${esc(p.label)}</b><span class="muted">${esc(p.note)}</span></span></div>`).join('')}</div>`;
+    <div class="part-list" role="list" aria-label="Parts of the quilt">${parts.map(p => `<button class="part-row" role="listitem" aria-current="${p.key === cur}" data-act="quiltPart" data-arg="${p.key}">
+      <span class="part-ic">${p.fab ? swatchHtml(p.fab, 18) : icon(p.icon, 16)}</span><span class="part-t"><b>${esc(p.label)}</b><span class="muted">${esc(p.note)}</span></span></button>`).join('')}</div>`;
 }
 Actions.quiltPart = k => { ui.quiltPart = k; ui.selCell = null; saveUi(); renderToolbar(); renderInspector(); };
 Actions.quiltAddMenu = (a, el) => openMenu(el, [

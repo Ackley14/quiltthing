@@ -5,7 +5,12 @@
 const HUD_WIDGETS = {
   info: { label: 'Info line', corner: 'tl', ws: ['block', 'layout', 'quilting'], html: hudInfo },
   value: { label: 'Value view reminder', corner: 'tl', ws: [], html: () => ui.grayscale ? `<button class="hud-badge" data-act="toggleUi" data-arg="grayscale" title="Turn Value view off (G)">${icon('eye', 14)} Value view · G to turn off</button>` : '' },
-  view: { label: 'View switches', corner: 'tr', ws: ['block', 'layout', 'quilting'], html: () => { const h = viewToggles(); return h ? `<div class="hud-group" role="toolbar" aria-label="View">${h}</div>` : ''; } },
+  view: { label: 'View switches', corner: 'tr', ws: ['block', 'layout', 'quilting'], html: () => {
+    const items = viewToggleItems(); if (!items.length) return '';
+    // a narrow canvas gets one View button instead of a row of switches
+    if (($('#docarea')?.clientWidth || 1000) < 820) return `<div class="hud-group"><button class="tool" data-act="viewMenu" aria-haspopup="menu">${icon('eye', 14)} View${items.some(t => t.on && t.arg !== 'grayscale') ? ' ·' : ''} ${icon('down', 12)}</button></div>`;
+    return `<div class="hud-group" role="toolbar" aria-label="View">${viewToggles()}</div>`;
+  } },
   zoom: { label: 'Zoom', corner: 'br', ws: ['block', 'layout', 'quilting'], html: hudZoom },
 };
 const hudPref = id => ({ show: true, corner: HUD_WIDGETS[id].corner, ...(prefs.hud?.[id] || {}) });

@@ -1,6 +1,7 @@
 /* Quilting view: stack of generated quilting-line layers previewed over the quilt. */
 
 Views.quilting = {
+  tools() { return { act: 'qTool', active: ui.qTool || 'hand', list: NAV_TOOLS }; },
   docs() { const back = ui.qSide === 'back'; return [{ label: 'Front', on: !back, act: 'qSide', arg: 'front', icon: 'quilt' }, { label: 'Back', on: back, act: 'qSide', arg: 'back', icon: 'quilt' }]; },
   options() {
     return `<button class="tool fab-drop" data-act="addLayerMenu" aria-haspopup="menu">${icon('plus', 14)} Add quilting ${icon('down', 12)}</button>`;
@@ -24,12 +25,12 @@ function quiltLayersPanel() {
   const layers = doc.quilting.layers, open = layers.find(L => L.id === ui.qOpen) ? ui.qOpen : layers[0]?.id;
   const rows = layers.map((L, i) => {
     const t = quiltType(L.type), where = (QUILT_AREAS.find(([k]) => k === L.area) || [null, ''])[1];
-    return `<div class="part-row layer${L.visible ? '' : ' hidden-layer'}" role="option" tabindex="0" aria-selected="${L.id === open}" data-act="qPick" data-arg="${L.id}">
-      <span class="part-ic"><span class="layer-sw" style="background:${L.color}"></span></span><span class="part-t"><b>${t.label}</b><span class="muted">${esc(where)}</span></span>
+    return `<div class="part-row layer${L.visible ? '' : ' hidden-layer'}" role="listitem" data-arg="${L.id}" aria-current="${L.id === open}">
+      <button class="part-pick" data-act="qPick" data-arg="${L.id}" aria-current="${L.id === open}"><span class="part-ic"><span class="layer-sw" style="background:${L.color}"></span></span><span class="part-t"><b>${t.label}</b><span class="muted">${esc(where)}</span></span></button>
       <button class="icon-btn sm eye" data-act="qToggleShow" data-arg="${i}" title="${L.visible ? 'Hide' : 'Show'}" aria-label="${L.visible ? 'Hide' : 'Show'} ${t.label}" aria-pressed="${!!L.visible}">${icon(L.visible ? 'eye' : 'eyeoff', 14)}</button></div>`;
   }).join('');
   return `<div class="panel-tools"><span class="pt-note">${plural(layers.length, 'layer')}</span><span class="grow"></span><button class="btn small" data-act="addLayerMenu" aria-haspopup="menu">${icon('plus', 14)} Add ${icon('down', 12)}</button></div>
-    ${layers.length ? `<div class="part-list" role="listbox" aria-label="Quilting layers">${rows}</div><p class="hint pad">Stitched from the top of the list down.</p>` : panelNote('No quilting planned yet.', ['addLayerMenu'], 'Add quilting')}`;
+    ${layers.length ? `<div class="part-list" role="list" aria-label="Quilting layers">${rows}</div><p class="hint pad">Stitched from the top of the list down.</p>` : panelNote('No quilting planned yet.', ['addLayerMenu'], 'Add quilting')}`;
 }
 // Properties in Quilting: the layer picked in the Layers panel.
 function quiltLayerProps() {
@@ -144,3 +145,5 @@ Actions.qMove = arg => {
 };
 
 registerPanel('layers', { title: 'Layers', short: 'Layers', icon: 'layers', ws: ['quilting'], render: quiltLayersPanel });
+
+Actions.qTool = t => { ui.qTool = t; saveUi(); renderView(); };

@@ -299,8 +299,5 @@ Actions.selSameFabric = () => { const b = activeBlock(), fabs = new Set(selList(
 Actions.selByFabric = f => { const b = activeBlock(); if (ui.tool !== 'select') ui.tool = 'select'; setSel(b.regions.map((r, i) => r.fab === f ? i : -1).filter(i => i >= 0)); renderView(); };
 
 // Small screens: every menu in one list (the menu bar doesn't fit)
-Actions.allMenus = (a, el) => {
-  const items = [{ label: 'Quilt name…', act: 'focusTitle' }];
-  for (const [k, name] of BAR_MENUS) { items.push('-', { header: name }); for (const it of MENUS[k]()) if (it !== '-' && !(it && it.header)) items.push(it); }
-  openMenu(el, items, { align: 'left' });
-};
+Actions.allMenus = (a, el) => openMenu(el, [{ label: 'Quilt name…', act: 'focusTitle' }, '-', ...BAR_MENUS.map(([k, name]) => ({ label: `${name} ›`, act: 'openNamedMenu', arg: k }))], { align: 'left' });
+Actions.openNamedMenu = k => { const el = $('#appbar [data-act="allMenus"]'); setTimeout(() => openMenu(el, [{ label: '‹ Menus', act: 'allMenus' }, '-', ...MENUS[k]()], { align: 'left' }), 20); };

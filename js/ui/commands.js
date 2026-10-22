@@ -13,7 +13,8 @@ function commandList() {
     try { items = MENUS[k](); } catch { items = []; }
     let head = '';
     for (const it of items) {
-      if (!it || it === '-') continue;
+      if (it === '-') { head = ''; continue; }
+      if (!it) continue;
       if (it.header) { head = it.header.replace(/<[^>]+>/g, ''); continue; }
       if (!it.act || it.disabled) continue;
       add({ label: it.label.replace(/<[^>]+>/g, '').trim(), path: `${name}${head ? ` › ${head}` : ''}`, act: it.act, arg: it.arg, kb: it.kb, checked: it.checked });
@@ -21,19 +22,23 @@ function commandList() {
   }
   VIEW_LIST.forEach((v, i) => add({ label: `Go to ${v.label}`, path: 'Workspace', act: 'view', arg: v.key, kb: String(i + 1) }));
   for (const [id, P] of Object.entries(Panels)) add({ label: `${dockFind(wsLayout(), id) ? 'Show' : 'Open'} the ${P.title} panel`, path: 'Window', act: 'openPanel', arg: id });
+  for (const p of (typeof quiltParts === 'function' ? quiltParts() : [])) add({ label: `${p.label} (quilt)`, path: 'Layout › Quilt panel', act: 'goQuiltPart', arg: p.key });
+  for (const [l, a, arg] of [['Rotate shapes 90°', 'selRotate', 'cw'], ['Flip shapes horizontally', 'selMirror', 'h'], ['Flip shapes vertically', 'selMirror', 'v'], ['Duplicate shapes', 'selDup'], ['Delete shapes', 'selDelete']]) if (ui.view === 'block' && selList().length) add({ label: l, path: 'Blocks › selection', act: a, arg });
   for (const id of doc.blockOrder) add({ label: `Open block: ${doc.blocks[id].name}`, path: 'Blocks', act: 'pickBlock', arg: id });
   doc.fabrics.forEach((f, i) => add({ label: `Fabric ${letterFor(i)}: ${f.name}`, path: 'Fabrics', act: 'fabricPopover', arg: f.id }));
   return out;
 }
+// Every word must match the command's name or menu path, directly or through one of its synonyms.
 function scoreCommand(c, q) {
   if (!q) return 1;
-  const hay = `${c.label} ${c.path} ${Object.entries(CMD_SYNONYMS).filter(([k]) => q.includes(k)).map(([, v]) => v).join(' ')}`.toLowerCase();
+  const label = c.label.toLowerCase(), path = c.path.toLowerCase(), wordStart = (t, w) => t.split(/[^a-z0-9½¼¾"]+/).some(x => x.startsWith(w));
   let s = 0;
   for (const w of q.split(/\s+/).filter(Boolean)) {
-    const syn = CMD_SYNONYMS[w] || '';
-    if (c.label.toLowerCase().startsWith(w)) s += 6;
-    else if (new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(c.label.toLowerCase())) s += 4;
-    else if (hay.includes(w) || (syn && syn.split(' ').some(x => c.label.toLowerCase().includes(x)))) s += 2;
+    const syns = (CMD_SYNONYMS[w] || '').split(' ').filter(Boolean);
+    if (label.startsWith(w)) s += 8;
+    else if (wordStart(label, w)) s += 5;
+    else if (syns.some(x => wordStart(label, x))) s += 3;
+    else if (wordStart(path, w)) s += 1;
     else return 0;
   }
   return s;
@@ -87,10 +92,10 @@ const SHORTCUTS = [
   ['Everywhere', [
     ['Ctrl K', 'Search commands, panels, blocks and fabrics'], ['1 – 5', 'Go to a workspace'], ['Ctrl Z', 'Undo'], ['Ctrl Shift Z  or  Ctrl Y', 'Redo'],
     ['Ctrl S', 'Save in this browser'], ['Ctrl Shift S', 'Save as'], ['Ctrl O', 'Open a saved quilt'], ['Ctrl P', 'Print the pattern'],
-    ['G', 'Value view (greys only)'], ['Ctrl .', 'Hide or show panels'], ['?', 'Help'], ['Alt + letter', 'Open a menu (Alt F = File…)'], ['Esc', 'Close a menu or dialog, cancel'],
+    ['G', 'Value view (greys only)'], ['Ctrl .', 'Hide or show panels'], ['F6  /  Shift F6', 'Move between the menus, tool options, tools, panels, canvas and status bar'], ['?', 'Help'], ['Alt + letter', 'Open a menu (Alt F = File…)'], ['Esc', 'Close a menu or dialog, cancel'],
   ]],
   ['Canvas (Blocks, Layout, Quilting)', [
-    ['Ctrl + scroll', 'Zoom at the pointer'], ['+  −', 'Zoom in or out'], ['0', 'Fit'], ['Scroll', 'Pan when zoomed in'], ['Space + drag  or  middle drag', 'Pan'],
+    ['H', 'Hand tool: drag to move around'], ['Z', 'Zoom tool: click to zoom in, Alt-click to zoom out'], ['Ctrl + scroll', 'Zoom at the pointer'], ['+  −', 'Zoom in or out'], ['0  or  Shift 1', 'Fit'], ['Scroll', 'Pan when zoomed in'], ['Space + drag  or  middle drag', 'Pan'],
   ]],
   ['Blocks', [
     ['V', 'Paint'], ['F', 'Fill'], ['S', 'Select'], ['E', 'Eraser (with shapes selected: rotate)'], ['P', 'Shape'], ['R', 'Rectangle'], ['T', 'Triangle'], ['C', 'Quarter circle'], ['K', 'Seam line'], ['L', 'Text'],
@@ -101,8 +106,9 @@ const SHORTCUTS = [
   ['Layout', [
     ['B', 'Place'], ['V', 'Paint'], ['S', 'Select'], ['R', 'Turn the block under the pointer or selected (Shift R: other way)'], ['F', 'Flip it'], ['Delete', 'Clear it'], ['Shift-click', 'Place mirrored'], ['Right-click', 'Clear a position'],
   ]],
-  ['Pattern', [['Ctrl P', 'Print or save as PDF']]],
-  ['Panels', [['Arrow keys on a tab', 'Next or previous panel in the group'], ['Delete on a tab', 'Close that panel'], ['Arrow keys on a divider', 'Resize (Enter resets)'], ['Ctrl .', 'Hide or show all panels']]],
+  ['Fabric & cutting, Pattern', [['V', 'Select (text on the page)'], ['H', 'Hand: drag the page'], ['Ctrl P', 'Print the pattern or save it as a PDF']]],
+  ['Length boxes', [['↑ ↓', 'Step ⅛" (0.5 cm); Shift 1" (1 cm); Alt 1/16" (1 mm)'], ['Esc', 'Put the old value back'], ['2-1/2  or  3 1/2 + 1/4', 'Quilting fractions and sums work; +1/4, *2 and 50% change the current value']]],
+  ['Panels', [['Arrow keys on a tab', 'Next or previous panel in the group'], ['Right-click a tab', 'Move, fold or close the panel'], ['Arrow keys on a divider', 'Resize (Enter or double-click resets)'], ['Ctrl .', 'Hide or show all panels']]],
 ];
 Actions.shortcuts = () => {
   openModal(`<h2>Keyboard shortcuts</h2><input type="text" class="sc-search" placeholder="Filter" aria-label="Filter shortcuts" data-input="scFilter">
@@ -114,3 +120,5 @@ function shortcutsHtml(q) {
   return SHORTCUTS.map(([g, rows]) => { const r = rows.filter(([k, d]) => !q || k.toLowerCase().includes(q) || d.toLowerCase().includes(q) || g.toLowerCase().includes(q)); return r.length ? `<h4>${g}</h4>${r.map(([k, d]) => `<div><kbd>${esc(k)}</kbd><span>${esc(d)}</span></div>`).join('')}` : ''; }).join('') || '<p class="hint">No shortcut matches.</p>';
 }
 Actions.scFilter = v => { const el = $('#sc-list'); if (el) el.innerHTML = shortcutsHtml(v); };
+
+Actions.goQuiltPart = k => { ui.quiltPart = k; ui.selCell = null; if (ui.view !== 'layout') ui.view = 'layout'; saveUi(); render(); Actions.openPanel('props'); };

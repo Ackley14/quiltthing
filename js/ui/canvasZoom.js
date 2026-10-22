@@ -55,7 +55,9 @@ function qzAttach(root) {
   }, { passive: false });
   // capture, so a pan drag never reaches the Layout tools
   svg.addEventListener('pointerdown', e => {
-    if (!(e.button === 1 || (_qz.space && e.button === 0))) return;
+    const nav = qzNavTool();
+    if (nav === 'zoom' && e.button === 0) { e.preventDefault(); e.stopImmediatePropagation(); qzSet(qzZoom() * (e.altKey ? 1 / 1.5 : 1.5), svgPoint(svg, e)); return; }
+    if (!(e.button === 1 || ((_qz.space || nav === 'hand') && e.button === 0))) return;
     e.preventDefault(); e.stopImmediatePropagation();
     _qz.pan = { x: e.clientX, y: e.clientY, k: 1 / svg.getScreenCTM().a };
     svg.setPointerCapture(e.pointerId);
@@ -84,3 +86,6 @@ document.addEventListener('keydown', e => {
 });
 document.addEventListener('keyup', e => { if (e.key === ' ' && _qz.space) { _qz.space = false; qzSvg()?.classList.remove('pan'); } });
 window.addEventListener('blur', () => { _qz.space = false; });
+
+// the Hand or Zoom tool, if one is chosen on this canvas
+function qzNavTool() { const t = ui.view === 'layout' ? ui.layoutTool : ui.view === 'quilting' ? (ui.qTool || 'hand') : null; return t === 'hand' || t === 'zoom' ? t : null; }
