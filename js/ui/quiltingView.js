@@ -68,7 +68,7 @@ Actions.qPick = id => { ui.qOpen = id; saveUi(); renderInspector(); renderHud();
 function qPickList(Q, L, i) {
   const blocks = L.area === 'pickBlocks', all = quiltPickables(Q)[blocks ? 'blocks' : 'fabrics'], on = new Set(quiltPicked(Q, L));
   if (!all.length) return `<p class="hint">${blocks ? 'No blocks are placed on the quilt.' : 'No plain fabric pieces on the quilt.'}</p>`;
-  const row = id => `<label class="check pick-row"><input type="checkbox" data-change="qPick" data-arg="${i}|${id}" ${on.has(id) ? 'checked' : ''}>
+  const row = id => `<label class="check pick-row"><input type="checkbox" data-change="qPickItem" data-arg="${i}|${id}" ${on.has(id) ? 'checked' : ''}>
     ${blocks ? blockThumb(doc.blocks[id], 22, 'mini') : swatchHtml(id, 18)}<span>${esc(blocks ? doc.blocks[id].name : fabricLabel(id))}</span></label>`;
   return `<div class="pick-list" role="group" aria-label="${blocks ? 'Blocks' : 'Fabrics'} to quilt">
     <div class="pick-h"><span>${blocks ? 'Blocks' : 'Fabrics'} <span class="muted">· ${on.size} of ${all.length}</span></span><span class="grow"></span><button class="btn small quiet" data-act="qPickAll" data-arg="${i}|1">All</button><button class="btn small quiet" data-act="qPickAll" data-arg="${i}|0">None</button></div>
@@ -76,7 +76,7 @@ function qPickList(Q, L, i) {
 }
 // a new Where starts with everything ticked
 Actions.qArea = (v, el) => { const L = doc.quilting.layers[+el.dataset.arg]; if (!L || L.area === v) return; L.area = v; delete L.pick; commit(`Quilting: ${(QUILT_AREAS.find(([k]) => k === v) || [, v])[1].toLowerCase()}`); };
-Actions.qPick = (v, el) => {
+Actions.qPickItem = (v, el) => {
   const [i, id] = el.dataset.arg.split('|'), L = doc.quilting.layers[+i]; if (!L) return;
   const cur = quiltPicked(Qnow(), L);
   L.pick = v ? [...new Set([...cur, id])] : cur.filter(x => x !== id);
