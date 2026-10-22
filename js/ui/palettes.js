@@ -51,7 +51,7 @@ Actions.palettes = () => (Panels.palettes ? Actions.openPanel('palettes') : rend
 Actions.palTab = t => { _palTab = t; refreshPalettes(); };
 Actions.usePalette = id => {
   const p = findPalette(id); if (!p) return;
-  applyPalette(p); commit(); refreshPalettes();
+  applyPalette(p); commit(`Palette: ${p.name}`); refreshPalettes();
   toast(`Using ${p.name}. Ctrl+Z undoes it.`);
 };
 Actions.deletePalette = id => {

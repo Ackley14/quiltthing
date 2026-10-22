@@ -91,7 +91,7 @@ Actions.openSaved = async id => {
     if (rec.refs) { Object.assign(refImgs, rec.refs); saveRefs(); }
     doc = upgradeDoc(JSON.parse(JSON.stringify(rec.doc)));
     ui.projectId = rec.id; sanitizeUi();
-    resetHistory(); saveNow(); render();
+    resetHistory(); _qz.layout = { z: 1 }; _qz.quilting = { z: 1 }; ed.zoom = 1; saveNow(); render();   // a quilt opens fitted
     toast(`Opened “${rec.name}”`);
   };
   confirmReplace(`Opening “${esc(rec.name)}” replaces it.`, 'Open', go);
@@ -121,5 +121,14 @@ async function confirmReplace(what, okLabel, go) {
   if (isPristineSample()) return go();
   const cur = ui.projectId && await getProject(ui.projectId).catch(() => null);
   if (cur && JSON.stringify(cur.doc) === snapshot()) return go();
-  confirmModal('Replace the open design?', `The design you have open now${cur ? ' has changes that aren\'t saved' : ' isn\'t saved in this browser'}. ${what}`, okLabel, go);
+  _replaceGo = go;
+  openModal(`<h2>Replace the open design?</h2><p>The design you have open now${cur ? ' has changes that aren\'t in its saved copy' : ' has no saved copy'}. ${what}</p>
+    <div class="actions"><button class="btn" data-act="closeModal">Cancel</button><span class="grow"></span><button class="btn" data-act="replaceSaveFirst" data-arg="${cur ? cur.id : ''}">Save a copy first</button><button class="btn danger" data-act="replaceGo">${esc(okLabel)}</button></div>`);
 }
+let _replaceGo = null;
+Actions.replaceGo = () => { const go = _replaceGo; _replaceGo = null; closeModal(); go?.(); };
+Actions.replaceSaveFirst = async id => {
+  const go = _replaceGo; _replaceGo = null; closeModal();
+  try { await saveProjectAs(doc.meta.title && doc.meta.title !== 'Untitled quilt' ? doc.meta.title : 'My quilt', id || undefined); } catch (err) { toast(`Couldn't save: ${err.message}`); return; }
+  go?.();
+};

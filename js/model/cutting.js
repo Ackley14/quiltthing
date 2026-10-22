@@ -875,7 +875,7 @@ function fabricInstructions(f) {
   for (const r of f.templates) {
     const inLeft = (f.sheet?.tplPlaced || []).filter(p => p.item.r === r && p.from);
     const perSrc = multi ? srcs.map(x => ({ x, n: x.L.tplPlaced.filter(p => p.item.r === r).length })).filter(o => o.n).map(o => `${fromWhat(o.x)}: ${o.n}.`) : [];
-    rows.push({ kind: 'template', head: `Cut ${r.units} × ${r.recipe.makes.toLowerCase()} from template`, parts: [...perSrc,
+    rows.push({ kind: 'template', head: /^template piece$/i.test(r.recipe.makes) ? `Cut ${r.units} from the template` : `Cut ${r.units} × ${r.recipe.makes.toLowerCase()} from the template`, parts: [...perSrc,
       ...(inLeft.length ? [(() => {
         const n = inLeft.length, st = uniq(inLeft.map(p => stepOf(p.from))).sort((a, b) => a - b);
         return `${n === r.units ? (n === 1 ? 'It fits' : 'All of them fit') : `${n} of them ${n === 1 ? 'fits' : 'fit'}`} in the leftover${st.length > 1 ? 's' : ''} from step${st.length > 1 ? 's' : ''} ${st.join(', ')}. See the map.`;

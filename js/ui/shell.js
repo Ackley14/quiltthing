@@ -209,7 +209,7 @@ function renderSaveState() {
   if (el.dataset.k === key) return;
   el.dataset.k = key;
   el.className = `save-state${bad ? ' bad' : ''}`;
-  el.innerHTML = saveStatus.paused ? `${icon('warn', 14)}<span>Saving paused</span>` : bad ? `${icon('warn', 14)}<span>Not saved</span>` : saveStatus.at ? `${icon('check', 14)}<span>Saved</span>` : '';
+  el.innerHTML = saveStatus.paused ? `${icon('warn', 14)}<span>Saving paused</span>` : bad ? `${icon('warn', 14)}<span>Not saved</span>` : saveStatus.at ? `${icon('check', 14)}<span>Autosaved</span>` : '';
   el.title = bad ? "This browser couldn't save the design. Download a project file to keep it." : 'Your work is kept as you go, in this browser';
 }
 // Document tabs above the canvas: the documents of this workspace.
@@ -553,8 +553,7 @@ Actions.newProject = () => {
     resetHistory(); saveNow(); render(); toast('New project started');
   };
   // replacing a sample nobody has changed needs no warning
-  if (isPristineSample()) go();
-  else confirmModal('Start a new project?', "This replaces the design you're working on. Save it first (File, Save) to keep it; quilts you've saved aren't affected.", 'Start new', go, true);
+  confirmReplace('Starting a new project replaces it.', 'Start new', go);
 };
 Actions.loadSample = () => confirmModal('Load the sample quilt?', "This replaces the design you're working on. Save it first (File, Save) to keep it; quilts you've saved aren't affected.", 'Load sample', () => {
   ui.projectId = null; loadSampleProject(); toast('Sample quilt loaded');

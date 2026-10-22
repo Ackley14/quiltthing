@@ -165,6 +165,7 @@ const MENUS = {
   help: () => [
     { label: 'How it works', act: 'help', kb: '?' },
     { label: 'Keyboard shortcuts', act: 'shortcuts' },
+    { label: 'Take the tour', act: 'startTour' },
     { label: "What's new and where things moved", act: 'whatsNew' },
     '-',
     { label: 'About', act: 'about' },

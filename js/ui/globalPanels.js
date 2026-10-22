@@ -77,6 +77,14 @@ function computeIssues() {
     for (const w of Q.warnings) list.push({ text: w, where: 'Layout', act: 'view', arg: 'layout' });
     doc.blockOrder.map(id => doc.blocks[id]).filter(b => b?.kind === 'drawn' && blockUseCount(b.id) && pieceProblems(b, blockFrameSize(b)).some(p => p.kind !== 'tiny'))
       .forEach(b => list.push({ text: `${b.name} needs set-in seams as drawn.`, where: 'Blocks', act: 'showSeamIssue', arg: b.id }));
+    // grid squares that aren't whole eighths of an inch make cut sizes that are rounded, so the block can finish a little off
+    for (const b of doc.blockOrder.map(id => doc.blocks[id]).filter(b => b?.kind === 'drawn' && !isHexBlock(b) && b.lattice !== 'tri' && blockUseCount(b.id))) {
+      const S = blockFrameSize(b), u = S / b.n;
+      if (Math.abs(u * 8 - Math.round(u * 8)) > 0.01) {
+        const ok = [...Array(64).keys()].map(k => (k + 1) / 8 * b.n).filter(s => s >= S * 0.8 && s <= S * 1.3).sort((x, y) => Math.abs(x - S) - Math.abs(y - S))[0];
+        list.push({ text: `${b.name}: its ${b.n} × ${b.n} grid makes ${u.toFixed(3).replace(/0+$/, '')}" squares, so cut sizes are rounded and the block may finish a little off.${ok ? ` A ${fmtLen(ok)} block works exactly.` : ''}`, where: 'Blocks', act: 'pickBlock', arg: b.id });
+      }
+    }
     const plan = cuttingPlan(Q);
     for (const w of plan.problems || []) list.push({ text: w, where: 'Fabric & cutting', act: 'view', arg: 'fabric' });
     if (doc.meta.title === 'Untitled quilt') list.push({ text: 'The quilt has no name yet. It goes on the pattern cover.', where: 'Pattern', act: 'focusTitle' });

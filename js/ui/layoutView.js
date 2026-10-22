@@ -700,7 +700,7 @@ function layoutInspector() {
         <div class="btn-row"><button class="btn small" data-act="panelFrameAdd" data-arg="${p.id}">${icon('plus', 14)} Frame</button></div></div>`;
       }).join('')}
       <div class="btn-row"><button class="btn small" data-act="addPanel">${icon('plus', 14)} Add panel</button></div>
-      ${panels.length ? '<p class="hint">Drag it with Select. Its edges snap to the block seams.</p>' : ''}
+      ${panels.length ? `<p class="hint">${doc.layout.mode === 'grid' ? 'Drag it with Select. Its edges snap to the block seams.' : doc.layout.mode === 'onpoint' ? 'Drag it with Select. On point, blocks under its edges are cut into partial pieces.' : 'Drag it with Select.'}</p>` : ''}
       ${L.mode !== 'tess' && Q.cells.some(c => c.b && c.clip) ? partialToggle() : ''}`, { key: 'panels', closed: !panels.length });
   }
 

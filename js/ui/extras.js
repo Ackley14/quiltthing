@@ -163,12 +163,14 @@ const TOUR = [
   ['#ws-tabs', 'Steps', 'Work moves left to right: draw blocks, lay out the quilt, plan the quilting, then fabric & cutting and the printed pattern. Keys 1 to 5 jump between them.'],
   ['[data-panel="fabrics"], .dstrip-b[data-arg="fabrics"]', 'Fabrics', 'Click a fabric to paint with it, and click it again to edit it. Palettes recolour the whole quilt at once.'],
   ['[data-panel="blocks"], .dstrip-b[data-arg="blocks"]', 'Blocks', 'Add blocks from the library or draw your own. In Layout, pick a block and click the quilt to place it.'],
+  ['[data-panel="quilt"], .dstrip-b[data-arg="quilt"]', 'The quilt', 'In Layout, the Quilt panel lists the parts: setting and size, sashing, borders, binding and background. Click one to change it in Properties.'],
   ['#toolstrip', 'Tools', 'Drawing and painting tools. The bar above the canvas shows the options for the tool you pick.'],
   ['#dock-right', 'Panels', 'Settings for whatever is selected are in Properties. Panels can be folded, moved or closed; the Window menu brings any panel back.'],
+  ['#ws-tabs [data-arg="pattern"]', 'Pattern', 'When the quilt is ready, Pattern makes the printable pattern: materials, cutting, block steps, assembly, quilting and binding.'],
   ['#appbar [data-act="commandPalette"]', 'Search', 'Press Ctrl K and type what you want to do, like "border", "print" or "palette". Your work saves as you go; File, Save keeps a named copy.'],
 ];
 let _tour = -1;
-Actions.startTour = () => { closeModal(); _tour = 0; showTour(); };
+Actions.startTour = () => { closeModal(); if (ui.view !== 'layout') Actions.view('layout'); _tour = 0; setTimeout(showTour, 60); };
 function showTour() {
   $('#tour')?.remove();
   if (_tour < 0 || _tour >= TOUR.length) { _tour = -1; return; }
@@ -293,3 +295,5 @@ function docToolChip() {
   const t = { hand: ['hand', 'Hand'], zoom: ['zoomin', 'Zoom'] }[ui.docTool];
   return t ? `<span class="tool-chip">${icon(t[0], 16)}${t[1]}</span><span class="sep"></span>` : '';
 }
+
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'doc-title') { e.preventDefault(); e.target.blur(); $('#main')?.focus({ preventScroll: true }); } }, true);

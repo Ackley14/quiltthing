@@ -307,7 +307,7 @@ Actions.importBlocks = () => {
 Actions.newBlock = () => { ui.snapOff = false; addBlockToDoc(newDrawnBlock(`Block ${doc.blockOrder.length + 1}`)); ui.view = 'block'; ui.tool = 'rect'; commit(); };
 Actions.newHexBlock = () => {
   ui.snapOff = false;
-  addBlockToDoc(newDrawnBlock(`Hexagon ${doc.blockOrder.length + 1}`, 6, 'hex'));
+  addBlockToDoc(newDrawnBlock(`Hexagon ${doc.blockOrder.filter(id => isHexBlock(doc.blocks[id])).length + 1}`, 6, 'hex'));
   ui.view = 'block'; ui.tool = 'tri';
   commit();
   if (!(doc.layout.mode === 'tess' && doc.layout.tess.shape === 'hex')) toast('Hexagon blocks fill the shapes of a Hexagons tessellation (Layout → Tessellation)', 4500);
@@ -328,6 +328,7 @@ function libraryFolders() {
     <div class="seg lib-format" role="group" aria-label="Format">${[['all', 'All shapes'], ['square', 'Square'], ['hex', 'Hexagon']].map(([k, l]) => `<button data-act="libFormat" data-arg="${k}" aria-pressed="${fmt === k}">${l}</button>`).join('')}</div>`;
 }
 Actions.libraryPicker = async () => {
+  ui.libSearch = '';
   if (ui.libCat !== 'mine' && !LIB_CATEGORIES.some(([k]) => k === ui.libCat)) ui.libCat = 'all';
   await loadSavedBlocks();
   openModal(`<h2>Block library</h2>
@@ -428,6 +429,9 @@ Actions.libFormat = v => { ui.libFormat = v; saveUi(); refreshLibrary(); };
 Actions.useLibrary = pid => {
   const p = LIBRARY.find(x => x.id === pid);
   if (!p) return;
+  // the empty starter block isn't needed once a real one comes in
+  const starter = doc.blockOrder.map(id => doc.blocks[id]).find(b => b.name === 'My first block' && b.kind === 'drawn' && !b.regions.length && !blockUseCount(b.id));
+  if (starter) { doc.blockOrder = doc.blockOrder.filter(id => id !== starter.id); delete doc.blocks[starter.id]; if (ui.activeBlock === starter.id) ui.activeBlock = null; if (ui.placeBlock === starter.id) ui.placeBlock = null; }
   const host = activeBlock();
   const b = instantiatePreset(p);
   addBlockToDoc(b, false);
