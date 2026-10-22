@@ -1365,6 +1365,7 @@ function blockInspector() {
   // the selection comes first, so it's always in view; its commands live on the bar beside it
   let selh = '';
   if (tsel) selh += textEditSection(b, tsel);
+  if (sel.length) selh += section('Position and size', selGeomFields(b, sel), { key: 'selgeom' });
   if (sel.length > 1) {
     const fabs = uniq(sel.map(i => b.regions[i].fab));
     selh += section(`${sel.length} shapes selected`, `<label class="f">Fabric</label>${fabricPicker(fabs.length === 1 ? fabs[0] : null, 'regionFab', { allowBg: true })}`, { key: 'selshape' });
@@ -1429,3 +1430,21 @@ Actions.polyDone = () => finishPolygon();
 Actions.polyCancel = () => { ui.drawing = []; ed.triPreview = null; refreshEditor(); renderToolbar(); };
 
 registerPanel('shapes', { title: 'Shapes', short: 'Shapes', icon: 'shapes', ws: ['block'], render: shapesPanel });
+
+// Position and size of the selection, in finished inches (or cm) from the block's top-left corner.
+function selGeomFields(b, sel) {
+  const bb = selBounds(b, sel), k = blockFrameSize(b) / b.n;
+  const f = (key, label, v) => `<label class="f">${label}<input type="text" inputmode="decimal" data-change="selGeom" data-arg="${key}" value="${esc(inputLen(v))}" aria-label="${label}" title="Accepts 4.5, 4 1/2, 4-1/2, +1/4, *2…"></label>`;
+  return `<div class="f-row geom">${f('x', 'X', bb.x * k)}${f('y', 'Y', bb.y * k)}</div><div class="f-row geom">${f('w', 'W', bb.w * k)}${f('h', 'H', bb.h * k)}</div>`;
+}
+Actions.selGeom = (v, el) => {
+  const b = activeBlock(), sel = selList(); if (!b || !sel.length) return;
+  const key = el.dataset.arg, bb = selBounds(b, sel), k = blockFrameSize(b) / b.n;
+  const cur = { x: bb.x, y: bb.y, w: bb.w, h: bb.h }[key] * k, n = parseLenExpr(v, cur);
+  if (!Number.isFinite(n) || (key === 'w' || key === 'h') && n <= 0) { lenFieldError(el, v); return; }
+  const g = n / k;   // grid units
+  const map = key === 'x' ? ([x, y]) => [x + g - bb.x, y] : key === 'y' ? ([x, y]) => [x, y + g - bb.y]
+    : key === 'w' ? ([x, y]) => [bb.x + (x - bb.x) * g / (bb.w || 1), y] : ([x, y]) => [x, bb.y + (y - bb.y) * g / (bb.h || 1)];
+  for (const i of sel) b.regions[i].pts = b.regions[i].pts.map(p => map(p).map(c => round(c, 5)));
+  commit({ x: 'Move shapes', y: 'Move shapes', w: 'Resize shapes', h: 'Resize shapes' }[key]);
+};

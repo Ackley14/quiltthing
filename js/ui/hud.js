@@ -13,7 +13,9 @@ const HUD_WIDGETS = {
   } },
   zoom: { label: 'Zoom', corner: 'br', ws: ['block', 'layout', 'quilting'], html: hudZoom },
 };
-const hudPref = id => ({ show: true, corner: HUD_WIDGETS[id].corner, ...(prefs.hud?.[id] || {}) });
+// Settings per workspace (prefs.hud[ws][id]); older settings saved for every workspace still count.
+const hudPref = (id, ws = curWs()) => ({ show: true, corner: HUD_WIDGETS[id].corner, order: Object.keys(HUD_WIDGETS).indexOf(id), ...(prefs.hud?.[id] || {}), ...(prefs.hud?.[ws]?.[id] || {}) });
+const hudFor = (ws = curWs()) => Object.keys(HUD_WIDGETS).filter(id => !HUD_WIDGETS[id].ws.length || HUD_WIDGETS[id].ws.includes(ws));
 function hudInfo() {
   if (ui.view === 'block') {
     const b = activeBlock(); if (!b) return '';
@@ -36,26 +38,36 @@ function hudZoom() {
 }
 function renderHud() {
   const hud = $('#hud'); if (!hud) return;
-  const corners = { tl: [], tr: [], bl: [], br: [] }, ws = curWs();
-  for (const [id, w] of Object.entries(HUD_WIDGETS)) {
+  const corners = { tl: [], tr: [], bl: [], br: [] };
+  for (const id of hudFor().sort((x, y) => hudPref(x).order - hudPref(y).order)) {
     const p = hudPref(id);
-    if (!p.show || (w.ws.length && !w.ws.includes(ws))) continue;
+    if (!p.show) continue;
     let h = '';
-    try { h = w.html(); } catch (e) { console.error(e); }
-    if (h) corners[p.corner in corners ? p.corner : w.corner].push(`<div class="hud-w" data-hud="${id}">${h}</div>`);
+    try { h = HUD_WIDGETS[id].html(); } catch (e) { console.error(e); }
+    if (h) corners[p.corner in corners ? p.corner : HUD_WIDGETS[id].corner].push(`<div class="hud-w" data-hud="${id}">${h}</div>`);
   }
   preserveFocus(hud, () => { hud.innerHTML = Object.entries(corners).map(([c, list]) => `<div class="hud-c ${c}">${list.join('')}</div>`).join(''); });
   hud.classList.toggle('with-rulers', !!prefs.rulers);
   if (typeof drawRulers === 'function') requestAnimationFrame(drawRulers);
 }
 Actions.hudCustomise = () => {
-  const row = id => { const p = hudPref(id); return `<div class="hud-row"><label class="check"><input type="checkbox" data-change="hudShow" data-arg="${id}" ${p.show ? 'checked' : ''}> ${HUD_WIDGETS[id].label}</label>
-    <select data-change="hudCorner" data-arg="${id}" aria-label="Corner for ${HUD_WIDGETS[id].label}">${[['tl', 'Top left'], ['tr', 'Top right'], ['bl', 'Bottom left'], ['br', 'Bottom right']].map(([k, l]) => `<option value="${k}" ${p.corner === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`; };
-  openModal(`<h2>Customise the canvas HUD</h2><p class="hint">Choose which controls float over the canvas, and in which corner.</p><div class="hud-rows">${Object.keys(HUD_WIDGETS).map(row).join('')}</div>
-    <div class="actions"><button class="btn" data-act="hudReset">Reset</button><button class="btn primary" data-act="closeModal">Done</button></div>`);
+  const ids = hudFor().sort((x, y) => hudPref(x).order - hudPref(y).order);
+  const row = (id, i) => { const p = hudPref(id); return `<div class="hud-row"><label class="check"><input type="checkbox" data-change="hudShow" data-arg="${id}" ${p.show ? 'checked' : ''}> ${HUD_WIDGETS[id].label}</label>
+    <select data-change="hudCorner" data-arg="${id}" aria-label="Corner for ${HUD_WIDGETS[id].label}">${[['tl', 'Top left'], ['tr', 'Top right'], ['bl', 'Bottom left'], ['br', 'Bottom right']].map(([k, l]) => `<option value="${k}" ${p.corner === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    <span class="hud-ord"><button class="icon-btn sm" data-act="hudOrder" data-arg="${id}|-1" ${i ? '' : 'disabled'} aria-label="Move ${HUD_WIDGETS[id].label} up" title="Earlier in its corner">${icon('up', 14)}</button><button class="icon-btn sm" data-act="hudOrder" data-arg="${id}|1" ${i < ids.length - 1 ? '' : 'disabled'} aria-label="Move ${HUD_WIDGETS[id].label} down" title="Later in its corner">${icon('down', 14)}</button></span></div>`; };
+  openModal(`<h2>Customise the canvas HUD</h2><p class="hint">For the ${esc(wsLabel(curWs()))} workspace: which controls float over the canvas, in which corner and in what order.</p><div class="hud-rows">${ids.map(row).join('')}</div>
+    <div class="actions"><button class="btn" data-act="hudReset">Reset</button><button class="btn" data-act="hudAll">Use for every workspace</button><span class="grow"></span><button class="btn primary" data-act="closeModal">Done</button></div>`);
 };
-const setHud = (id, patch) => { prefs.hud = { ...(prefs.hud || {}), [id]: { ...hudPref(id), ...patch } }; savePrefs(); renderHud(); };
+const setHud = (id, patch) => { const ws = curWs(); prefs.hud = { ...(prefs.hud || {}), [ws]: { ...(prefs.hud?.[ws] || {}), [id]: { ...hudPref(id), ...patch } } }; savePrefs(); renderHud(); };
 Actions.hudShow = (v, el) => setHud(el.dataset.arg, { show: !!v });
 Actions.hudCorner = (v, el) => setHud(el.dataset.arg, { corner: v });
 Actions.hudToggle = id => setHud(id, { show: !hudPref(id).show });
-Actions.hudReset = () => { prefs.hud = {}; savePrefs(); renderHud(); closeModal(); toast('The HUD is back to its starting setup'); };
+Actions.hudOrder = arg => {
+  const [id, d] = arg.split('|'), ids = hudFor().sort((x, y) => hudPref(x).order - hudPref(y).order), i = ids.indexOf(id), j = i + +d;
+  if (j < 0 || j >= ids.length) return;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  ids.forEach((x, k) => setHud(x, { order: k }));
+  Actions.hudCustomise();
+};
+Actions.hudAll = () => { const cur = Object.fromEntries(Object.keys(HUD_WIDGETS).map(id => [id, hudPref(id)])); for (const v of VIEW_LIST) prefs.hud = { ...(prefs.hud || {}), [v.key]: cur }; savePrefs(); renderHud(); toast('Every workspace uses this HUD setup'); };
+Actions.hudReset = () => { const ws = curWs(); if (prefs.hud) delete prefs.hud[ws]; savePrefs(); renderHud(); closeModal(); toast('The HUD is back to its starting setup here'); };

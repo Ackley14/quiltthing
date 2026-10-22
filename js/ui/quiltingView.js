@@ -25,7 +25,7 @@ function quiltLayersPanel() {
   const layers = doc.quilting.layers, open = layers.find(L => L.id === ui.qOpen) ? ui.qOpen : layers[0]?.id;
   const rows = layers.map((L, i) => {
     const t = quiltType(L.type), where = (QUILT_AREAS.find(([k]) => k === L.area) || [null, ''])[1];
-    return `<div class="part-row layer${L.visible ? '' : ' hidden-layer'}" role="listitem" data-arg="${L.id}" aria-current="${L.id === open}">
+    return `<div class="part-row layer${L.visible ? '' : ' hidden-layer'}" role="listitem" data-arg="${L.id}" data-li="${i}" draggable="true" aria-current="${L.id === open}">
       <button class="part-pick" data-act="qPick" data-arg="${L.id}" aria-current="${L.id === open}"><span class="part-ic"><span class="layer-sw" style="background:${L.color}"></span></span><span class="part-t"><b>${t.label}</b><span class="muted">${esc(where)}</span></span></button>
       <button class="icon-btn sm eye" data-act="qToggleShow" data-arg="${i}" title="${L.visible ? 'Hide' : 'Show'}" aria-label="${L.visible ? 'Hide' : 'Show'} ${t.label}" aria-pressed="${!!L.visible}">${icon(L.visible ? 'eye' : 'eyeoff', 14)}</button></div>`;
   }).join('');
@@ -147,3 +147,17 @@ Actions.qMove = arg => {
 registerPanel('layers', { title: 'Layers', short: 'Layers', icon: 'layers', ws: ['quilting'], render: quiltLayersPanel });
 
 Actions.qTool = t => { ui.qTool = t; saveUi(); renderView(); };
+
+// drag a layer row onto another to move it there (Move up/down in Properties does the same)
+let _layerDrag = null;
+document.addEventListener('dragstart', e => { const r = e.target.closest?.('.part-row.layer[data-li]'); if (r) { _layerDrag = +r.dataset.li; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', 'layer'); } });
+document.addEventListener('dragover', e => { const r = _layerDrag != null && e.target.closest?.('.part-row.layer[data-li]'); if (r) { e.preventDefault(); $$('.part-row.layer').forEach(x => x.classList.toggle('drop-here', x === r)); } });
+document.addEventListener('drop', e => {
+  const r = _layerDrag != null && e.target.closest?.('.part-row.layer[data-li]'); if (!r) return;
+  e.preventDefault();
+  const from = _layerDrag, to = +r.dataset.li, L = doc.quilting.layers; _layerDrag = null;
+  if (from === to) return;
+  const [m] = L.splice(from, 1); L.splice(to, 0, m);
+  commit('Reorder quilting layers');
+});
+document.addEventListener('dragend', () => { _layerDrag = null; $$('.part-row.layer.drop-here').forEach(x => x.classList.remove('drop-here')); });
