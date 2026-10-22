@@ -481,15 +481,19 @@ Actions.panelFrameAdd = id => { const p = panelById(id); p.frames = p.frames || 
 Actions.panelFrameRemove = arg => { const [id, k] = arg.split('|'); panelById(id).frames.splice(+k, 1); commit(); };
 Actions.panelFrameFab = arg => { const [id, k, fab] = arg.split('|'); panelById(id).frames[+k].fabric = fab; commit(); };
 Actions.onpointFill = id => { const op = doc.layout.onpoint; op.fill = id; for (const k of Object.keys(op.cells)) if (op.cells[k]?.fab && !Qnow().cells.some(c => c.key === 'o' + k)) delete op.cells[k]; commit(); };
+// Fill patterns use any mix of fabrics and blocks, one alone included, but never nothing at all.
+const FILL_EMPTY = 'Pick at least one fabric or block to fill with';
 Actions.tessToggleSet = id => {
-  const set = paintSet();
-  ui.tessPaintSet = set.includes(id) ? set.filter(x => x !== id) : [...set, id];
+  const set = paintSet(), next = set.includes(id) ? set.filter(x => x !== id) : [...set, id];
+  if (!next.length && !blockSet().length) { toast(FILL_EMPTY, 1800); return; }
+  ui.tessPaintSet = next;
   saveUi(); renderInspector();
 };
 function paintSet() {
   const ids = doc.fabrics.map(f => f.id);
   const set = (ui.tessPaintSet || ids.filter(id => id !== doc.layout.background)).filter(id => ids.includes(id));
-  return set.length ? set : ids.slice(0, 2);
+  // no fabrics is fine alongside blocks; with neither, fall back to the first two fabrics
+  return set.length || blockSet().length ? set : ids.slice(0, 2);
 }
 // Hexagon blocks that can go in this tessellation (only hexagon tiles take blocks).
 const tessBlocksOk = () => doc.layout.tess.shape === 'hex';
@@ -498,8 +502,9 @@ function blockSet() {
   return (ui.tessBlockSet || []).filter(id => doc.blocks[id] && isHexBlock(doc.blocks[id]));
 }
 Actions.tessToggleBlock = id => {
-  const set = blockSet();
-  ui.tessBlockSet = set.includes(id) ? set.filter(x => x !== id) : [...set, id];
+  const set = blockSet(), next = set.includes(id) ? set.filter(x => x !== id) : [...set, id];
+  if (!next.length && !paintSet().length) { toast(FILL_EMPTY, 1800); return; }
+  ui.tessBlockSet = next;
   saveUi(); renderInspector();
 };
 // Fill every shape with one fabric (it replaces any blocks there too).
@@ -662,7 +667,7 @@ function layoutInspector() {
       ${tessBlocksOk() ? `<div class="fill-group"><div class="fill-h">${icon('blocks', 14)} Blocks</div>
         ${hexBlocks.length ? `<div class="blkpick" role="group" aria-label="Blocks to fill with">${hexBlocks.map(id => `<button aria-pressed="${bset.includes(id)}" data-act="tessToggleBlock" data-arg="${id}" title="${esc(doc.blocks[id].name)}" aria-label="${esc(doc.blocks[id].name)}">${blockThumb(doc.blocks[id], 34, 'mini')}</button>`).join('')}</div>`
           : '<p class="hint">No hexagon blocks yet. Make one in Blocks (Add, Hexagon block).</p>'}</div>` : ''}
-      <div class="fill-group"><div class="fill-h">Arrange <span class="muted">· ${plural(set.length, 'fabric')}${bset.length ? ` and ${plural(bset.length, 'block')}` : ''}</span></div>
+      <div class="fill-group"><div class="fill-h">Arrange <span class="muted">· ${[set.length ? plural(set.length, 'fabric') : '', bset.length ? plural(bset.length, 'block') : ''].filter(Boolean).join(' and ')}</span></div>
         <div class="btn-row">${[['random', 'Random'], ['rows', 'Rows'], ['cols', 'Columns'], ['diag', 'Diagonals'], ['rings', 'Rings'], ['gradient', 'Gradient'], ['orient', 'By direction']].map(([k, l]) => `<button class="btn small" data-act="tessPattern" data-arg="${k}">${l}</button>`).join('')}<button class="btn small" data-act="tessPattern" data-arg="shuffle" title="Random again, differently">Shuffle</button></div></div>
       <div class="btn-row fill-end"><button class="btn small" data-act="tessFillAll" title="Every shape in one fabric (the fabric you paint with)">${swatchHtml(fillFab, 14)} Fill all with ${esc(fabricLabel(fillFab))}</button><button class="btn small quiet danger" data-act="clearLayout">Clear all</button></div>`, { key: 'tessfill' });
   }
