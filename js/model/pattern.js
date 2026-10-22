@@ -121,22 +121,55 @@ function labelSpot(pts, holes = [], avoid = []) {
 }
 
 // Block diagram with fabric letters, or piece codes when opts.codes is given (size in inches on paper).
+// opts.sa with opts.level: each sewn part is drawn at its cut size, like the real thing. Its outer
+// edges carry on to the raw edge sa beyond (each seam running straight on), with the finished
+// outline dashed. Parts that are neither rectangles nor convex are drawn finished.
 function blockDiagramSvg(block, BS, paperIn, opts = {}) {
   const an = analyzeBlock(block, BS);
-  const gap = opts.level ? BS * 0.06 : 0;
+  const sa = opts.level && opts.sa || 0;
+  const gap = opts.level ? BS * 0.06 + 2 * sa : 0;
   const placed = opts.level ? explodedPieces(an, opts.level, gap) : blockPieces(block, BS, BS).filter(p => !p.app).map(p => ({ p, dx: 0, dy: 0 }));
   const app = an.applique;
-  let maxX = BS, maxY = BS;
-  for (const { p, dx, dy } of placed) { maxX = Math.max(maxX, p.bb.maxX + dx); maxY = Math.max(maxY, p.bb.maxY + dy); }
-  const minX = Math.min(0, ...placed.map(x => x.p.bb.minX + x.dx)), minY = Math.min(0, ...placed.map(x => x.p.bb.minY + x.dy));
+  // each sewn part at this step, at cut size: a rectangle (any pieces, curved too) or a convex part
+  // of straight-edged pieces. x.face is what a piece shows; parts of other shapes stay finished.
+  const parts = [];
+  if (sa) {
+    const byPart = new Map();
+    for (const x of placed) { x.face = translatePoly(x.p.pts, x.dx, x.dy); if (!byPart.has(x.part)) byPart.set(x.part, []); byPart.get(x.part).push(x); }
+    for (const list of byPart.values()) {
+      const bb = bounds(list.flatMap(x => x.face));
+      const area = sum(list, x => polyArea(x.p.pts) - sum(x.p.holes, h => polyArea(h)));
+      if (Math.abs(bb.w * bb.h - area) < 1e-3 * bb.w * bb.h) {
+        const g = { sa, W: bb.w, H: bb.h, UW: bb.w + 2 * sa, UH: bb.h + 2 * sa }, ox = bb.minX - sa, oy = bb.minY - sa;
+        for (const x of list) x.face = translatePoly(howtoExtend(g, translatePoly(x.face, -ox, -oy)), ox, oy);
+        parts.push({ list, cut: rectPts(ox, oy, g.UW, g.UH), fin: rectPts(bb.minX, bb.minY, bb.w, bb.h) });
+      } else if (list.every(x => !x.p.holes.length)) {
+        const c = howtoConvexCut(list.map(x => x.face), sa);
+        if (!c) continue;
+        list.forEach((x, i) => { x.face = c.faces[i]; });
+        parts.push({ list, cut: c.cut, fin: c.hull });
+      }
+    }
+  }
+  let maxX = BS, maxY = BS, minX = 0, minY = 0;
+  for (const { p, dx, dy } of placed) {
+    maxX = Math.max(maxX, p.bb.maxX + dx); maxY = Math.max(maxY, p.bb.maxY + dy);
+    minX = Math.min(minX, p.bb.minX + dx); minY = Math.min(minY, p.bb.minY + dy);
+  }
+  for (const { cut } of parts) for (const [x, y] of cut) { maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); minX = Math.min(minX, x); minY = Math.min(minY, y); }
   const W = maxX - minX, H = maxY - minY;
   const scale = paperIn / Math.max(W, H);
   const hair = BS * 0.004;
   let s = `<svg class="diag" viewBox="${round(minX, 3)} ${round(minY, 3)} ${round(W, 3)} ${round(H, 3)}" width="${round(W * scale, 3)}in" height="${round(H * scale, 3)}in">`;
-  for (const { p, dx, dy, unit } of placed) {
-    const hi = opts.highlight && unit && opts.highlight.has(unit);
-    const pts = translatePoly(p.pts, dx, dy);
-    s += `<path d="${polyToPath(pts)}${p.holes.map(hh => polyToPath(translatePoly(hh, dx, dy))).join('')}" fill="${fabricFill(p.fab)}" fill-rule="evenodd" stroke="#2b3a4a" stroke-width="${hair}"${opts.dim && !hi ? ' opacity=".35"' : ''}/>`;
+  const faded = (unit) => opts.dim && !(opts.highlight && unit && opts.highlight.has(unit)) ? ' opacity=".35"' : '';
+  for (const { p, dx, dy, unit, face } of placed) {
+    const pts = face || translatePoly(p.pts, dx, dy);
+    s += `<path d="${polyToPath(pts)}${p.holes.map(hh => polyToPath(translatePoly(hh, dx, dy))).join('')}" fill="${fabricFill(p.fab)}" fill-rule="evenodd" stroke="#2b3a4a" stroke-width="${hair}"${faded(unit)}/>`;
+  }
+  for (const { list, cut, fin } of parts) {
+    const op = list.some(x => !faded(x.unit)) ? '' : ' opacity=".35"';
+    s += `<path d="${polyToPath(cut)}" fill="none" stroke="#2b3a4a" stroke-width="${hair * 1.5}" stroke-linejoin="miter" stroke-miterlimit="20"${op}/>`
+      + `<path d="${polyToPath(fin)}" fill="none" stroke="${HOWTO_GREY}" stroke-width="${hair * 1.2}" stroke-dasharray="${hair * 4} ${hair * 3}"${op}/>`;
   }
   if (!opts.level) for (const p of app) s += `<path d="${polyToPath(p.pts)}" fill="${fabricFill(p.fab)}" stroke="#2b3a4a" stroke-width="${hair}" stroke-dasharray="${hair * 3} ${hair * 2}"/>`;
   if (opts.letters !== false) {
@@ -301,7 +334,7 @@ function blockStepsHtml(block, BS, sa, copies = 1) {
     steps.push({ text, diag: blockDiagramSvg(block, BS, STEP_DIAG_IN, { level: an.height + 1, highlight: new Set(list), dim: true }) });
   }
   // lay everything out first; the bias note is said once
-  if (an.height > 0) steps.push({ text: 'Lay out the units and pieces as in the block picture, checking that every triangle and goose points the right way.', diag: blockDiagramSvg(block, BS, STEP_DIAG_IN, { level: an.height + 1 }) });
+  if (an.height > 0) steps.push({ text: 'Lay out the units and pieces as in the block picture, checking that every triangle and goose points the right way.', diag: blockDiagramSvg(block, BS, STEP_DIAG_IN, { level: an.height + 1, sa }) });
   let biasSaid = false;
   for (let k = 1; k <= an.height; k++) {
     const nodes = [];
@@ -327,7 +360,7 @@ function blockStepsHtml(block, BS, sa, copies = 1) {
     if (isRoot) text += isHexBlock(block) ? ` Press, then trim it to a ${blockSizeText(block, BS, 2 * sa)}, ${fmtLen(sa)} beyond each point of the sewn shape.` : ` Press. The block should measure ${fmtSize(BS + 2 * sa, BS + 2 * sa)}; trim only if it's larger, keeping ${fmtLen(sa)} beyond any points.`;
     else if ((descr.cols || 0) > 1 || nodes.filter(nd => nd.dir === 'cols').length > 1) text += ' Press the seams of each row the opposite way to the row before, so they nest when the rows are joined.';
     else if (descr.cols || descr.rows) text += ' Press toward the darker fabric.';
-    steps.push({ text, diag: blockDiagramSvg(block, BS, STEP_DIAG_IN, { level: k }) });
+    steps.push({ text, diag: blockDiagramSvg(block, BS, STEP_DIAG_IN, { level: k, sa }) });
   }
   if (an.applique.length) steps.push(...appliqueSteps(block, BS, sa, an));
   if (!steps.length) steps.push({ text: `This block is a single piece. Cut it at ${isHexBlock(block) ? blockSizeText(block, BS, 2 * sa) : fmtSize(BS + 2 * sa, BS + 2 * sa)}.`, diag: '' });

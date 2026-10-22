@@ -580,18 +580,27 @@ function clipHalfplane(poly, n, off, keepAbove) {
   return out;
 }
 
-// Piece offsets for an "exploded" diagram: nodes of height ≥ level have their children
-// pulled apart along the node's split normal (offsets accumulate down the tree).
+// Piece offsets for an "exploded" diagram: nodes of height ≥ level have their children pulled
+// apart along the node's split normal. Children are spaced by their own exploded extent, so
+// `gap` separates them however deep the tree goes (a log cabin's spiral). Each entry's `part` is
+// the sewn part it belongs to at this level: the largest node that isn't pulled apart.
 function explodedPieces(analysis, level, gap) {
-  const out = [];
-  const acc = (node, dx, dy) => {
-    if (!node.children.length) { for (const p of node.pieces) out.push({ p, dx, dy, unit: node }); return; }
-    const h = treeHeight(node);
-    node.children.forEach((c, i) => {
-      const k = h >= level ? i * gap : 0;
-      acc(c, dx + node.normal[0] * k, dy + node.normal[1] * k);
+  const lay = node => {
+    if (!node.children.length) return node.pieces.map(p => ({ p, dx: 0, dy: 0, unit: node }));
+    const apart = treeHeight(node) >= level, [nx, ny] = node.normal;
+    let prev = null;
+    return node.children.flatMap(c => {
+      const list = lay(c);
+      if (!apart) return list;
+      let lo = Infinity, hi = -Infinity;
+      for (const x of list) { x.part ??= c; for (const q of x.p.pts) { const s = nx * (q[0] + x.dx) + ny * (q[1] + x.dy); lo = Math.min(lo, s); hi = Math.max(hi, s); } }
+      const k = prev === null ? 0 : prev + gap - lo;
+      for (const x of list) { x.dx += nx * k; x.dy += ny * k; }
+      prev = hi + k;
+      return list;
     });
   };
-  acc(analysis.root, 0, 0);
+  const out = lay(analysis.root);
+  for (const x of out) x.part ??= analysis.root;
   return out;
 }

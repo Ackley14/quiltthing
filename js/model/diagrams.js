@@ -292,6 +292,33 @@ function howtoFaces(g, list = g.pieces) {
     return { pts: f, fab: p.fab };
   });
 }
+// convex hull (monotone chain), collinear points dropped
+function howtoHull(pts) {
+  const p = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const half = list => { const h = []; for (const q of list) { while (h.length > 1 && cr(h[h.length - 2], h[h.length - 1], q) <= 1e-12) h.pop(); h.push(q); } h.pop(); return h; };
+  return [...half(p), ...half(p.slice().reverse())];
+}
+// A convex sewn part of convex straight-edged pieces (lists of points) at cut size: the part grown
+// by d with sharp corners, each piece filling it up to its own seams, which carry straight on to
+// the raw edge. → { cut, hull, faces } or null when the part or a piece isn't convex.
+function howtoConvexCut(pieces, d) {
+  const hull = howtoHull(pieces.flat()), A = polyArea(hull), tol = 1e-3 * A;
+  if (hull.length < 3 || Math.abs(A - sum(pieces, polyArea)) > tol) return null;
+  const e = 1e-4 * Math.sqrt(A), off = (p, a, b) => Math.abs((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])) / dist(a, b);
+  const onHull = (a, b) => hull.some((h, i) => { const k = hull[(i + 1) % hull.length]; return off(a, h, k) < e && off(b, h, k) < e; });
+  const cut = howtoGrow(hull, d), faces = [];
+  for (const pts of pieces) {
+    const q = howtoCorners(pts);
+    if (Math.abs(polyArea(howtoHull(q)) - polyArea(q)) > tol) return null;
+    const c = centroid(q);
+    let f = cut;
+    q.forEach((a, i) => { const b = q[(i + 1) % q.length]; if (!onHull(a, b) && f.length) f = howtoClip(f, a, b, c); });
+    if (!f.length) return null;
+    faces.push(f);
+  }
+  return { cut, hull, faces };
+}
 // A piece (any shape, curved too) as it shows in the sewn unit: edges on the finished outline move
 // out to the raw edge, and where a seam meets the finished outline it carries straight on (along
 // its end direction) to the raw edge, so a point stays sa in from the edge.
