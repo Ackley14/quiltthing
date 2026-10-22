@@ -491,6 +491,7 @@ document.addEventListener('click', e => {
 function toast(msg, ms = 2600) {
   for (const old of $$('#toast-root .toast:not(.has-act)')) old.remove();   // one message at a time (one with a button keeps its place)
   const t = document.createElement('div');
+  t._at = Date.now();
   t.className = 'toast';
   t.setAttribute('role', 'status');
   const span = document.createElement('span'); span.textContent = msg; t.appendChild(span);
@@ -503,7 +504,7 @@ function toast(msg, ms = 2600) {
 Actions.view = v => {
   if (v === 'cutting') { v = 'fabric'; ui.fabPane = 'cut'; }
   if (v === 'pattern' && ui.view !== 'pattern' && typeof _patAnchor !== 'undefined') { _patAnchor = null; $('#main').scrollTop = 0; }
-  ui.view = v; ui.drawing = []; dockSession.flyout = null; for (const t of $$('#toast-root .toast')) if (!t.querySelector('.toast-act')) t.remove(); saveUi(); render(); $('#main').focus({ preventScroll: true }); };
+  ui.view = v; ui.drawing = []; dockSession.flyout = null; for (const t of $$('#toast-root .toast')) if (!t.querySelector('.toast-act') && Date.now() - (t._at || 0) > 500) t.remove(); saveUi(); render(); $('#main').focus({ preventScroll: true }); };   // a message from the command that switched stays
 // say what was undone, so a change in another workspace isn't silent
 Actions.undo = () => { const l = histLabels.past[histLabels.past.length - 1]; if (!undo()) toast('Nothing to undo'); else if (l) toast(`Undo: ${l}`, 1600); };
 Actions.redo = () => { const l = histLabels.future[histLabels.future.length - 1]; if (!redo()) toast('Nothing to redo'); else if (l) toast(`Redo: ${l}`, 1600); };
