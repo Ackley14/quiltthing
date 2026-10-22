@@ -612,3 +612,14 @@ details.more[open] summary::before { transform: rotate(45deg); }
 .seam-flag { position: sticky; bottom: 42px; align-self: flex-start; margin: -34px 0 0 14px; flex: none; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 8px; border: 1px solid #e3c98f; background: #fdf6e7; color: #b5482f; cursor: pointer; box-shadow: var(--shadow); z-index: 2; }
 .seam-flag:hover { background: #fbecc9; }
 .seam-flag[hidden] { display: none; }
+
+/* 3.26: zoomed quilt canvases pan with Space-drag or the middle button */
+.canvas-wrap svg.quilt-svg.pan { cursor: grab; }
+.canvas-wrap svg.quilt-svg.panning { cursor: grabbing; }
+
+/* 3.26: eraser: what's under the pointer is washed out and outlined before it goes (drawn in the
+   overlay; a CSS opacity change on pattern-filled shapes froze Chrome) */
+.editor.tool-erase, .editor.tool-fill, .editor.tool-fill [data-region] { cursor: crosshair; }
+.editor.tool-erase [data-region] { cursor: pointer; }
+.editor .erase-hover { fill: rgba(255,255,255,.5); stroke: #b5482f; pointer-events: none; }
+.editor.tool-erase [data-seam]:hover { stroke: rgba(181,72,47,.55); }

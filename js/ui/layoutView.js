@@ -102,8 +102,8 @@ function refreshLayoutCanvas() {
   const tmp = document.createElement('div');
   tmp.innerHTML = layoutCanvasSvg(Qnow());
   const n = tmp.firstElementChild;
-  svg.setAttribute('viewBox', n.getAttribute('viewBox'));
   svg.innerHTML = n.innerHTML;
+  qzRebase(svg, n.getAttribute('viewBox'));
 }
 function layoutCountText(Q) {
   const blocks = Q.cells.filter(c => c.b).length, plain = Q.cells.filter(c => c.fab).length;

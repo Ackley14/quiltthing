@@ -98,7 +98,9 @@ const MENUS = {
       { label: 'Zoom out', act: 'edZoomBy', arg: 'out', kb: '−' },
       { label: 'Fit the block', act: 'edZoomBy', arg: 'fit', kb: '0' });
     if (v === 'layout') items.push(tick('Piece outlines', 'toggleUi', 'seamLines', ui.seamLines), { ...tick('Quilting lines', 'toggleUi', 'showQuilting', ui.showQuilting), disabled: !doc.quilting.layers.length });
+    const qzItems = ['-', { label: 'Zoom in', act: 'qZoomBy', arg: 'in', kb: '+' }, { label: 'Zoom out', act: 'qZoomBy', arg: 'out', kb: '−' }, { label: 'Fit the quilt', act: 'qZoomBy', arg: 'fit', kb: '0' }];
     if (v === 'quilting') items.push('-', tick('Front', 'qSide', 'front', ui.qSide !== 'back'), tick('Back', 'qSide', 'back', ui.qSide === 'back'), tick('Fade quilt', 'toggleUi', 'qFade', ui.qFade));
+    if (v === 'layout' || v === 'quilting') items.push(...qzItems);
     if (v === 'fabric' || v === 'cutting') items.push('-', tick('Shopping list', 'fabPane', 'shop', ui.fabPane !== 'cut'), tick('Cutting plan', 'fabPane', 'cut', ui.fabPane === 'cut'), tick('Cutting maps', 'toggleCutMaps', undefined, ui.cutDiagrams !== false));
     return items;
   },
