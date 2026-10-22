@@ -525,7 +525,7 @@ Actions.tessPattern = kind => {
   const L = doc.layout, Q = Qnow(), items = [...paintSet().map(id => ({ fab: id })), ...blockSet().map(id => ({ b: id }))];
   if (kind === 'shuffle') { L.tess.seed = (L.tess.seed || 1) + 1; kind = 'random'; }
   const R = rng(L.tess.seed || 1);
-  const tiles = tessAllShapes(), whole = new Set(Q.tiles.filter(t => t.role === 'tile').map(t => t.tkey).concat(Q.cells.filter(c => c.hex && !c.clip).map(c => c.key.slice(1))));
+  const tiles = tessAllShapes();
   const rows = tiles.map(t => t.row), minR = Math.min(...rows), maxR = Math.max(...rows);
   const cx = Q.W / 2, cy = Q.H / 2;
   L.tess.blocks = L.tess.blocks || {};
@@ -540,8 +540,7 @@ Actions.tessPattern = kind => {
     else if (kind === 'orient') i = t.orient;
     else if (kind === 'gradient') i = Math.floor((t.row - minR) / (maxR - minR + 1) * items.length);
     let it = items[((i % items.length) + items.length) % items.length];
-    // a block only goes in a whole hexagon; a cut-off edge shape takes the first fabric instead
-    if (it.b && !whole.has(t.tkey)) it = items.find(x => x.fab) || { fab: L.tess.base };
+    // edge shapes take blocks too: a cut-off hexagon is made as a partial block, trimmed to shape
     if (it.b) { L.tess.blocks[t.tkey] = { b: it.b, r: 0, f: false }; delete L.tess.colors[t.tkey]; }
     else { L.tess.colors[t.tkey] = it.fab; delete L.tess.blocks[t.tkey]; }
   }
