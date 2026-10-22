@@ -33,7 +33,7 @@ const dockLocked = () => !!prefs.lockLayout;
 // Narrow windows: side columns start as icon strips (left first) so the canvas keeps its room.
 function autoCollapsed(zone, ci) {
   if (dockSession.expanded.has(`${curWs()}|${zone}|${ci}`) || innerWidth <= 900) return false;
-  return innerWidth < 1000 || (innerWidth < 1280 && zone === 'left');
+  return innerWidth < 1000 || (innerWidth < 1100 && zone === 'left');
 }
 const colCollapsed = (c, zone, ci) => c.collapsed || autoCollapsed(zone, ci);
 
@@ -246,7 +246,7 @@ Actions.resetLayout = which => {
   dockSession.flyout = null; dockSession.hidden = false; dockSession.expanded.clear(); saveDock(); dockSession.sig = ''; render();
   toast(which === 'all' ? 'Every workspace is back to its starting layout' : 'This workspace is back to its starting layout');
 };
-Actions.toggleHidePanels = () => { dockSession.hidden = !dockSession.hidden; dockSession.sig = ''; render(); renderStatus(); announce(dockSession.hidden ? 'Panels hidden. Ctrl+. shows them.' : 'Panels shown'); };
+Actions.toggleHidePanels = () => { dockSession.hidden = !dockSession.hidden; dockSession.sig = ''; render(); announce(dockSession.hidden ? 'Panels hidden. Ctrl+. shows them.' : 'Panels shown'); };
 Actions.toggleLockLayout = () => { prefs.lockLayout = !prefs.lockLayout; savePrefs(); dockSession.sig = ''; render(); toast(prefs.lockLayout ? 'Layout locked: panels can be resized and folded but not moved' : 'Layout unlocked'); };
 Actions.toggleDrawer = side => {
   dockSession.drawer = dockSession.drawer === side ? null : side; document.body.dataset.drawer = dockSession.drawer || '';
@@ -427,7 +427,7 @@ function dockDropTarget(x, y) {
   return null;
 }
 /* ---------- helpers used by panels ---------- */
-function refitCanvas() { if (ui.view === 'pattern') Views.pattern.afterMain?.($('#main')); }
+function refitCanvas() { if (ui.view === 'pattern') Views.pattern.afterMain?.($('#main')); if (typeof renderHud === 'function' && hudSession.compact) renderHud(); }
 function announce(msg) { const el = $('#sr-live'); if (!el) return; el.textContent = ''; setTimeout(() => { el.textContent = msg; }, 30); }
 function toastAction(msg, label, fn) {
   const t = toast(msg, 10000);

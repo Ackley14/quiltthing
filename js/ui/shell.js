@@ -218,6 +218,11 @@ function renderStatus() {
   const left = bar.querySelector('.sb-l'), src = $('#main .status-bar');
   left.innerHTML = '';
   if (src) { src.classList.add('moved'); left.appendChild(src); }
+  renderStatusChips();
+}
+// the right-hand chips only (the hint on the left is left alone)
+function renderStatusChips() {
+  const bar = $('#statusbar'); if (!bar.querySelector('.sb-r')) return renderStatus();
   const issues = typeof issueCount === 'function' ? issueCount() : 0;
   bar.querySelector('.sb-r').innerHTML = `<span class="sb-pos" id="sb-pos" title="Pointer position, from the top left"></span>
     ${typeof dockSession !== 'undefined' && dockSession.hidden ? '<button class="sb-chip sb-hidden" data-act="toggleHidePanels" title="Show panels (Ctrl+.)">Panels hidden · show</button>' : ''}

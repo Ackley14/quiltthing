@@ -66,7 +66,7 @@ function issueList() {
       const k = undoStack.current + '|' + ui.units, list = computeIssues();
       const changed = JSON.stringify(list) !== JSON.stringify(_issues.list);
       _issues = { ...(_issues), key: k, list };
-      if (changed) { renderStatus(); dockRender(); }
+      if (changed) { renderStatusChips(); dockRender(); }
     }, { timeout: 1500 }), 900);
   }
   return _issues.list;

@@ -1,7 +1,7 @@
 /* Quilting view: stack of generated quilting-line layers previewed over the quilt. */
 
 Views.quilting = {
-  tools() { return { act: 'qTool', active: ui.qTool || 'zoom', list: NAV_TOOLS }; },
+  tools() { return { act: 'qTool', active: ui.qTool || 'hand', list: NAV_TOOLS }; },
   docs() { const back = ui.qSide === 'back'; return [{ label: 'Front', on: !back, act: 'qSide', arg: 'front', icon: 'quilt' }, { label: 'Back', on: back, act: 'qSide', arg: 'back', icon: 'quilt' }]; },
   options() {
     return `<button class="tool fab-drop" data-act="addLayerMenu" aria-haspopup="menu">${icon('plus', 14)} Add quilting ${icon('down', 12)}</button>`;
@@ -13,7 +13,7 @@ Views.quilting = {
     const back = ui.qSide === 'back';
     const bk = back ? cuttingPlan(Q).backing : null, bf = doc.layout.backing?.fabric;
     return `<div class="stage"><div class="canvas-wrap">${back ? quiltBackSvg(Q) : quiltSvg(Q, { faded: !!ui.qFade, quilting: quiltingSvg(Q) })}</div>
-      <div class="status-bar">${back ? `Back of the quilt, stitching mirrored. ${bf ? esc(fabricLabel(bf)) : 'No backing fabric chosen'} · ${esc(bk.chosen.title.toLowerCase())}. <a href="#" data-act="view" data-arg="fabric">Backing settings</a>` : layers.length
+      <div class="status-bar">${back ? `Back of the quilt, stitching mirrored. ${bf ? esc(fabricLabel(bf)) : 'No backing fabric chosen'} · ${esc(bk.chosen.title.toLowerCase())}. <a href="#" data-act="goBacking">Backing settings</a>` : layers.length
         ? `About <b>${Math.round(stats.total / 36)} yd</b> of stitching · <b>${Math.ceil(stats.threadYds / 50) * 50} yd</b> of thread, top and bobbin`
         : 'Add a quilting pattern on the right.'}</div></div>`;
   },
@@ -177,3 +177,5 @@ document.addEventListener('keydown', e => {
   [L[i], L[j]] = [L[j], L[i]]; commit('Reorder quilting layers');
   setTimeout(() => $(`.part-row.layer[data-li="${j}"] .part-pick`)?.focus(), 0);
 });
+
+Actions.goBacking = () => { Actions.view('fabric'); Actions.openPanel('backing'); };

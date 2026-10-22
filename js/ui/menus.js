@@ -96,9 +96,9 @@ const MENUS = {
       '-',
       { label: 'Zoom in', act: 'edZoomBy', arg: 'in', kb: '+' },
       { label: 'Zoom out', act: 'edZoomBy', arg: 'out', kb: '−' },
-      { label: 'Fit the block', act: 'edZoomBy', arg: 'fit', kb: '0' });
+      { label: 'Fit the block', act: 'edZoomBy', arg: 'fit', kb: '0' }, { label: 'Actual size', act: 'zoomActual', kb: 'Shift+0' });
     if (v === 'layout') items.push(tick('Piece outlines', 'toggleUi', 'seamLines', ui.seamLines), { ...tick('Quilting lines', 'toggleUi', 'showQuilting', ui.showQuilting), disabled: !doc.quilting.layers.length });
-    const qzItems = ['-', { label: 'Zoom in', act: 'qZoomBy', arg: 'in', kb: '+' }, { label: 'Zoom out', act: 'qZoomBy', arg: 'out', kb: '−' }, { label: 'Fit the quilt', act: 'qZoomBy', arg: 'fit', kb: '0' }];
+    const qzItems = ['-', { label: 'Zoom in', act: 'qZoomBy', arg: 'in', kb: '+' }, { label: 'Zoom out', act: 'qZoomBy', arg: 'out', kb: '−' }, { label: 'Fit the quilt', act: 'qZoomBy', arg: 'fit', kb: '0' }, { label: 'Actual size', act: 'zoomActual', kb: 'Shift+0' }];
     if (v === 'quilting') items.push('-', tick('Front', 'qSide', 'front', ui.qSide !== 'back'), tick('Back', 'qSide', 'back', ui.qSide === 'back'), tick('Fade quilt', 'toggleUi', 'qFade', ui.qFade));
     if (v === 'layout' || v === 'quilting') items.push(...qzItems);
     if (v === 'fabric' || v === 'cutting') items.push('-', tick('Shopping list', 'fabPane', 'shop', ui.fabPane !== 'cut'), tick('Cutting plan', 'fabPane', 'cut', ui.fabPane === 'cut'), tick('Cutting maps', 'toggleCutMaps', undefined, ui.cutDiagrams !== false));
@@ -226,10 +226,11 @@ const CONTEXT_MENUS = [
       { label: 'Delete…', act: 'deleteFabric', arg: id, danger: true },
     ];
   }],
-  ['#modal-root .blk[data-act="useLibrary"]', el => [
+  ['#modal-root .blk[data-act="useLibrary"], [data-panel="library"] .blk[data-act="useLibrary"]', el => [
     { label: 'Add to this quilt', act: 'useLibrary', arg: el.dataset.arg },
     { label: 'Add and place in the layout', act: 'useLibraryPlace', arg: el.dataset.arg },
   ]],
+  ['.zoom-pct', () => zoomMenuItems()],
   ['[data-panel] .part-row.layer', el => {
     const i = doc.quilting.layers.findIndex(L => L.id === el.dataset.arg), L = doc.quilting.layers[i];
     if (!L) return null;

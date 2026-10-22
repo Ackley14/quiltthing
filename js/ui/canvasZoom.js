@@ -89,4 +89,4 @@ document.addEventListener('keyup', e => { if (e.key === ' ' && _qz.space) { _qz.
 window.addEventListener('blur', () => { _qz.space = false; });
 
 // the Hand or Zoom tool, if one is chosen on this canvas
-function qzNavTool() { const t = ui.view === 'layout' ? ui.layoutTool : ui.view === 'quilting' ? (ui.qTool || 'zoom') : null; return t === 'hand' || t === 'zoom' ? t : null; }
+function qzNavTool() { const t = ui.view === 'layout' ? ui.layoutTool : ui.view === 'quilting' ? (ui.qTool || 'hand') : null; return t === 'hand' || t === 'zoom' ? t : null; }

@@ -2,13 +2,14 @@
    and placed in any corner from View ▸ HUD ▸ Customise (no dragging needed); choices are kept
    in prefs.hud. Widgets only appear in the workspaces they apply to. */
 
+const hudSession = { compact: false, at: 0 };
 const HUD_WIDGETS = {
   info: { label: 'Info line', corner: 'tl', ws: ['block', 'layout', 'quilting'], html: hudInfo },
   value: { label: 'Value view reminder', corner: 'tl', ws: [], html: () => ui.grayscale ? `<button class="hud-badge" data-act="toggleUi" data-arg="grayscale" title="Turn Value view off (G)">${icon('eye', 14)} Value view · G to turn off</button>` : '' },
   view: { label: 'View switches', corner: 'tr', ws: ['block', 'layout', 'quilting'], html: () => {
     const items = viewToggleItems(); if (!items.length) return '';
-    // a narrow canvas gets one View button instead of a row of switches
-    if (($('#docarea')?.clientWidth || 1000) < 820) return `<div class="hud-group"><button class="tool" data-act="viewMenu" aria-haspopup="menu">${icon('eye', 14)} View${items.some(t => t.on && t.arg !== 'grayscale') ? ' ·' : ''} ${icon('down', 12)}</button></div>`;
+    // a row of switches; one View button only when the row would run into the other corner
+    if (hudSession.compact) return `<div class="hud-group"><button class="tool" data-act="viewMenu" aria-haspopup="menu">${icon('eye', 14)} View${items.some(t => t.on && t.arg !== 'grayscale') ? ' ·' : ''} ${icon('down', 12)}</button></div>`;
     return `<div class="hud-group" role="toolbar" aria-label="View">${viewToggles()}</div>`;
   } },
   zoom: { label: 'Zoom', corner: 'br', ws: ['block', 'layout', 'quilting'], html: hudZoom },
@@ -34,7 +35,7 @@ function hudZoom() {
   const block = ui.view === 'block';
   if (block && activeBlock()?.kind !== 'drawn') return '';
   const z = block ? edZoom() : qzZoom(), act = block ? 'edZoomBy' : 'qZoomBy', id = block ? 'ed-zoom' : 'q-zoom';
-  return `<div class="hud-group zoom-ctl" role="group" aria-label="Zoom"><button class="tool" data-act="${act}" data-arg="out" title="Zoom out (−)" aria-label="Zoom out">${icon('minus', 14)}</button><button class="tool zoom-pct" id="${id}" data-act="zoomMenu" aria-haspopup="menu" title="Zoom: % of actual size">${zoomPctText()}</button><button class="tool" data-act="${act}" data-arg="in" title="Zoom in (+)" aria-label="Zoom in">${icon('plus', 14)}</button></div>`;
+  return `<div class="hud-group zoom-ctl" role="group" aria-label="Zoom"><button class="tool" data-act="${act}" data-arg="out" title="Zoom out (−)" aria-label="Zoom out">${icon('minus', 14)}</button><button class="tool zoom-pct" id="${id}" data-act="${act}" data-arg="fit" title="% of actual size. Click to fit (0), right-click for more">${zoomPctText()}</button><button class="tool" data-act="${act}" data-arg="in" title="Zoom in (+)" aria-label="Zoom in">${icon('plus', 14)}</button></div>`;
 }
 function renderHud() {
   const hud = $('#hud'); if (!hud) return;
@@ -50,6 +51,16 @@ function renderHud() {
   hud.classList.toggle('with-rulers', !!prefs.rulers);
   if (typeof drawRulers === 'function') requestAnimationFrame(drawRulers);
   requestAnimationFrame(() => { for (const el of $$('#ed-zoom, #q-zoom')) el.textContent = zoomPctText(); });
+  // measure: does the row of View switches fit beside what's in the top-left corner?
+  const W = $('#docarea')?.clientWidth || 0;
+  if (hudSession.compact && W > hudSession.at + 40) { hudSession.compact = false; return renderHud(); }
+  const row = $('#hud [data-hud="view"] [role="toolbar"]');
+  if (!hudSession.compact && row) {
+    const r = row.closest('.hud-c').getBoundingClientRect(), other = $(`#hud .hud-c.${row.closest('.hud-c').classList.contains('tr') ? 'tl' : 'tr'}`)?.getBoundingClientRect();
+    const dw = $('#docarea').getBoundingClientRect();
+    const clash = r.left < dw.left + 4 || (other && other.width && other.top < r.bottom && other.bottom > r.top && (other.right > r.left - 8 && other.left < r.right + 8));
+    if (clash) { hudSession.compact = true; hudSession.at = W; renderHud(); }
+  }
 }
 const HUD_CORNERS = [['tl', 'Top left'], ['tr', 'Top right'], ['bl', 'Bottom left'], ['br', 'Bottom right']];
 const hudInCorner = c => hudFor().filter(id => hudPref(id).corner === c).sort((x, y) => hudPref(x).order - hudPref(y).order);
@@ -75,4 +86,5 @@ Actions.hudOrder = arg => {
 Actions.hudAll = () => { const cur = Object.fromEntries(Object.keys(HUD_WIDGETS).map(id => [id, hudPref(id)])); for (const v of VIEW_LIST) prefs.hud = { ...(prefs.hud || {}), [v.key]: cur }; savePrefs(); renderHud(); toast('Every workspace uses this HUD setup'); };
 Actions.hudReset = () => { const ws = curWs(); if (prefs.hud) delete prefs.hud[ws]; savePrefs(); renderHud(); closeModal(); toast('The HUD is back to its starting setup here'); };
 
-Actions.zoomMenu = (a, el) => { const act = ui.view === 'block' ? 'edZoomBy' : 'qZoomBy'; openMenu(el, [{ label: 'Fit', act, arg: 'fit', kb: '0' }, { label: 'Actual size (100%)', act: 'zoomActual', kb: 'Shift+0' }, '-', { label: 'Zoom in', act, arg: 'in', kb: '+' }, { label: 'Zoom out', act, arg: 'out', kb: '−' }]); };
+const zoomMenuItems = () => { const act = ui.view === 'block' ? 'edZoomBy' : 'qZoomBy'; return [{ label: 'Fit', act, arg: 'fit', kb: '0' }, { label: 'Actual size (100%)', act: 'zoomActual', kb: 'Shift+0' }, '-', { label: 'Zoom in', act, arg: 'in', kb: '+' }, { label: 'Zoom out', act, arg: 'out', kb: '−' }]; };
+Actions.zoomMenu = (a, el) => openMenu(el, zoomMenuItems());
