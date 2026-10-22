@@ -41,7 +41,7 @@ Views.block = {
       const fs = uniq(sel.map(i => b.regions[i].fab));
       const ib = (act, arg, ic, label) => `<button class="tool icon-only" data-act="${act}" ${arg ? `data-arg="${arg}"` : ''} title="${label}" aria-label="${label}">${icon(ic)}</button>`;
       opts = `<span class="tb-label">${plural(sel.length, 'shape')}</span>${fabBtn('selFabricMenu', fs.length === 1 ? fs[0] : null, fs.length > 1)}
-        ${ib('selDup', '', 'dup', 'Duplicate (Ctrl+D)')}${ib('selRotate', 'cw', 'rotate', 'Rotate 90° (E)')}${ib('selMirror', 'h', 'mirror', 'Flip horizontal (X)')}${ib('selMirror', 'v', 'flipv', 'Flip vertical (Y)')}${ib('selOrder', 'front', 'front', 'Bring to front')}${ib('selOrder', 'back', 'back', 'Send to back')}${ib('selDelete', '', 'trash', 'Delete (Del)')}`;
+        ${ib('selDup', '', 'dup', 'Duplicate (Ctrl+D)')}${ib('selRotate', 'cw', 'rotate', 'Rotate 90° (E)')}${ib('selMirror', 'h', 'mirror', 'Flip horizontal (X)')}${ib('selMirror', 'v', 'flipv', 'Flip vertical (Y)')}${ib('selOrder', 'front', 'front', 'Bring to front (Ctrl+Shift+])')}${ib('selOrder', 'forward', 'forward', 'Bring forward (Ctrl+])')}${ib('selOrder', 'backward', 'backward', 'Send backward (Ctrl+[)')}${ib('selOrder', 'back', 'back', 'Send to back (Ctrl+Shift+[)')}${ib('selDelete', '', 'trash', 'Delete (Del)')}`;
     } else if (ui.tool === 'select') opts = `<button class="tool small" data-act="selAll" title="Select all (Ctrl+A)">Select all</button>`;
     // controls only; the status bar says how to use the tool
     else if (ui.tool === 'text') { const o = textOpts(); opts = `${fabBtn('paintFabricMenu', ui.fabric)}<select class="tb-in" data-change="textFont" aria-label="Font" title="Font">${fontOptions(o.font)}</select><label class="tb-label">Height<input class="tb-in narrow" type="text" inputmode="decimal" value="${esc(inputLen(o.h))}" data-change="textH" aria-label="Capital height"></label>`; }
@@ -798,6 +798,10 @@ function blockViewKey(e) {
   if (ctrl && k === 'x' && sel.length) { e.preventDefault(); Actions.selCut(); return; }
   if (ctrl && k === 'v') { e.preventDefault(); Actions.selPaste(); return; }
   if (ctrl && k === 'd' && sel.length) { e.preventDefault(); Actions.selDup(); return; }
+  if (ctrl && (e.code === 'BracketRight' || e.code === 'BracketLeft') && sel.length) {
+    e.preventDefault(); const fwd = e.code === 'BracketRight';
+    Actions.selOrder(e.shiftKey ? (fwd ? 'front' : 'back') : (fwd ? 'forward' : 'backward')); return;
+  }
   if (ctrl) return;
   if (e.key === '+' || e.key === '=') { Actions.edZoomBy('in'); return; }
   if (e.key === '-' || e.key === '_') { Actions.edZoomBy('out'); return; }
@@ -982,10 +986,7 @@ Actions.regionApp = v => { const b = activeBlock(); for (const i of selList()) {
 Actions.regionDelete = () => Actions.selDelete();
 Actions.regionOrder = dir => {
   const b = activeBlock(), sel = selList(); if (!sel.length) return;
-  if (dir === 'front' || dir === 'back') { Actions.selOrder(dir); return; }
-  if (sel.length !== 1) return;
-  const i = sel[0], j = dir === 'up' ? Math.min(i + 1, b.regions.length - 1) : Math.max(i - 1, 0);
-  const [r] = b.regions.splice(i, 1); b.regions.splice(j, 0, r); setSel([j]); commit();
+  Actions.selOrder(dir === 'up' ? 'forward' : dir === 'down' ? 'backward' : dir);
 };
 /* selection actions (toolbar, context menu, keyboard) */
 let _edClip = null;
@@ -1079,10 +1080,24 @@ Actions.selMirror = axis => {
   }
   commit();
 };
+// front/back: to the top or bottom of the stack; forward/backward: one place, each selected shape
+// stepping over the next unselected one (selected shapes keep their order among themselves)
 Actions.selOrder = dir => {
   const b = activeBlock(), sel = selList(); if (!sel.length) return;
-  const picked = sel.map(i => b.regions[i]), rest = b.regions.filter((_, i) => !sel.includes(i));
-  b.regions = dir === 'front' ? [...rest, ...picked] : [...picked, ...rest];
+  const picked = sel.map(i => b.regions[i]), on = new Set(picked);
+  if (dir === 'front' || dir === 'back') {
+    const rest = b.regions.filter(r => !on.has(r));
+    b.regions = dir === 'front' ? [...rest, ...picked] : [...picked, ...rest];
+  } else {
+    const R = b.regions.slice(), up = dir === 'forward';
+    let moved = false;
+    for (let k = 0; k < R.length - 1; k++) {
+      const i = up ? R.length - 2 - k : k + 1, j = up ? i + 1 : i - 1;
+      if (on.has(R[i]) && !on.has(R[j])) { [R[i], R[j]] = [R[j], R[i]]; moved = true; }
+    }
+    if (!moved) { toast(up ? 'Already at the front' : 'Already at the back', 1400); return; }
+    b.regions = R;
+  }
   setSel(picked.map(r => b.regions.indexOf(r))); commit();
 };
 function insertCorner(b, i) {
@@ -1110,7 +1125,8 @@ function edContext(e) {
       { label: 'Pick up this fabric', act: 'selPick' }, '-',
       { label: 'Cut', act: 'selCut', kb: 'Ctrl+X' }, { label: 'Copy', act: 'selCopy', kb: 'Ctrl+C' }, { label: 'Paste', act: 'selPaste', kb: 'Ctrl+V', disabled: !_edClip }, { label: 'Duplicate', act: 'selDup', kb: 'Ctrl+D' },
       { label: 'Rotate 90°', act: 'selRotate', arg: 'cw', kb: 'E' }, { label: 'Flip horizontal', act: 'selMirror', arg: 'h', kb: 'X' }, { label: 'Flip vertical', act: 'selMirror', arg: 'v', kb: 'Y' }, '-',
-      { label: 'Bring to front', act: 'selOrder', arg: 'front' }, { label: 'Send to back', act: 'selOrder', arg: 'back' }, '-',
+      { label: 'Bring to front', act: 'selOrder', arg: 'front', kb: 'Ctrl+Shift+]' }, { label: 'Bring forward', act: 'selOrder', arg: 'forward', kb: 'Ctrl+]' },
+      { label: 'Send backward', act: 'selOrder', arg: 'backward', kb: 'Ctrl+[' }, { label: 'Send to back', act: 'selOrder', arg: 'back', kb: 'Ctrl+Shift+[' }, '-',
       { label: `Delete ${what}`, act: 'selDelete', kb: 'Del', danger: true });
   } else {
     items.push({ label: 'Select all shapes', act: 'selAll', kb: 'Ctrl+A' });
@@ -1430,7 +1446,7 @@ function shapesPanel() {
     list += `<div class="region-row" role="button" tabindex="0" aria-pressed="${sel.includes(i)}" data-act="selectRegion" data-arg="${i}">${reg.fab === BG ? '<span class="sw bgsw" style="--sw:16px"></span>' : swatchHtml(reg.fab, 16)}<span class="nm">${esc(regionName(b, reg))} <span class="muted">${esc(reg.fab === BG ? 'background' : fabricLabel(reg.fab))}${reg.app ? ' · appliqué' : ''}</span></span></div>`;
   }
   return `<div class="panel-tools"><span class="pt-note">${plural(b.regions.length, 'shape')}${sel.length ? ` · ${sel.length} selected` : ''}</span><span class="grow"></span>
-    ${sel.length ? `<button class="btn small quiet" data-act="selOrder" data-arg="front" title="Bring to front">${icon('front', 14)}</button><button class="btn small quiet" data-act="selOrder" data-arg="back" title="Send to back">${icon('back', 14)}</button>` : ''}
+    ${sel.length ? [['front', 'Bring to front'], ['forward', 'Bring forward'], ['backward', 'Send backward'], ['back', 'Send to back']].map(([d, t]) => `<button class="btn small quiet" data-act="selOrder" data-arg="${d}" title="${t}" aria-label="${t}">${icon(d, 14)}</button>`).join('') : ''}
     <button class="btn small" data-act="selAll" title="Select all (Ctrl+A)">Select all</button></div>
     <div class="pad">${list ? list : '<p class="hint">No shapes yet.</p>'}</div>`;
 }

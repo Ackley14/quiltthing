@@ -61,8 +61,10 @@ function fabricSheetSvg(sheet, fab, opts = {}) {
         s += poly(i % 2 ? [[x, y], [x + Bw, y], [x + Bw / 2, y + h]] : [[x, y + h], [x + Bw / 2, y], [x + Bw, y + h]], b.step);
       }
     } else if (b.kind === 'joined') {
-      s += poly(rectPts(0, y, W, h), b.step);
-      if (h > fs * 1.2) s += `<text x="${W / 2}" y="${round(y + h / 2, 3)}" font-size="${fs * .85}" text-anchor="middle" dominant-baseline="central" fill="${ink}" pointer-events="none">${esc(b.label.toLowerCase())} strip</text>`;
+      // the last strip is cut short when other pieces use the rest of it
+      const len = b.used ?? W;
+      s += poly(rectPts(0, y, len, h), b.step);
+      if (h > fs * 1.2) s += `<text x="${round(len / 2, 3)}" y="${round(y + h / 2, 3)}" font-size="${fs * .85}" text-anchor="middle" dominant-baseline="central" fill="${ink}" pointer-events="none">${esc(b.label.toLowerCase())} strip</text>`;
     }
   }
   // shorter strips cut from leftovers, with their step number at the start
@@ -77,10 +79,14 @@ function fabricSheetSvg(sheet, fab, opts = {}) {
   if (sheet.tpl) {
     const t = sheet.tpl;
     if (sheet.H > t.y + 1e-6) s += badge(-ML / 2, t.y + fs, t.placed.find(p => p.y >= t.y - 1e-6)?.step || t.placed[0]?.step || '', Math.min(ML * .36, fs * .95));
-    const marked = new Set();
+    // pieces placed in a leftover get their step number beside the first one, drawn on top
+    const marked = new Map();
+    let marks = '';
     for (const p of t.placed) {
-      // pieces placed in leftovers get their step number beside the first one
-      if (p.from && !marked.has(p.step + '|' + p.from)) { marked.add(p.step + '|' + p.from); s += badge(p.x + fs * 0.8, p.y + fs * 0.8, p.step, fs * 0.7); }
+      if (p.from) {
+        if (!marked.has(p.from)) marked.set(p.from, new Set());
+        if (!marked.get(p.from).has(p.step)) { marked.get(p.from).add(p.step); marks += badge(p.x + fs * 0.8, p.y + fs * 0.8, p.step, fs * 0.7); }
+      }
       let o;
       if (p.poly) o = p.poly;
       else {
@@ -90,6 +96,7 @@ function fabricSheetSvg(sheet, fab, opts = {}) {
       }
       s += poly(t.abs ? o : translatePoly(o, 0, t.y), p.step);
     }
+    s += marks;
   }
   return s + '</svg>';
 }

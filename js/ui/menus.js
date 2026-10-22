@@ -66,8 +66,10 @@ const MENUS = {
         { label: 'Rotate 90°', act: 'selRotate', arg: 'cw', kb: 'E' },
         { label: 'Flip horizontal', act: 'selMirror', arg: 'h', kb: 'X' },
         { label: 'Flip vertical', act: 'selMirror', arg: 'v', kb: 'Y' },
-        { label: 'Bring to front', act: 'selOrder', arg: 'front' },
-        { label: 'Send to back', act: 'selOrder', arg: 'back' },
+        { label: 'Bring to front', act: 'selOrder', arg: 'front', kb: 'Ctrl+Shift+]' },
+        { label: 'Bring forward', act: 'selOrder', arg: 'forward', kb: 'Ctrl+]' },
+        { label: 'Send backward', act: 'selOrder', arg: 'backward', kb: 'Ctrl+[' },
+        { label: 'Send to back', act: 'selOrder', arg: 'back', kb: 'Ctrl+Shift+[' },
         { label: 'Delete', act: 'selDelete', kb: 'Del' });
     }
     if (ui.view === 'block' && b) {

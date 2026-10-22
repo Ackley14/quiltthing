@@ -36,6 +36,8 @@ const ICON_PATHS = {
   mirror: '<path d="M8 1.5v13" stroke-dasharray="1.5 1.5"/><path d="M6 4L2.5 12H6zM10 4l3.5 8H10z"/>',
   front: '<path d="M3 2.5h10M8 13.5V6M5 8.5l3-3 3 3"/>',
   back: '<path d="M3 13.5h10M8 2.5V10M5 7.5l3 3 3-3"/>',
+  forward: '<path d="M8 13V4.5M5 7.5l3-3 3 3"/>',
+  backward: '<path d="M8 3v8.5M5 8.5l3 3 3-3"/>',
   dup: '<rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M3 10.5V3.5a1 1 0 0 1 1-1h6.5"/>',
   up: '<path d="M4 10l4-4 4 4"/>',
   down: '<path d="M4 6l4 4 4-4"/>',

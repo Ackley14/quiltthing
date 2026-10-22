@@ -606,7 +606,11 @@ function layoutBin(d, W, Hmax, directional) {
       bands.push({ y, h: j.w, kind: 'joined', ref: j.ref, label: j.ref.src });
       j.left -= count ? W - loss : W;
       count++;
-      if (j.left <= 1e-6) addFree({ x: W + j.left, y, w: -j.left, h: j.w, from: j.ref });
+      if (j.left <= 1e-6) {   // cut the last strip to the next ⅛″; the rest is free for templates
+        const used = Math.min(W, ceilEighth(W + j.left));
+        bands[bands.length - 1].used = used;
+        addFree({ x: used, y, w: W - used, h: j.w, from: j.ref });
+      }
       y += j.w;
     }
     joinedCount.set(j.ref, count);
@@ -658,7 +662,9 @@ function layoutBin(d, W, Hmax, directional) {
     }
   }
   d.items = todo.map(({ rot, ...it }) => it);
-  const tplH = Math.max(0, ...tplPlaced.map(p => p.y + p.h)) - tplY;
+  // a joined strip is cut short only when pieces were placed in the rest of it
+  for (const b of bands) if (b.used != null && !tplPlaced.some(p => p.from === b.ref)) delete b.used;
+  const tplH =Math.max(0, ...tplPlaced.map(p => p.y + p.h)) - tplY;
   return { W, bands, partials, tplPlaced, tplY, H: Math.max(tplY, tplY + tplH), groups, runs, joinedCount };
 }
 
@@ -893,7 +899,8 @@ function fabricInstructions(f) {
       ? `Join end to end with diagonal seams, press in half lengthwise → ${fmtLen(j.total)} of binding`
       : `Join end to end, then cut ${j.lengths.length} lengths: ${j.lengths.map(l => fmtLen(l, 'up')).join(', ')}`;
     const rh = runHead(j, j.w, ` for ${j.src.toLowerCase()}`);
-    rows.push({ kind: 'joined', head: rh.head, parts: [...rh.lines, desc], j });
+    const short = (f.sheet?.bands || []).find(b => b.ref === j && b.used != null);
+    rows.push({ kind: 'joined', head: rh.head, parts: [...rh.lines, desc], j, short });
   }
   for (const r of f.templates) {
     const inLeft = (f.sheet?.tplPlaced || []).filter(p => p.item.r === r && p.from);
@@ -903,6 +910,12 @@ function fabricInstructions(f) {
         const n = inLeft.length, st = uniq(inLeft.map(p => stepOf(p.from))).sort((a, b) => a - b);
         return `${n === r.units ? (n === 1 ? 'It fits' : 'All of them fit') : `${n} of them ${n === 1 ? 'fits' : 'fit'}`} in the leftover${st.length > 1 ? 's' : ''} from step${st.length > 1 ? 's' : ''} ${st.join(', ')}. See the map.`;
       })()] : []),r.recipe.applique ? (doc.cutting.appMethod === 'fusible' ? 'Fusible appliqué: trace the reversed template onto fusible web, fuse it to the wrong side of the fabric and cut on the line.' : 'Appliqué piece: cut on the dashed line, which includes a 3/16" turn-under.') : 'Trace the template and cut on the dashed line, which includes the seam allowance.'], r });
+  }
+  // the last binding or border strip cut short: say so, and which steps use the rest of it
+  for (const row of rows) {
+    if (!row.short) continue;
+    const st = uniq(f.sheet.tplPlaced.filter(p => p.from === row.j).map(p => stepOf(p.item.r))).sort((a, b) => a - b);
+    row.parts.push(`Cut the last strip only ${fmtLen(row.short.used)} long and keep the rest of it: step${st.length > 1 ? 's' : ''} ${st.join(', ')} ${st.length > 1 ? 'use' : 'uses'} it (see the map).`);
   }
   // a fabric bought as precuts (or set-size pieces): steps cut wholly from the yardage it falls back
   // to are marked and listed last, so the plan reads "from the jelly rolls…, then from yardage…"
