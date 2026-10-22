@@ -902,3 +902,5 @@ body[data-doctool="zoom"] #main { cursor: zoom-in; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 :root[data-theme="light"] .toast-act { color: #7cc0ff; }
+
+div.f > .seg { margin-top: 4px; }

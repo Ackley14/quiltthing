@@ -235,12 +235,13 @@ function editorGuides(b) {
       s += `<line class="gridline" x1="0" y1="${i * k}" x2="${S}" y2="${i * k}" stroke-width="${hair * (i === 0 || i === b.n ? 1.4 : .8)}"/>`;
     }
   }
-  // centre lines: across and down the middle (point to point and flat to flat on a hexagon)
+  // centre lines: straight across and down the middle as you see the block (a pointy-top hexagon is
+  // drawn turned, so the lines are turned back to stay upright)
   if (ui.showCentre) {
-    const c = S / 2, ink = 'stroke="#d6336c" stroke-linecap="round" pointer-events="none"';
-    s += `<line x1="${c}" y1="0" x2="${c}" y2="${S}" ${ink} stroke-width="${hair * 1.8}" stroke-dasharray="${hair * 10} ${hair * 4}"/>
+    const c = S / 2, ink = 'stroke="#d6336c" stroke-linecap="round" pointer-events="none"', back = edAngle(b);
+    s += `${back ? `<g transform="rotate(${-back} ${c} ${c})">` : ''}<line x1="${c}" y1="0" x2="${c}" y2="${S}" ${ink} stroke-width="${hair * 1.8}" stroke-dasharray="${hair * 10} ${hair * 4}"/>
       <line x1="0" y1="${c}" x2="${S}" y2="${c}" ${ink} stroke-width="${hair * 1.8}" stroke-dasharray="${hair * 10} ${hair * 4}"/>
-      <circle cx="${c}" cy="${c}" r="${u * 0.012}" fill="#d6336c" pointer-events="none"/>`;
+      <circle cx="${c}" cy="${c}" r="${u * 0.012}" fill="#d6336c" pointer-events="none"/>${back ? '</g>' : ''}`;
   }
   // seams (always shown while the seam tool is active, so they can be clicked to remove)
   if (ui.showSeamLines !== false || ui.tool === 'seam' || ui.tool === 'erase') [['s', b.seams], ['a', b.appSeams]].forEach(([tag, list]) => (list || []).forEach(([A, B], i) => {
@@ -1370,7 +1371,7 @@ function blockInspector() {
   const more = `<button class="icon-btn sm" data-act="blockMenu" aria-haspopup="menu" aria-label="More block actions" title="More">${icon('more')}</button>`;
   h += section('Block', `
     <label class="f">Name<input type="text" value="${esc(b.name)}" data-change="blockName"></label>
-    ${hex ? `<label class="f">Lattice<select data-change="blockGrid">${hexGrids.map(v => `<option value="${v}" ${v === b.n ? 'selected' : ''}>${v} triangles across</option>`).join('')}</select></label>
+    ${hex ? `${hexOrientField()}<label class="f">Lattice<select data-change="blockGrid">${hexGrids.map(v => `<option value="${v}" ${v === b.n ? 'selected' : ''}>${v} triangles across</option>`).join('')}</select></label>
       <p class="hint">${blockSizeText(b, S)}.</p>` : ''}
     ${b.kind === 'drawn' && !hex ? `<div class="f-row">
       <label class="f">Grid<select data-change="blockGrid">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 24, 32].concat(b.n).filter((v, i, a) => a.indexOf(v) === i).sort((x, y) => x - y).map(v => `<option value="${v}" ${v === b.n ? 'selected' : ''}>${v} × ${v}</option>`).join('')}</select></label>
@@ -1489,4 +1490,17 @@ Actions.selGeom = (v, el) => {
   commit({ x: 'Move shapes', y: 'Move shapes', w: 'Resize shapes', h: 'Resize shapes' }[key]);
 };
 
+// Hexagon orientation: one setting for the whole quilt (all its hexagons point the same way), the same
+// one as Layout's Hexagons orientation.
+function hexOrientField() {
+  const t = doc.layout.tess, flat = t.orient === 1, other = doc.layout.mode === 'tess' && t.shape !== 'hex';
+  return `<div class="f"><span class="f-l">Orientation</span><div class="seg" role="group" aria-label="Hexagon orientation">
+    <button aria-pressed="${!flat}" data-act="hexOrient" data-arg="0" ${other ? 'disabled' : ''}>Pointy top</button><button aria-pressed="${flat}" data-act="hexOrient" data-arg="1" ${other ? 'disabled' : ''}>Flat top</button></div>
+    ${other ? '<p class="hint">Set by the hexagon layout; this quilt uses other tiles.</p>' : ''}</div>`;
+}
+Actions.hexOrient = v => {
+  const t = doc.layout.tess, o = +v === 1 ? 1 : 0;
+  if (t.orient === o || (doc.layout.mode === 'tess' && t.shape !== 'hex')) return;
+  t.orient = o; commit(o ? 'Hexagons: flat top' : 'Hexagons: pointy top');
+};
 Actions.geomLock = v => { ui.geomLock = !!v; saveUi(); };
