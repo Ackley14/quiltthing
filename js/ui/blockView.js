@@ -75,7 +75,7 @@ Views.block = {
     svg.addEventListener('pointermove', edMove);
     svg.addEventListener('pointerup', edUp);
     svg.addEventListener('pointercancel', () => { ed.drag = null; });
-    svg.addEventListener('pointerleave', () => { ed.hover = null; ed.eraseHover = null; ed.fillHover = null; drawOverlay(); });
+    svg.addEventListener('pointerleave', () => { ed.hover = null; ed.eraseHover = null; ed.fillHover = null; if (!ed.drag) ed.triPreview = null; drawOverlay(); });
     svg.addEventListener('dblclick', edDbl);
     svg.addEventListener('contextmenu', edContext);
     svg.addEventListener('wheel', edWheel, { passive: false });
@@ -322,7 +322,7 @@ function blockStatus(b) {
     }
     case 'polygon': return ui.drawing.length ? `<b>${ui.drawing.length} points</b>: click the first point or press Enter to finish. Esc cancels.` : '<b>Shape</b>: click grid points. Shift for half steps.';
     case 'rect': return '<b>Rectangle</b>: drag from corner to corner.';
-    case 'text': return loadedFont(textOpts().font) ? '<b>Text</b>: click where the words go. Type them on the right.' : 'Loading the font…';
+    case 'text': return loadedFont(textOpts().font) ? '<b>Text</b>: click where the words go, then type them in Properties.' : 'Loading the font…';
     case 'arc': return isHexBlock(b) || b.lattice === 'tri' ? 'Quarter circles need a square grid.' : '<b>Quarter circle</b>: click a square, or drag from a corner for a bigger one.';
     case 'tri': return b.lattice === 'tri' || isHexBlock(b) ? '<b>Triangle</b>: click inside a lattice triangle. Shift for half size.' : '<b>Triangle</b>: click near a corner of a square. Shift for half size.';
     case 'fill': return `<b>Fill</b> with ${fab}: click empty space to fill it with a new shape, or a shape to repaint it.`;
@@ -1135,7 +1135,7 @@ function ensureFont() {
 }
 function placeText(b, at) {
   const t = textAtOrigin(b);
-  if (!t) { ensureFont(); toast(loadedFont(textOpts().font) ? 'Type the words on the right first' : 'The font is still loading'); return; }
+  if (!t) { ensureFont(); toast(loadedFont(textOpts().font) ? 'Type the words in Properties first' : 'The font is still loading'); return; }
   const fab = textFabric(), start = b.regions.length, outline = blockOutline(b, b.n);
   const o = textOpts(), tid = uid('t');
   b.texts = { ...(b.texts || {}), [tid]: { str: o.str, font: o.font, h: o.h, ...(edAngle(b) ? { ang: -edAngle(b) } : {}) } };
@@ -1445,10 +1445,13 @@ Actions.selGeom = (v, el) => {
   const key = el.dataset.arg, bb = selBounds(b, sel), k = blockFrameSize(b) / b.n;
   const cur = { x: bb.x, y: bb.y, w: bb.w, h: bb.h }[key] * k, n = parseLenExpr(v, cur);
   if (!Number.isFinite(n) || (key === 'w' || key === 'h') && n <= 0) { lenFieldError(el, v); return; }
-  const S = blockFrameSize(b);
-  // keep the shape on the block: positions within it, sizes no bigger than it
-  let g = (key === 'x' ? clamp(n, -bb.w * k + 0.25, S - 0.25) : key === 'y' ? clamp(n, -bb.h * k + 0.25, S - 0.25) : clamp(n, 1 / 16, S * 2)) / k;
-  if (Math.abs(g * k - n) > 1e-6) toast(`Kept on the block: ${fmtLen(g * k)}`, 2200);
+  const S = blockFrameSize(b), X = Math.max(0, bb.x * k), Y = Math.max(0, bb.y * k), Wd = bb.w * k, Ht = bb.h * k;
+  // typed numbers keep the shape wholly on the block (dragging can still take it past the edge)
+  let max = key === 'x' ? S - Wd : key === 'y' ? S - Ht : key === 'w' ? S - X : S - Y;
+  if (ui.geomLock && key === 'w' && Ht) max = Math.min(max, (S - Y) * Wd / Ht);
+  if (ui.geomLock && key === 'h' && Wd) max = Math.min(max, (S - X) * Ht / Wd);
+  const val = key === 'x' || key === 'y' ? clamp(n, 0, Math.max(0, max)) : clamp(n, 1 / 16, Math.max(1 / 16, max)), g = val / k;
+  if (Math.abs(val - n) > 1e-6) toast(`${key === 'x' || key === 'y' ? 'Position' : 'Size'} kept on the block: ${fmtLen(val)}`, 2200);
   const fx = key === 'w' ? g / (bb.w || 1) : key === 'h' && ui.geomLock ? g / (bb.h || 1) : 1;
   const fy = key === 'h' ? g / (bb.h || 1) : key === 'w' && ui.geomLock ? g / (bb.w || 1) : 1;
   const map = key === 'x' ? ([x, y]) => [x + g - bb.x, y] : key === 'y' ? ([x, y]) => [x, y + g - bb.y]

@@ -161,6 +161,11 @@ function sanitizeUi() {
 /* ---------- persistence ---------- */
 let saveStatus = { at: null, ok: true };
 const scheduleSave = debounce(saveNow, 400);
+// save when the page is closed or put in the background, so the last edit isn't lost
+if (typeof window !== 'undefined' && window.addEventListener) {
+  window.addEventListener('pagehide', () => saveNow());
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveNow(); });
+}
 let savePaused = false;   // another tab changed the design: don't overwrite it until the person chooses
 function saveNow() {
   if (savePaused) { saveStatus = { at: Date.now(), ok: false, paused: true }; if (typeof renderSaveState === 'function') renderSaveState(); return; }

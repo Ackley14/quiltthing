@@ -126,7 +126,9 @@ function renderInspector() {
 // A field commits when it loses focus — usually because the user clicked or tabbed into the next
 // field. The re-render then replaces that next field before it gets focus, so we remember where
 // focus was heading and put it on the replacement (otherwise typing falls through to shortcuts).
-let _focusTarget = null, _lastFieldBlur = 0;
+let _focusTarget = null, _lastFieldBlur = 0, _escAt = 0;
+// after the next redraw, put focus on a field (and select its text) so typing goes into it
+function focusSoon(sel) { setTimeout(() => { const el = $(sel); if (el && el.offsetParent !== null) { el.focus(); el.select?.(); } }, 60); }
 const isField = el => el?.matches?.('input, select, textarea');
 document.addEventListener('pointerdown', e => {
   const t = e.target.closest?.('input, select, textarea');
@@ -138,7 +140,8 @@ document.addEventListener('keydown', e => {
   const next = all[all.indexOf(e.target) + (e.shiftKey ? -1 : 1)];
   _focusTarget = next && focusSig(next) ? { sig: focusSig(next), at: Date.now(), select: true } : null;   // Tab selects the next field's text
 }, true);
-document.addEventListener('focusout', e => { if (isField(e.target)) _lastFieldBlur = Date.now(); }, true);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') _escAt = Date.now(); }, true);
+document.addEventListener('focusout', e => { if (isField(e.target) && Date.now() - _escAt > 100) _lastFieldBlur = Date.now(); }, true);
 function restorePendingFocus() {
   const t = _focusTarget;
   if (!t?.sig || Date.now() - t.at > 1500) return;
@@ -253,8 +256,20 @@ function labelNextCommit(el) {
   const lab = el.closest?.('label, .f'), field = /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName);
   const labText = lab && (lab.firstChild?.nodeType === 3 ? lab.firstChild.textContent : lab.textContent);
   let t = el.getAttribute?.('aria-label') || (field && labText) || (el.tagName === 'BUTTON' && el.textContent.trim()) || el.title || labText || '';
-  t = String(t).replace(/\s+/g, ' ').replace(/[…:]$/, '').trim().slice(0, 48);
-  nextCommitLabel = t || null;
+  t = String(t).replace(/\s+/g, ' ').replace(/[…:]$/, '').trim();
+  // say where (the button group or section) and, for fields, the new value: "Sashing: Width 2″"
+  let ctx = (el.closest?.('[role="group"][aria-label], [role="radiogroup"][aria-label]')?.getAttribute('aria-label') || el.closest?.('.sec')?.querySelector('.sec-h h3')?.textContent || '').trim();
+  if (Object.values(Panels).some(P => P.title === ctx)) ctx = '';   // a panel's name says nothing about the change
+  if (t && ctx && t.split(' ').length <= 3 && !t.toLowerCase().includes(ctx.toLowerCase().slice(0, 5))) t = `${ctx}: ${t}`;
+  if (field && t) {
+    let v = '';
+    if (el.type === 'checkbox') v = el.checked ? 'on' : 'off';
+    else if (el.tagName === 'SELECT') v = el.selectedOptions?.[0]?.textContent || '';
+    else if (el.dataset.type === 'len') { const n = parseLenExpr(el.value, el.dataset.bind ? getPath(doc, el.dataset.bind) : undefined); v = Number.isFinite(n) ? fmtLen(n) : ''; }
+    else if (el.type !== 'color') v = `“${el.value.trim().slice(0, 20)}”`;
+    if (v) t += ` ${v}`;
+  }
+  nextCommitLabel = t.slice(0, 60) || null;
   setTimeout(() => { nextCommitLabel = null; }, 0);
 }
 document.addEventListener('change', e => {
@@ -310,7 +325,7 @@ function lenField(label, path, opts = {}) {
   const input = `<input type="text" inputmode="decimal" data-bind="${path}" data-type="len" value="${esc(inputLen(v))}"${opts.aria ? ` aria-label="${esc(opts.aria)}"` : ''}${opts.min !== undefined ? ` data-min="${opts.min}"` : ''}${opts.max !== undefined ? ` data-max="${opts.max}"` : ''} title="Accepts 4.5, 4 1/2, 4½, 11.4cm, sums like 3 + 1/4, or +1/4, *2, 50%">`;
   if (!opts.step) return `<label class="f">${label}${opts.suffix ? ` <span class="muted">${opts.suffix}</span>` : ''}${input}</label>`;
   const arg = d => `${path}|${d}|${opts.min ?? 0}|${opts.max ?? 1e9}`;
-  return `<div class="f">${label}<span class="stepper"><button class="btn small" data-act="lenStep" data-arg="${arg(-opts.step)}" aria-label="Less">−</button>${input}<button class="btn small" data-act="lenStep" data-arg="${arg(opts.step)}" aria-label="More">+</button></span></div>`;
+  return `<div class="f">${label}<span class="stepper"><button class="btn small" data-act="lenStep" data-arg="${arg(-opts.step)}" aria-label="Decrease ${esc(opts.aria || label)}">−</button>${input}<button class="btn small" data-act="lenStep" data-arg="${arg(opts.step)}" aria-label="Increase ${esc(opts.aria || label)}">+</button></span></div>`;
 }
 Actions.lenStep = arg => {
   const [path, d, lo, hi] = arg.split('|'), v = +getPath(doc, path) || 0;
@@ -472,23 +487,24 @@ function toast(msg, ms = 2600) {
 Actions.view = v => {
   if (v === 'cutting') { v = 'fabric'; ui.fabPane = 'cut'; }
   ui.view = v; ui.drawing = []; dockSession.flyout = null; for (const t of $$('#toast-root .toast')) if (!t.querySelector('.toast-act')) t.remove(); saveUi(); render(); $('#main').focus({ preventScroll: true }); };
-Actions.undo = () => { if (!undo()) toast('Nothing to undo'); };
-Actions.redo = () => { if (!redo()) toast('Nothing to redo'); };
+// say what was undone, so a change in another workspace isn't silent
+Actions.undo = () => { const l = histLabels.past[histLabels.past.length - 1]; if (!undo()) toast('Nothing to undo'); else if (l) toast(`Undo: ${l}`, 1600); };
+Actions.redo = () => { const l = histLabels.future[histLabels.future.length - 1]; if (!redo()) toast('Nothing to redo'); else if (l) toast(`Redo: ${l}`, 1600); };
 Actions.toggleUnits = () => { ui.units = ui.units === 'cm' ? 'in' : 'cm'; saveUi(); render(); toast(ui.units === 'cm' ? 'Showing centimetres' : 'Showing inches'); };
 Actions.toggleSec = (key, el) => { const cur = key in ui.collapsed ? ui.collapsed[key] : el?.dataset.def === '1'; ui.collapsed[key] = !cur; saveUi(); render(); };
 Actions.setUi = (arg) => { const [k, v] = arg.split('='); ui[k] = v === 'true' ? true : v === 'false' ? false : v; saveUi(); render(); };
 Actions.toggleUi = k => { ui[k] = !ui[k]; saveUi(); render(); };
 
 Actions.fileMenu = (a, el) => openMenu(el, MENUS.file());   // the phone-width File button
-Actions.newProject = () => confirmModal('Start a new project?', 'This replaces the current design in this browser. Save a project file first if you want to keep it.', 'Start new', () => {
+Actions.newProject = () => confirmModal('Start a new project?', "This replaces the design you're working on. Save it first (File, Save) to keep it; quilts you've saved aren't affected.", 'Start new', () => {
   doc = newDoc(); ui.activeBlock = null; ui.projectId = null; ui.fabric = doc.fabrics[1].id; ui.view = 'block';
   addBlockToDoc(newDrawnBlock('My first block'));
   resetHistory(); saveNow(); render(); toast('New project started');
 }, true);
-Actions.loadSample = () => confirmModal('Load the sample quilt?', 'This replaces the current design in this browser. Save a project file first if you want to keep it.', 'Load sample', () => {
+Actions.loadSample = () => confirmModal('Load the sample quilt?', "This replaces the design you're working on. Save it first (File, Save) to keep it; quilts you've saved aren't affected.", 'Load sample', () => {
   ui.projectId = null; loadSampleProject(); toast('Sample quilt loaded');
 });
-Actions.loadTessSample = () => confirmModal('Load the Hexie Bloom sample?', 'This replaces the current design in this browser. Save a project file first if you want to keep it.', 'Load sample', () => {
+Actions.loadTessSample = () => confirmModal('Load the Hexie Bloom sample?', "This replaces the design you're working on. Save it first (File, Save) to keep it; quilts you've saved aren't affected.", 'Load sample', () => {
   ui.projectId = null; loadTessSample().then(() => toast('Hexie Bloom loaded')).catch(err => toast(err.message));
 });
 Actions.saveProject = () => { exportProject(); toast('Project file downloaded'); };

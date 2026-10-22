@@ -99,6 +99,7 @@ Actions.addFabric = () => {
   const [h, s, l] = hexToHsl(base);
   const f = makeFabric(hslToHex([h + 137.5, clamp(s, 0.35, 0.7), clamp(l, 0.35, 0.65)]));
   doc.fabrics.push(f); ui.fabric = ui.fabPop = f.id; commit();
+  focusSoon('.popover input[data-change="fabName"]');
 };
 // Suggested colours ask first, so a click doesn't silently add fabrics.
 Actions.addFabricColor = hex => openModal(`<h2>Add a new fabric?</h2>
@@ -345,15 +346,31 @@ async function loadSavedBlocks() {
   const list = await listProjects().catch(() => []);
   _savedLib = list.filter(p => p.id !== ui.projectId && p.doc?.blockOrder?.length);
 }
-function savedFabMap(src) {
+// Each fabric the block uses goes to this quilt's fabric in the same place where it can, but two of
+// the block's fabrics never share one: when this quilt runs out, `adopt` brings the missing fabrics
+// in (listed in `added`); without it (thumbnails) they share as before.
+function savedFabMap(src, usedIds, adopt) {
   const bg = src.layout.background, others = src.fabrics.filter(f => f.id !== bg).map(f => f.id);
-  return id => id === BG || id === bg ? BG : others.includes(id) ? slotFabric(others.indexOf(id) + 1) : BG;
+  const map = new Map(), taken = new Set(), added = [];
+  const used = others.filter(id => usedIds.has(id));
+  for (const id of used) {
+    let t = slotFabric(others.indexOf(id) + 1);
+    if (taken.has(t)) t = doc.fabrics.find(f => f.id !== doc.layout.background && !taken.has(f.id))?.id;
+    if (!t && adopt) { const f = { ...JSON.parse(JSON.stringify(src.fabrics.find(x => x.id === id))), id: uid('f') }; doc.fabrics.push(f); added.push(f); t = f.id; }
+    if (!t) t = slotFabric(others.indexOf(id) + 1);
+    taken.add(t); map.set(id, t);
+  }
+  const fn = id => id === BG || id === bg ? BG : map.get(id) ?? BG;
+  fn.added = added;
+  return fn;
 }
 // copies of a saved block (and the blocks a combination block holds), with fresh ids and this quilt's fabrics
-function savedBlockCopies(rec, id) {
-  const src = rec.doc, fab = savedFabMap(src), ids = [];
+function savedBlockCopies(rec, id, adopt = false) {
+  const src = rec.doc, ids = [];
   const visit = bid => { const b = src.blocks[bid]; if (!b || ids.includes(bid)) return; if (b.kind === 'compound') b.slots.forEach(s => s?.b && visit(s.b)); ids.push(bid); };
   visit(id);
+  const fab = savedFabMap(src, new Set(ids.flatMap(bid => src.blocks[bid].kind === 'drawn' ? src.blocks[bid].regions.map(r => r.fab) : [])), adopt);
+  savedBlockCopies.added = fab.added;
   const idMap = new Map(ids.map(b => [b, uid('b')]));
   return ids.map(bid => {
     const c = JSON.parse(JSON.stringify(src.blocks[bid]));
@@ -387,7 +404,7 @@ function savedBlocksGrid(q, fmt) {
 Actions.useSavedBlock = arg => {
   const [pid, id] = arg.split('|'), rec = _savedLib.find(p => p.id === pid);
   if (!rec?.doc.blocks[id]) return;
-  const copies = savedBlockCopies(rec, id), b = copies[copies.length - 1].block, host = activeBlock();
+  const copies = savedBlockCopies(rec, id, true), added = savedBlockCopies.added, b = copies[copies.length - 1].block, host = activeBlock();
   for (const c of copies) { addBlockToDoc(c.block, false); if (rec.refs?.[c.from]) refImgs[c.block.id] = rec.refs[c.from]; }
   if (copies.some(c => rec.refs?.[c.from])) saveRefs();
   if (ui.view === 'block' && host?.kind === 'compound' && ui.activeSlot != null && !isHexBlock(b)) {
@@ -399,7 +416,7 @@ Actions.useSavedBlock = arg => {
   }
   closeModal();
   commit();
-  toast(`${b.name} added`);
+  toast(added.length ? `${b.name} added, with ${plural(added.length, 'fabric')} it needed: ${added.map(f => f.name).join(', ')}` : `${b.name} added`, added.length ? 4000 : 2600);
 };
 Actions.libraryPickerMine = () => { ui.libCat = 'mine'; Actions.libraryPicker(); };
 const refreshLibrary = () => { $('#lib-grid') && ($('#lib-grid').innerHTML = libraryGrid()); $('#lib-folders') && ($('#lib-folders').innerHTML = libraryFolders()); renderInspector(); };

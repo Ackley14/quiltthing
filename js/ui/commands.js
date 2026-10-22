@@ -4,7 +4,22 @@
    fabrics. The shortcut sheet below is the one list of key bindings, grouped by where they work. */
 
 // words quilters use that aren't in the command names
-const CMD_SYNONYMS = { stitch: 'quilting', stitching: 'quilting', turn: 'rotate', spin: 'rotate', mirror: 'flip', hst: 'half square triangle seam', qst: 'quarter square triangle', yardage: 'fabric buy shopping', cut: 'cutting plan', binding: 'binding', pdf: 'print pattern', colour: 'color fabric palette', color: 'colour fabric palette', recolour: 'palette', undo: 'history', layer: 'quilting', applique: 'appliqué', sashing: 'sashing', border: 'border', zoom: 'zoom fit', dark: 'theme', light: 'theme' };
+const CMD_SYNONYMS = { stitch: 'quilting', stitching: 'quilting', turn: 'rotate', spin: 'rotate', mirror: 'flip', hst: 'half square triangle seam', qst: 'quarter square triangle', yardage: 'fabric buy shopping', cut: 'cutting plan', binding: 'binding', pdf: 'print pattern', colour: 'color fabric palette', color: 'colour fabric palette', recolour: 'palette swap', recolor: 'palette swap', undo: 'history', layer: 'quilting', applique: 'appliqué', sashing: 'sashing', border: 'border', zoom: 'zoom fit', dark: 'theme', light: 'theme',
+  seam: 'seam allowance', seams: 'seam allowance', allowance: 'seam', wof: 'width default fabric', width: 'width', point: 'setting', onpoint: 'setting', diagonal: 'setting', cornerstone: 'sashing', cornerstones: 'sashing', swap: 'swap', exchange: 'swap', fat: 'default fabric bought', quarter: 'default fabric bought', shopping: 'shopping list', buy: 'shopping list', cutting: 'cutting plan', back: 'back', backing: 'back backing', stipple: 'meander', freemotion: 'meander', fmq: 'meander', paper: 'paper', letter: 'paper', a4: 'paper' };
+// settings and views anywhere in the app, so they can be found from any workspace
+const CMD_PLACES = () => [
+  { label: 'Seam allowance', path: 'Fabric & cutting › Seams and appliqué', act: 'goSection', arg: 'fabric|sewing' },
+  { label: 'Default fabric width and how it is bought', path: 'Fabric & cutting › Default fabric', act: 'goSection', arg: 'fabric|fabdefaults' },
+  ...(ui.view === 'layout' && ui.selCell && cellContent(ui.selCell)?.b ? [] : [{ label: ui.view === 'layout' ? 'Rotate block (in Blocks)' : 'Rotate block 90°', path: 'Blocks', act: 'goRotateBlock' }]),
+  { label: 'Shopping list', path: 'Fabric & cutting', act: 'goFabPane', arg: 'shop' },
+  { label: 'Cutting plan', path: 'Fabric & cutting', act: 'goFabPane', arg: 'cut' },
+  { label: 'Back of the quilt', path: 'Quilting', act: 'goQSide', arg: 'back' },
+  { label: 'Front of the quilt', path: 'Quilting', act: 'goQSide', arg: 'front' },
+  { label: 'Paper: US Letter', path: 'Pattern', act: 'goPaper', arg: 'letter', checked: ui.patternPage !== 'a4' },
+  { label: 'Paper: A4', path: 'Pattern', act: 'goPaper', arg: 'a4', checked: ui.patternPage === 'a4' },
+  ...(typeof QUILT_TYPES !== 'undefined' ? QUILT_TYPES.map(t => ({ label: `Add quilting: ${t.label}`, path: 'Quilting', act: 'goAddQuilting', arg: t.key })) : []),
+  ...doc.fabrics.map((f, i) => ({ label: `Swap fabric ${letterFor(i)} (${f.name}) with…`, path: 'Fabrics', act: 'swapFabricMenu', arg: f.id })),
+];
 function commandList() {
   const out = [], seen = new Set();
   const add = c => { const k = c.label + '|' + c.act + '|' + (c.arg ?? ''); if (!seen.has(k)) { seen.add(k); out.push(c); } };
@@ -21,6 +36,7 @@ function commandList() {
     }
   }
   VIEW_LIST.forEach((v, i) => add({ label: `Go to ${v.label}`, path: 'Workspace', act: 'view', arg: v.key, kb: String(i + 1) }));
+  for (const c of CMD_PLACES()) add(c);
   for (const [id, P] of Object.entries(Panels)) add({ label: `${dockFind(wsLayout(), id) ? 'Show' : 'Open'} the ${P.title} panel`, path: 'Window', act: 'openPanel', arg: id });
   for (const p of (typeof quiltParts === 'function' ? quiltParts() : [])) add({ label: `${p.label} (quilt)`, path: 'Layout › Quilt panel', act: 'goQuiltPart', arg: p.key });
   if (ui.view === 'layout' && ui.selCell && cellContent(ui.selCell)?.b) for (const [l, a] of [['Rotate the selected block', 'cellRotate'], ['Flip the selected block', 'cellFlip'], ['Clear the selected position', 'cellClear']]) add({ label: l, path: 'Layout › selected position', act: a });
@@ -33,7 +49,7 @@ function commandList() {
 function scoreCommand(c, q) {
   if (!q) return c.disabled ? 0 : 1;
   // words that say what to do rather than what to find
-  q = q.split(/\s+/).filter(w => !['open', 'show', 'go', 'to', 'the', 'a', 'an', 'add', 'new', 'make', 'my', 'panel'].includes(w)).join(' ') || q;
+  q = q.split(/\s+/).filter(w => !['open', 'show', 'go', 'to', 'the', 'a', 'an', 'add', 'new', 'make', 'my', 'panel', 'on', 'in', 'of', 'for', 'with', 'change', 'set'].includes(w)).join(' ') || q;
   const label = c.label.toLowerCase(), path = c.path.toLowerCase(), wordStart = (t, w) => t.split(/[^a-z0-9½¼¾"]+/).some(x => x.startsWith(w));
   let s = 0;
   for (const w of q.split(/\s+/).filter(Boolean)) {
@@ -125,4 +141,15 @@ function shortcutsHtml(q) {
 }
 Actions.scFilter = v => { const el = $('#sc-list'); if (el) el.innerHTML = shortcutsHtml(v); };
 
+// go to a workspace and open one Properties section there
+Actions.goSection = arg => {
+  const [ws, key] = arg.split('|'); ui.collapsed[key] = false;
+  Actions.view(ws); Actions.openPanel('props');
+  setTimeout(() => { const h = $(`[data-panel="props"] .sec-h[data-arg="${CSS.escape(key)}"]`); h?.scrollIntoView({ block: 'start' }); h?.closest('.sec')?.querySelector('input, select')?.focus(); }, 80);
+};
+Actions.goRotateBlock = () => { if (ui.view !== 'block') Actions.view('block'); Actions.blockRotate(); };
+Actions.goFabPane = v => { Actions.view('fabric'); Actions.fabPane(v); };
+Actions.goQSide = v => { Actions.view('quilting'); Actions.qSide(v); };
+Actions.goPaper = v => { Actions.view('pattern'); Actions.setUi(`patternPage=${v}`); };
+Actions.goAddQuilting = k => { Actions.view('quilting'); Actions.addQuiltType(k); };
 Actions.goQuiltPart = k => { ui.quiltPart = k; ui.selCell = null; if (ui.view !== 'layout') ui.view = 'layout'; saveUi(); render(); Actions.openPanel('props'); };

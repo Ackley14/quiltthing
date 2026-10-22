@@ -36,7 +36,7 @@ function renderPalettes() {
     <div class="pal-quilt"><span class="muted">This quilt</span>${palStrip(paletteOrder())}<button class="btn small" data-act="palSaveQuilt">Save as a palette…</button></div>
     <div class="seg pal-tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" data-act="palTab" data-arg="${k}" aria-pressed="${_palTab === k}">${l}</button>`).join('')}</div>
     <div class="pal-body">${palettesBody()}</div>
-    <p class="hint">The first colour goes to the background, the rest to your fabrics in order. To swap two fabrics, drag one swatch onto the other.</p>
+    <p class="hint">The first colour goes to the background, the rest to your fabrics in order. To swap two fabrics, drag one swatch onto another in the Fabrics panel, or right-click it.</p>
     <div class="actions"><button class="btn primary" data-act="closeModal">Done</button></div>`);
   $('#modal-root .modal').classList.add('wide');
 }
@@ -47,7 +47,7 @@ function refreshPalettes() {
   renderPalettes();
   const nb = $('#modal-root .pal-body'); if (nb) nb.scrollTop = top;
 }
-Actions.palettes = () => renderPalettes();
+Actions.palettes = () => (Panels.palettes ? Actions.openPanel('palettes') : renderPalettes());
 Actions.palTab = t => { _palTab = t; refreshPalettes(); };
 Actions.usePalette = id => {
   const p = findPalette(id); if (!p) return;
@@ -56,13 +56,13 @@ Actions.usePalette = id => {
 };
 Actions.deletePalette = id => {
   const p = myPalettes().find(x => x.id === id); if (!p) return;
-  confirmModal('Delete this palette?', `“${esc(p.name)}” is removed from this browser. Quilts that use its colours keep them.`, 'Delete', () => { saveMyPalettes(myPalettes().filter(x => x.id !== id)); renderPalettes(); }, true);
+  confirmModal('Delete this palette?', `“${esc(p.name)}” is removed from this browser. Quilts that use its colours keep them.`, 'Delete', () => { saveMyPalettes(myPalettes().filter(x => x.id !== id)); refreshPalettes(); }, true);
 };
 // name a new palette, then go back to the Palettes window
 function askPaletteName(suggest, onSave) {
   openModal(`<h2>Save palette</h2><label class="f">Name<input type="text" id="pal-name" value="${esc(suggest)}"></label>
     <div class="actions"><button class="btn" data-act="palettes">Cancel</button><button class="btn primary" data-act="palNameOk">Save</button></div>`);
-  Actions.palNameOk = () => { onSave($('#pal-name')?.value.trim() || suggest); _palTab = 'mine'; renderPalettes(); };
+  Actions.palNameOk = () => { onSave($('#pal-name')?.value.trim() || suggest); _palTab = 'mine'; closeModal(); refreshPalettes(); };
   setTimeout(() => { const i = $('#pal-name'); i?.select(); i?.addEventListener('keydown', e => { if (e.key === 'Enter') Actions.palNameOk(); }); }, 40);
 }
 Actions.palSaveQuilt = () => askPaletteName(doc.meta.title === 'Untitled quilt' ? 'My palette' : doc.meta.title, name => saveMyPalettes([paletteFromQuilt(name), ...myPalettes()]));

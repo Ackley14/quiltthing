@@ -29,7 +29,7 @@ function bindingStepsHtml(bnd, sa) {
   const mitre = `<svg viewBox="0 0 150 110" width="1.6in"><rect x="10" y="30" width="90" height="70" fill="#f4f1ea" ${st}/><rect x="10" y="30" width="80" height="10" fill="${fab}" ${st}/><path d="M90 30 L120 0 L130 10 L100 40 Z" fill="${fab}" ${st} fill-opacity=".85"/><text x="18" y="66" font-size="10" fill="#2b3a4a">fold up at 45°,</text><text x="18" y="80" font-size="10" fill="#2b3a4a">then down</text></svg>`;
   const ends = `<svg viewBox="0 0 150 110" width="1.6in"><rect x="10" y="45" width="80" height="18" fill="${fab}" ${st}/><rect x="60" y="45" width="80" height="18" fill="${fab}" ${st} fill-opacity=".75"/><line x1="60" y1="35" x2="60" y2="75" ${dash}/><line x1="78" y1="35" x2="78" y2="75" ${dash}/><text x="52" y="92" font-size="10" fill="#2b3a4a">overlap = ${esc(W)}</text></svg>`;
   return `<h3>Binding</h3><div class="bind-figs">${fig(join, 'Join strips on the diagonal')}${fig(mitre, 'Mitre each corner')}${fig(ends, 'Join the ends')}</div><ol>
-      <li>Lay two ${W} strips (fabric ${fabricLetter(bnd.fabric)}) right sides together at a right angle and sew corner to corner across the overlap. Trim to ¼" and press open. Join all the strips this way into one long strip.</li>
+      <li>Lay two ${W} strips (fabric ${fabricLetter(bnd.fabric)}) right sides together at a right angle and sew corner to corner across the overlap. Trim to ${fmtLen(sa)} and press open. Join all the strips this way into one long strip.</li>
       <li>Press the strip in half lengthwise, wrong sides together, so it is ${fold} wide.</li>
       <li>Trim the batting and backing even with the quilt top.</li>
       <li>Start midway along one side. Leaving a 10" tail, sew the raw edges of the binding to the front of the quilt with a ${fmtLen(sa)} seam. Stop ${fmtLen(sa)} from the corner and backstitch.</li>
@@ -161,25 +161,25 @@ function unitMethodText(type, sample, n, sa) {
   switch (type) {
     case 'hst': {
       const sq = fmtLen(ceilEighth(r.w + sa * (2 + Math.SQRT2)), 'up');
-      return `Make <b>${n}</b> HST units (${fabs.map(L).join(' + ')}). Pair a ${sq} square of each fabric right sides together, draw a diagonal line on the lighter one, sew ¼" on both sides of the line and cut on it. Each pair makes 2 units. Press toward the darker fabric and trim to ${unf}.`;
+      return `Make <b>${n}</b> HST units (${fabs.map(L).join(' + ')}). Pair a ${sq} square of each fabric right sides together, draw a diagonal line on the lighter one, sew ${fmtLen(sa)} on both sides of the line and cut on it. Each pair makes 2 units. Press toward the darker fabric and trim to ${unf}.`;
     }
     case 'qst': {
       const sq = fmtLen(ceilEighth(r.w + 2 * sa * (1 + Math.SQRT2)), 'up');   // finished + 1¼" (for ¼" seams)
-      return `Make <b>${n}</b> quarter-square triangle units (${fabs.map(L).join(' + ')}). ${fabs.length === 2 ? `Make HSTs from the ${sq} squares (two at a time), pair two HSTs with contrasting fabrics facing, draw a diagonal across the seam, sew ¼" each side and cut. Each pair makes 2 units.` : 'Sew the triangles in pairs, then join the pairs, matching the centre.'} Trim to ${unf}.`;
+      return `Make <b>${n}</b> quarter-square triangle units (${fabs.map(L).join(' + ')}). ${fabs.length === 2 ? `Make HSTs from the ${sq} squares (two at a time), pair two HSTs with contrasting fabrics facing, draw a diagonal across the seam, sew ${fmtLen(sa)} each side and cut. Each pair makes 2 units.` : 'Sew the triangles in pairs, then join the pairs, matching the centre.'} Trim to ${unf}.`;
     }
     case 'goose': {
       const big = fmtLen(ceilEighth(Math.max(r.w, r.h) + 2 * sa * (1 + Math.SQRT2)), 'up');
       const small = fmtLen(ceilEighth(Math.min(r.w, r.h) + sa * (2 + Math.SQRT2)), 'up');
-      return `Make <b>${n}</b> flying-geese units (goose ${L(sample.unit.goose)}, sky ${L(sample.unit.sky)}) with the no-waste method: place two ${small} sky squares on opposite corners of a ${big} goose square, sew ¼" each side of the diagonal, cut apart, add the remaining sky squares the same way. Every big square makes 4 geese. Trim to ${unf}.`;
+      return `Make <b>${n}</b> flying-geese units (goose ${L(sample.unit.goose)}, sky ${L(sample.unit.sky)}) with the no-waste method: place two ${small} sky squares on opposite corners of a ${big} goose square, sew ${fmtLen(sa)} each side of the diagonal, cut apart, add the remaining sky squares the same way. Every big square makes 4 geese. Trim to ${unf}.`;
     }
     case 'snowball':
-      return `Make <b>${n}</b> stitch-and-flip units: draw a diagonal on the wrong side of each small corner square, place it on the corner of the main piece right sides together, sew on the line, trim ¼" beyond the seam and press open. Unit measures ${unf}.`;
+      return `Make <b>${n}</b> stitch-and-flip units: draw a diagonal on the wrong side of each small corner square, place it on the corner of the main piece right sides together, sew on the line, trim ${fmtLen(sa)} beyond the seam and press open. Unit measures ${unf}.`;
     case 'curved':
       return `Make <b>${n}</b> curved units: fold each piece in half to finger-press the centre of the curve, pin the centres and ends right sides together with the concave piece on top, and sew slowly, easing the curve. Press toward the convex piece. Trim to ${unf}.`;
     case 'hrt':
-      return `Make <b>${n}</b> half-rectangle triangle units: sew the triangles along the long edge with the points offset by ¼" so the unit squares up to ${unf}.`;
+      return `Make <b>${n}</b> half-rectangle triangle units: sew the triangles along the long edge with the points offset so the unit squares up to ${unf}.`;
     case 'complex':
-      return `This block has <b>set-in (Y) seams</b>. Mark the ¼" seam intersections on the wrong side, sew each seam only between the marks and back-stitch, then pivot to set in the next piece. English paper piecing is a good alternative.`;
+      return `This block has <b>set-in (Y) seams</b>. Mark the ${fmtLen(sa)} seam intersections on the wrong side, sew each seam only between the marks and back-stitch, then pivot to set in the next piece. English paper piecing is a good alternative.`;
   }
   return '';
 }
@@ -263,7 +263,7 @@ function blockStepsHtml(block, BS, sa, copies = 1) {
     }
     let text = parts.join('. ') + '.';
     if (descr.diag) text += ' Diagonal edges are cut on the bias and stretch easily: pin well, centre each piece so its points ("dog ears") overhang equally at both ends, and press without steam. Trim the dog ears after sewing.';
-    if (isRoot) text += isHexBlock(block) ? ` Press, then trim the hexagon to ${blockSizeText(block, BS, 2 * sa)} (¼" beyond each point of the sewn shape).` : ` Press, then square the block to ${fmtSize(BS + 2 * sa, BS + 2 * sa)}.`;
+    if (isRoot) text += isHexBlock(block) ? ` Press, then trim the hexagon to ${blockSizeText(block, BS, 2 * sa)} (${fmtLen(sa)} beyond each point of the sewn shape).` : ` Press, then square the block to ${fmtSize(BS + 2 * sa, BS + 2 * sa)}.`;
     else if (descr.cols) text += ' Press seams in alternate directions from row to row so they nest.';
     steps.push({ text, diag: blockDiagramSvg(block, BS, STEP_DIAG_IN, { level: k }) });
   }
@@ -684,9 +684,9 @@ function assemblyText(Q, sa) {
     const t = L.tess, name = tessShape(t.shape).label.replace(/ \(.*\)$/, '').toLowerCase();
     const edge = t.edge !== 'fill' && t.cutEdges ? 'Edge pieces are cut to their exact shape (each has its own code on the map), so the edges come out straight with no trimming. Sew them in with their rows.' : t.edge === 'fill' ? `Partial shapes at the edges are cut from fabric ${fabricLetter(t.fill)} so the quilt finishes with straight edges.` : 'Shapes at the edges are trimmed straight after the top is assembled. Cut them as whole shapes and trim later, or use the edge templates.';
     const how = {
-      hex: 'Hexagons need set-in (Y) seams. English paper piecing (EPP) is the easiest route: baste each hexagon over a paper template and whip-stitch neighbours together. By machine, sew hexagons into rows, stopping ¼" from each end, then set rows together.',
+      hex: `Hexagons need set-in (Y) seams. English paper piecing (EPP) is the easiest route: baste each hexagon over a paper template and whip-stitch neighbours together. By machine, sew hexagons into rows, stopping ${fmtLen(sa)} from each end, then set rows together.`,
       tumbling: 'Sew three diamonds (one of each orientation) into a hexagon "cube" with set-in seams, then join the cubes into rows. EPP works well here too.',
-      triangle: 'Sew the triangles into rows, alternating point up and point down and offsetting each by ¼" so the edges align. Join the rows, matching points.',
+      triangle: 'Sew the triangles into rows, alternating point up and point down and offsetting each so the edges align. Join the rows, matching points.',
       zigzag: 'Sew the parallelograms into horizontal rows, matching the angled edges. Join the rows so the zigzags line up into lightning bolts.',
       brick: 'Sew the bricks into rows, then join the rows, offsetting every other row by half a brick.',
       diamond: 'Sew the diamonds into diagonal rows, then join the rows, matching points.',

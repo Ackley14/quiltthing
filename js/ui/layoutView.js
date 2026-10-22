@@ -485,6 +485,7 @@ Actions.addBorder = () => {
   const last = doc.layout.borders[doc.layout.borders.length - 1];
   doc.layout.borders.push({ width: last ? last.width + 2 : 2, fabric: doc.fabrics[(fabricIndex(last?.fabric) + 1) % doc.fabrics.length]?.id || doc.fabrics[1].id });
   commit();
+  focusSoon(`[data-panel="props"] input[data-bind="layout.borders.${doc.layout.borders.length - 1}.width"]`);
 };
 Actions.removeBorder = i => { doc.layout.borders.splice(+i, 1); commit(); };
 Actions.borderFab = (arg) => { const [i, id] = arg.split('|'); doc.layout.borders[+i].fabric = id; commit(); };
@@ -616,7 +617,7 @@ Actions.quiltAddMenu = (a, el) => openMenu(el, [
   ...(doc.layout.mode === 'grid' && !(doc.layout.grid.sashing.width > 0) ? [{ label: 'Sashing', act: 'addSashing' }] : []),
   ...(doc.layout.binding.fabric ? [] : [{ label: 'Binding', act: 'bindingFab', arg: doc.fabrics[1]?.id || doc.fabrics[0].id }]),
 ]);
-Actions.addSashing = () => { doc.layout.grid.sashing.width = 1.5; ui.quiltPart = 'sashing'; commit(); };
+Actions.addSashing = () => { doc.layout.grid.sashing.width = 1.5; ui.quiltPart = 'sashing'; commit(); focusSoon('[data-panel="props"] input[data-bind="layout.grid.sashing.width"]'); };
 // Properties in Layout: the selected position first, then the part chosen in the Quilt panel.
 function layoutProps() {
   const parts = quiltParts(), cur = parts.find(p => p.key === ui.quiltPart) || parts[0];

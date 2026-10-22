@@ -15,7 +15,7 @@ Views.quilting = {
     return `<div class="stage"><div class="canvas-wrap">${back ? quiltBackSvg(Q) : quiltSvg(Q, { faded: !!ui.qFade, quilting: quiltingSvg(Q) })}</div>
       <div class="status-bar">${back ? `Back of the quilt, stitching mirrored. ${bf ? esc(fabricLabel(bf)) : 'No backing fabric chosen'} · ${esc(bk.chosen.title.toLowerCase())}. <a href="#" data-act="goBacking">Backing settings</a>` : layers.length
         ? `About <b>${Math.round(stats.total / 36)} yd</b> of stitching · <b>${Math.ceil(stats.threadYds / 50) * 50} yd</b> of thread, top and bobbin`
-        : 'Add a quilting pattern on the right.'}</div></div>`;
+        : 'No quilting yet.'}</div></div>`;
   },
   props() { return quiltLayerProps(); },
   inspector() { return quiltLayersPanel() + quiltLayerProps(); },
