@@ -31,7 +31,7 @@ const QUILT_AREAS = [
   ['all', 'Whole quilt'], ['center', 'Centre only'], ['borders', 'Borders only'],
   ['blocks', 'Blocks only'], ['plain', 'Plain squares & setting triangles'], ['sashing', 'Sashing'],
   ['panel', 'Inset panel only'], ['aroundPanel', 'Centre, around the inset'],
-  ['pickBlocks', 'Specific blocks'], ['pickFabrics', 'Specific fabrics'],
+  ['pickBlocks', 'Blocks'], ['pickFabrics', 'Fabrics'],
 ];
 // What "Specific blocks" and "Specific fabrics" can choose from: the blocks placed on the quilt, and
 // the fabrics of the pieces that aren't inside a block (plain squares, tessellation shapes, setting

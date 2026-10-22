@@ -91,7 +91,7 @@ Actions.qToggleShow = i => { const L = doc.quilting.layers[+i]; if (L) { L.visib
 // Only offer the "Where" choices this quilt has.
 function areaAvail(Q, k) {
   if (['panel', 'aroundPanel'].includes(k)) return Q.panels.length > 0;
-  if (k === 'blocks') return Q.cells.some(c => c.b);
+  if (k === 'blocks') return false;   // Blocks (all ticked) does the same
   if (k === 'plain') return Q.cells.some(c => !c.b) || Q.tiles.some(t => /setting/.test(t.role || ''));
   if (k === 'sashing') return Q.patches.some(p => /^(sash|sashLong|corner)$/.test(p.role));
   if (k === 'pickBlocks') return quiltPickables(Q).blocks.length > 0;
