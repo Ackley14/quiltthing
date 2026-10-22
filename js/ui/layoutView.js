@@ -488,27 +488,56 @@ function paintSet() {
   const set = (ui.tessPaintSet || ids.filter(id => id !== doc.layout.background)).filter(id => ids.includes(id));
   return set.length ? set : ids.slice(0, 2);
 }
+// Hexagon blocks that can go in this tessellation (only hexagon tiles take blocks).
+const tessBlocksOk = () => doc.layout.tess.shape === 'hex';
+function blockSet() {
+  if (!tessBlocksOk()) return [];
+  return (ui.tessBlockSet || []).filter(id => doc.blocks[id] && isHexBlock(doc.blocks[id]));
+}
+Actions.tessToggleBlock = id => {
+  const set = blockSet();
+  ui.tessBlockSet = set.includes(id) ? set.filter(x => x !== id) : [...set, id];
+  saveUi(); renderInspector();
+};
+// Fill every shape with one fabric (it replaces any blocks there too).
+Actions.tessFillAll = () => {
+  const t = doc.layout.tess, fab = ui.fabric === BG ? doc.layout.background : ui.fabric;
+  for (const tl of tessAllShapes()) { t.colors[tl.tkey] = fab; if (t.blocks) delete t.blocks[tl.tkey]; }
+  commit(`Fill all with ${fabricLabel(fab)}`);
+};
+// Every shape of the tessellation, whether it holds fabric or a block.
+function tessAllShapes() {
+  _Q = null;
+  const Q = Qnow(), out = Q.tiles.filter(t => t.tkey && t.role !== 'fill').map(t => ({ tkey: t.tkey, row: t.row, col: t.col, orient: t.orient, pts: t.pts }));
+  for (const c of Q.cells) if (c.hex && c.key[0] === 't') out.push({ tkey: c.key.slice(1), row: c.row, col: c.col, orient: 0, pts: c.pts, block: true });
+  return out;
+}
 Actions.tessPattern = kind => {
-  const L = doc.layout, Q = Qnow(), F = paintSet();
+  if (kind === 'solid') return Actions.tessFillAll();
+  const L = doc.layout, Q = Qnow(), items = [...paintSet().map(id => ({ fab: id })), ...blockSet().map(id => ({ b: id }))];
   if (kind === 'shuffle') { L.tess.seed = (L.tess.seed || 1) + 1; kind = 'random'; }
   const R = rng(L.tess.seed || 1);
-  const tiles = Q.tiles.filter(t => t.tkey);
+  const tiles = tessAllShapes(), whole = new Set(Q.tiles.filter(t => t.role === 'tile').map(t => t.tkey).concat(Q.cells.filter(c => c.hex && !c.clip).map(c => c.key.slice(1))));
   const rows = tiles.map(t => t.row), minR = Math.min(...rows), maxR = Math.max(...rows);
   const cx = Q.W / 2, cy = Q.H / 2;
+  L.tess.blocks = L.tess.blocks || {};
   for (const t of tiles) {
     let i = 0;
     const c = centroid(t.pts);
-    if (kind === 'solid') { L.tess.colors[t.tkey] = ui.fabric === BG ? L.background : ui.fabric; continue; }
     if (kind === 'random') i = Math.floor(R() * F.length);
     else if (kind === 'rows') i = t.row - minR;
     else if (kind === 'cols') i = t.col;
     else if (kind === 'diag') i = t.row + t.col;
     else if (kind === 'rings') i = Math.floor(Math.hypot(c[0] - cx, c[1] - cy) / (L.tess.size * 1.5));
     else if (kind === 'orient') i = t.orient;
-    else if (kind === 'gradient') i = Math.floor((t.row - minR) / (maxR - minR + 1) * F.length);
-    L.tess.colors[t.tkey] = F[((i % F.length) + F.length) % F.length];
+    else if (kind === 'gradient') i = Math.floor((t.row - minR) / (maxR - minR + 1) * items.length);
+    let it = items[((i % items.length) + items.length) % items.length];
+    // a block only goes in a whole hexagon; a cut-off edge shape takes the first fabric instead
+    if (it.b && !whole.has(t.tkey)) it = items.find(x => x.fab) || { fab: L.tess.base };
+    if (it.b) { L.tess.blocks[t.tkey] = { b: it.b, r: 0, f: false }; delete L.tess.colors[t.tkey]; }
+    else { L.tess.colors[t.tkey] = it.fab; delete L.tess.blocks[t.tkey]; }
   }
-  commit();
+  commit(`Fill pattern: ${({ random: 'random', rows: 'rows', cols: 'columns', diag: 'diagonals', rings: 'rings', gradient: 'gradient', orient: 'by direction' })[kind] || kind}`);
 };
 Actions.addBorder = () => {
   const last = doc.layout.borders[doc.layout.borders.length - 1];
@@ -600,10 +629,15 @@ function layoutInspector() {
         <div class="btn-row"><button class="btn small" data-act="cubeShade" title="Clear painted diamonds and shade every cube again">Shade again</button><button class="btn small quiet" data-act="cubeOff">Turn off</button></div>`
         : `<p class="hint">Light tops, medium left faces and dark right faces.</p><div class="btn-row"><button class="btn small primary" data-act="cubeShade">Shade as 3D cubes</button></div>`, { key: 'cubes' });
     }
-    h += section('Fill patterns', `<label class="f">Fabrics to use</label>
-      <div class="fabpick">${doc.fabrics.map(f => `<button aria-pressed="${set.includes(f.id)}" data-act="tessToggleSet" data-arg="${f.id}" title="${esc(f.name)}">${swatchHtml(f.id, 20)}</button>`).join('')}</div>
-      <div class="btn-row">${[['random', 'Random'], ['rows', 'Rows'], ['cols', 'Columns'], ['diag', 'Diagonals'], ['rings', 'Rings'], ['gradient', 'Gradient'], ['orient', 'By direction']].map(([k, l]) => `<button class="btn small" data-act="tessPattern" data-arg="${k}">${l}</button>`).join('')}</div>
-      <div class="btn-row"><button class="btn small" data-act="tessPattern" data-arg="shuffle">Shuffle</button><button class="btn small" data-act="tessPattern" data-arg="solid" title="Paint every shape with the selected fabric">Paint all</button><button class="btn small quiet danger" data-act="clearLayout">Clear</button></div>`, { key: 'tessfill' });
+    const bset = blockSet(), hexBlocks = doc.blockOrder.filter(id => isHexBlock(doc.blocks[id])), fillFab = ui.fabric === BG ? L.background : ui.fabric;
+    h += section('Fill patterns', `<div class="fill-group"><div class="fill-h">${icon('swatch', 14)} Fabrics</div>
+        <div class="fabpick" role="group" aria-label="Fabrics to fill with">${doc.fabrics.map(f => `<button aria-pressed="${set.includes(f.id)}" data-act="tessToggleSet" data-arg="${f.id}" title="${esc(f.name)}" aria-label="${esc(f.name)}">${swatchHtml(f.id, 20)}</button>`).join('')}</div></div>
+      ${tessBlocksOk() ? `<div class="fill-group"><div class="fill-h">${icon('blocks', 14)} Blocks</div>
+        ${hexBlocks.length ? `<div class="blkpick" role="group" aria-label="Blocks to fill with">${hexBlocks.map(id => `<button aria-pressed="${bset.includes(id)}" data-act="tessToggleBlock" data-arg="${id}" title="${esc(doc.blocks[id].name)}" aria-label="${esc(doc.blocks[id].name)}">${blockThumb(doc.blocks[id], 34, 'mini')}</button>`).join('')}</div>`
+          : '<p class="hint">No hexagon blocks yet. Make one in Blocks (Add, Hexagon block).</p>'}</div>` : ''}
+      <div class="fill-group"><div class="fill-h">Pattern <span class="muted">· ${plural(set.length, 'fabric')}${bset.length ? ` and ${plural(bset.length, 'block')}` : ''}</span></div>
+        <div class="btn-row">${[['random', 'Random'], ['rows', 'Rows'], ['cols', 'Columns'], ['diag', 'Diagonals'], ['rings', 'Rings'], ['gradient', 'Gradient'], ['orient', 'By direction']].map(([k, l]) => `<button class="btn small" data-act="tessPattern" data-arg="${k}">${l}</button>`).join('')}<button class="btn small" data-act="tessPattern" data-arg="shuffle" title="Random again, differently">Shuffle</button></div></div>
+      <div class="btn-row fill-end"><button class="btn small" data-act="tessFillAll" title="Every shape in one fabric (the fabric you paint with)">${swatchHtml(fillFab, 14)} Fill all with ${esc(fabricLabel(fillFab))}</button><button class="btn small quiet danger" data-act="clearLayout">Clear all</button></div>`, { key: 'tessfill' });
   }
 
 
@@ -657,7 +691,7 @@ function quiltParts() {
   const parts = [{ key: 'setting', label: L.mode === 'tess' ? 'Setting' : 'Setting & size', note: L.mode === 'tess' ? `${mode} · ${fmtSize(Q.W, Q.H)} finished` : `${mode} · ${size}`, icon: 'quilt', keys: ['setting', 'size'] }];
   if (L.mode === 'tess') {
     parts.push({ key: 'shape', label: 'Shape & size', note: `${tessShape(t.shape).label.replace(/ \(.*\)$/, '')} · ${fmtSize(...tessSize(t))} centre`, icon: 'blocks', keys: ['shape', 'cubes'] });
-    parts.push({ key: 'tessfill', label: 'Fill patterns', note: `${paintSet().length} fabrics`, icon: 'palette', keys: ['tessfill'] });
+    parts.push({ key: 'tessfill', label: 'Fill patterns', note: `${plural(paintSet().length, 'fabric')}${blockSet().length ? `, ${plural(blockSet().length, 'block')}` : ''}`, icon: 'palette', keys: ['tessfill'] });
   }
   if (L.mode === 'grid') { const s = L.grid.sashing; parts.push({ key: 'sashing', label: 'Sashing', note: s.width > 0 ? `${fmtLen(s.width)} wide${s.cornerstones ? ', cornerstones' : ''}` : 'none', icon: 'quilt', keys: ['sashing'], fab: s.width > 0 ? s.fabric : null }); }
   const pn = (L.panels || []).length;

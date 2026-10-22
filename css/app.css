@@ -909,3 +909,12 @@ body[data-doctool="zoom"] #main { cursor: zoom-in; }
 :root[data-theme="light"] .toast-act { color: #7cc0ff; }
 
 div.f > .seg { margin-top: 4px; }
+
+.fill-group { margin-top: 10px; }
+.fill-h { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); font-weight: 600; color: var(--text-2); }
+.fill-h .muted { font-weight: 400; }
+.blkpick { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.blkpick button { padding: 2px; border-radius: 6px; border: 2px solid transparent; background: var(--bg-field); cursor: pointer; line-height: 0; }
+.blkpick button[aria-pressed="true"] { border-color: var(--accent); }
+.fill-end { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.fill-end .btn .sw { margin-right: 4px; }
