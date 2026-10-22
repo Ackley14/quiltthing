@@ -207,7 +207,7 @@ function restoreHistory() {
   } catch {}
 }
 const saveUi = debounce(() => {
-  try { localStorage.setItem(STORE_UI, JSON.stringify({ ...ui, drawing: [], grayscale: false, libSearch: '', fabPop: null })); } catch {}
+  try { localStorage.setItem(STORE_UI, JSON.stringify({ ...ui, drawing: [], grayscale: false, libSearch: '', fabPop: null, snapOff: false })); } catch {}
 }, 300);
 
 /* ---------- reference pictures ----------

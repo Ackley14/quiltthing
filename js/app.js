@@ -124,6 +124,7 @@ async function loadTessSample() {
 }
 
 function startBlank() {
+  ui.snapOff = false;
   doc = newDoc(); ui.projectId = null;
   addBlockToDoc(newDrawnBlock('My first block'));
   ui.view = 'block'; ui.tool = 'rect'; ui.fabric = doc.fabrics[1].id;

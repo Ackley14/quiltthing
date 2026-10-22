@@ -304,8 +304,9 @@ Actions.importBlocks = () => {
   });
   inp.click();
 };
-Actions.newBlock = () => { addBlockToDoc(newDrawnBlock(`Block ${doc.blockOrder.length + 1}`)); ui.view = 'block'; ui.tool = 'rect'; commit(); };
+Actions.newBlock = () => { ui.snapOff = false; addBlockToDoc(newDrawnBlock(`Block ${doc.blockOrder.length + 1}`)); ui.view = 'block'; ui.tool = 'rect'; commit(); };
 Actions.newHexBlock = () => {
+  ui.snapOff = false;
   addBlockToDoc(newDrawnBlock(`Hexagon ${doc.blockOrder.length + 1}`, 6, 'hex'));
   ui.view = 'block'; ui.tool = 'tri';
   commit();

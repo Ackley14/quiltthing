@@ -531,7 +531,7 @@ Actions.fileMenu = (a, el) => openMenu(el, MENUS.file());   // the phone-width F
 Actions.newProject = () => {
   const go = () => {
     doc = newDoc(); ui.activeBlock = null; ui.projectId = null; ui.fabric = doc.fabrics[1].id; ui.view = 'block';
-    addBlockToDoc(newDrawnBlock('My first block'));
+    addBlockToDoc(newDrawnBlock('My first block')); ui.snapOff = false;
     resetHistory(); saveNow(); render(); toast('New project started');
   };
   // replacing a sample nobody has changed needs no warning
