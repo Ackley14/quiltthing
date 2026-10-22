@@ -277,9 +277,14 @@ label.check.opt input { margin-top: 2px; }
 .hint.pad { padding: 10px 12px; }
 .muted { color: var(--text-3); }
 .muted.small, span.small { font-size: var(--fs-xs); }
-.stepper { display: flex; gap: 4px; margin-top: 4px; }
-.stepper input { flex: 1; margin-top: 0 !important; text-align: center; }
-.stepper .btn { min-width: 30px; font-size: var(--fs); }
+.spin { position: relative; display: block; margin-top: 4px; }
+.spin input { display: block; width: 100%; margin-top: 0 !important; padding-right: 24px; }
+.spin-b { position: absolute; top: 1px; right: 1px; bottom: 1px; width: 20px; display: flex; flex-direction: column; border-left: 1px solid var(--line); border-radius: 0 var(--radius) var(--radius) 0; overflow: hidden; }
+.spin-b button { flex: 1; min-height: 0; padding: 0; border: 0; background: transparent; color: var(--text-3); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.spin-b button + button { border-top: 1px solid var(--line); }
+.spin-b button:hover { background: var(--bg-hover); color: var(--text); }
+.spin-b button:active { background: var(--accent-soft); color: var(--accent); }
+.spin-b svg { width: 10px; height: 10px; }
 .chip { border: 1px solid var(--line-strong); background: var(--bg-field); border-radius: 999px; padding: 3px 10px; font-size: var(--fs-xs); cursor: pointer; color: var(--text-2); }
 .chip:hover { border-color: var(--text-3); color: var(--text); }
 .chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--text); font-weight: 600; }
