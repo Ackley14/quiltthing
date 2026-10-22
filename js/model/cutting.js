@@ -102,8 +102,10 @@ function recipeFor(cls, sa, opts = {}) {
       const bb = bounds(cls.pts);
       const app = opts.applique;
       const holes = (opts.holes || []).map(h => translatePoly(h, -bb.x, -bb.y));
-      return { key: `${app ? 'app' : 'tpl'}:${outlineSignature(cls.pts)}${holes.map(h => '/' + outlineSignature(h)).join('')}`, method: 'template', applique: app, curved: cls.curved,
-        w: mar.w, h: mar.h, outline: translatePoly(cls.pts, -bb.x, -bb.y), holes, cutBox: mar, yield: 1, makes: shapeName(cls), holed: cls.shape === 'holed',
+      // matching marks on curved seams (none on appliqué); the key tells pieces with other marks apart
+      const outline = translatePoly(cls.pts, -bb.x, -bb.y), notches = app ? [] : (opts.notches || []).map(m => ({ p: [m.p[0] - bb.x, m.p[1] - bb.y], n: m.n }));
+      return { key: `${app ? 'app' : 'tpl'}:${outlineSignature(cls.pts)}${holes.map(h => '/' + outlineSignature(h)).join('')}${notches.length ? '#' + notchSignature(outline, notches) : ''}`, method: 'template', applique: app, curved: cls.curved,
+        w: mar.w, h: mar.h, outline, holes, notches, cutBox: mar, yield: 1, makes: shapeName(cls), holed: cls.shape === 'holed',
         // regular hexagons nest in a honeycomb; offsetting by sa grows the side by 2·sa/√3
         hexSide: cls.shape === 'hex' && !app ? cls.side + 2 * sa / Math.sqrt(3) : null };
     }
@@ -117,7 +119,7 @@ function templateGeom(recipe) {
   const sa = recipe.applique ? (fusible ? 0 : 0.1875) : doc.cutting.seam;
   let pts = recipe.outline, holes = recipe.holes || [];
   if (fusible) { const bb = bounds(pts), ax = bb.x + bb.w / 2; pts = mirrorPolyX(pts, ax); holes = holes.map(h => mirrorPolyX(h, ax)); }
-  return { sa, fusible, pts, holes, cut: seamOutline(pts, sa), cutHoles: holes.flatMap(h => holeCutLines(h, sa)) };
+  return { sa, fusible, pts, holes, notches: recipe.applique ? [] : recipe.notches || [], cut: seamOutline(pts, sa), cutHoles: holes.flatMap(h => holeCutLines(h, sa)) };
 }
 function recipeStitchMain(rect, sa) {
   return recipeFor({ shape: 'rect', w: rect.w, h: rect.h }, sa);
@@ -211,6 +213,7 @@ function collectCutItems(Q) {
     const all = blockPieces(block, size, size);
     const speed = speedPieces(an);
     const use = p => ({ b: bid, i: all.indexOf(p) });
+    const notchesOf = p => an.notches[all.indexOf(p)];
     for (const u of an.units) {
       if (u.unit.type === 'goose') {
         const gf = resolveFab(u.unit.goose), sf = resolveFab(u.unit.sky);
@@ -239,13 +242,14 @@ function collectCutItems(Q) {
     for (const p of all) {
       if (handled.has(p)) continue;
       // mirrored placements only matter for pieces that have a left and right hand
-      let cls = p === oversizeBg ? { ...p.cls, w: p.cls.w + 2, h: p.cls.h + 2 } : p.cls, holes = p.holes;
+      let cls = p === oversizeBg ? { ...p.cls, w: p.cls.w + 2, h: p.cls.h + 2 } : p.cls, holes = p.holes, notches = notchesOf(p);
       if (flip && ['rtri', 'para', 'tri', 'quad', 'poly', 'curved', 'holed'].includes(cls.shape)) {
         cls = classifyPiece(mirrorPolyX(p.pts, size / 2), { curved: p.curved });
         holes = holes.map(h => mirrorPolyX(h, size / 2));
+        notches = notches?.map(m => ({ p: [size - m.p[0], m.p[1]], n: [-m.n[0], m.n[1]] }));
         if (p.cls.shape === 'holed') cls.shape = 'holed';
       }
-      add(p.fab, recipeFor(cls, sa, ro(p.fab, { directional: isDir(p.fab), applique: p.app, holes })), n, name, use(p), speed.has(p) ? n : 0);
+      add(p.fab, recipeFor(cls, sa, ro(p.fab, { directional: isDir(p.fab), applique: p.app, holes, notches })), n, name, use(p), speed.has(p) ? n : 0);
     }
   }
   const r = p => recipeFor(p.cls, sa, ro(p.fab, { directional: isDir(p.fab), applique: p.app, holes: p.holes }));

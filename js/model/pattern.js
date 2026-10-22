@@ -421,6 +421,7 @@ function templateSvg(t, maxW, maxH) {
   const dom = fabricHex(t.fab);
   const inner = `<path d="${polyToPath(cut)}${holesD(g.cutHoles)}" fill="${mix(dom, '#ffffff', .82)}" fill-rule="evenodd" stroke="#2b3a4a" stroke-width="0.012"${g.sa ? ' stroke-dasharray="0.06 0.04"' : ''}/>
     ${g.sa ? `<path d="${polyToPath(pts)}${holesD(g.holes)}" fill="none" stroke="#2b3a4a" stroke-width="0.016"/>` : ''}
+    ${g.notches.map(m => `<path d="M${round(m.p[0], 4)},${round(m.p[1], 4)}L${round(m.p[0] + m.n[0] * g.sa, 4)},${round(m.p[1] + m.n[1] * g.sa, 4)}" stroke="#2b3a4a" stroke-width="0.016"/>`).join('')}
     <text x="${round(cb.x + cb.w / 2, 3)}" y="${round(cb.y + cb.h / 2, 3)}" font-size="${round(Math.min(0.32, Math.min(cb.w, cb.h) / 4), 3)}" text-anchor="middle" dominant-baseline="central" font-family="system-ui,sans-serif" font-weight="700" fill="#2b3a4a">${t.id} · ${(t.cuts || [t]).map(c => fabricLetter(c.fab)).join(', ')}</text>
     ${Math.min(cb.w, cb.h) > 1.4 ? `<path d="M${round(cb.x + cb.w * .25, 3)},${round(cb.y + cb.h / 2 + .32, 3)}h${round(cb.w * .5, 3)}" stroke="#2b3a4a" stroke-width=".012" marker-start="url(#arw)" marker-end="url(#arw)"/>` : ''}`;
   const defs = `<defs><marker id="arw" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="#2b3a4a"/></marker></defs>`;
@@ -631,7 +632,7 @@ function renderPatternDoc() {
       if (ts.tiles.length === 1) singles.push(`<div class="tpl">${head}${ts.tiles[0].svg}</div>`);
       else tiled.push({ t, ts, head });
     }
-    P('', `<h2>Templates</h2><div class="note warn"><b>Print at 100% / "Actual size".</b> Check the 1-inch square before tracing. Solid line = sewing line, dashed line = cutting line (includes seam allowance). Arrow = straight grain.</div><div class="cal">${calibrationSvg()}</div>${tiled.length ? `<p class="small">${plural(tiled.length, 'template')} ${tiled.length === 1 ? 'is' : 'are'} bigger than a page and ${tiled.length === 1 ? 'is' : 'are'} printed over several sheets. See the sheet atlas after ${singles.length ? 'these' : 'this page'}.</p>` : ''}<div class="tpls">${singles.join('')}</div>`);
+    P('', `<h2>Templates</h2><div class="note warn"><b>Print at 100% / "Actual size".</b> Check the 1-inch square before tracing. Solid line = sewing line, dashed line = cutting line (includes seam allowance). Arrow = straight grain.${tplList.some(t => t.r.recipe.notches?.length) ? ' Short ticks across the allowance on curved edges are matching marks: snip ⅛" into the allowance at each, or mark them, and match them when you pin.' : ''}</div><div class="cal">${calibrationSvg()}</div>${tiled.length ? `<p class="small">${plural(tiled.length, 'template')} ${tiled.length === 1 ? 'is' : 'are'} bigger than a page and ${tiled.length === 1 ? 'is' : 'are'} printed over several sheets. See the sheet atlas after ${singles.length ? 'these' : 'this page'}.</p>` : ''}<div class="tpls">${singles.join('')}</div>`);
     if (tiled.length) {
       // atlas: how each template's sheets fit together, four templates to a page
       const items = tiled.map(({ t, ts }) => {

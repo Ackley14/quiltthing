@@ -228,6 +228,13 @@ function seamNotches(s) {
   return marks.map(m => pointAlong(s.pts, m));
 }
 
+// Where a template's matching marks sit, the same however the piece is turned: each mark's distance
+// from the centre and from the nearest corner, sorted.
+function notchSignature(pts, notches) {
+  const c = centroid(pts), t = ringTurns(pts), cs = pts.filter((_, i) => Math.abs(t[i]) >= CORNER_DEG);
+  return notches.map(m => `${Math.round(dist(m.p, c) * 32)}:${cs.length ? Math.round(Math.min(...cs.map(q => dist(m.p, q))) * 32) : 0}`).sort().join(',');
+}
+
 // After the sewing tree (analyzeBlock): for each unit that can't be sewn as drawn, the drawn shapes
 // behind it (made appliqué, they'd fix it); and the matching marks of every curved seam, given to
 // each piece they lie on with that piece's outward direction, by piece index: an.notches[i].
@@ -336,7 +343,7 @@ function curveSeamSearch(leaf, n) {
   // a work budget (trials × pieces) keeps a big tangle of curves quick
   let work = 0;
   const tryCuts = cs => {
-    if ((work += ps.length) > 480) return null;
+    if ((work += ps.length) > 360) return null;
     const parts = splitBySeams(ps.map(p => ({ pts: p.pts, holes: p.holes, fab: p.fab, src: p })), cs);
     if (parts.length === ps.length) return null;
     const got = parts.map(q => (q.pts === q.src.pts ? q.src : makePiece(q.pts, q.holes, q.fab, false, [q.pts, ...q.holes].some(r => curveRuns(r).length))));
