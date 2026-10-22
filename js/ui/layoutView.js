@@ -551,11 +551,11 @@ function layoutInspector() {
       <label class="f">Setting triangles</label>${fabricPicker(L.onpoint.fill, 'onpointFill')}`, { key: 'size' });
   } else {
     const t = L.tess, sh = tessShape(t.shape);
-    h += section('Shape', `<label class="f">Shape<select data-change="tessShape">${TESS_SHAPES.map(s => `<option value="${s.key}" ${s.key === t.shape ? 'selected' : ''}>${s.label}</option>`).join('')}</select></label>
-      <div class="f-row">${lenField(t.shape === 'hex' || t.shape === 'tumbling' || t.shape === 'triangle' ? 'Side length' : 'Width', 'layout.tess.size', { min: 0.5, max: 40 })}
+    h += section('Shape & size', `<label class="f">Shape<select data-change="tessShape">${TESS_SHAPES.map(s => `<option value="${s.key}" ${s.key === t.shape ? 'selected' : ''}>${s.label}</option>`).join('')}</select></label>
+      <div class="f-row">${lenField(t.shape === 'hex' || t.shape === 'tumbling' || t.shape === 'triangle' ? 'Side length' : 'Width', 'layout.tess.size', { min: 0.5, max: 40, step: 0.25 })}
         <label class="f">Orientation<select data-bind="layout.tess.orient" data-type="int">${sh.orientLabels.map((l, i) => `<option value="${i}" ${t.orient === i ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
       ${['zigzag', 'brick', 'diamond'].includes(t.shape) ? `<div class="f-row">${numField('Height ÷ width', 'layout.tess.ratio', { min: 0.2, max: 4, step: 0.05 })}${t.shape === 'zigzag' ? numField('Lean ÷ width', 'layout.tess.lean', { min: 0, max: 2, step: 0.05 }) : ''}</div>` : ''}
-      <div class="f-row">${lenField('Centre width', 'layout.tess.width', { min: 2, max: 200 })}${lenField('Centre height', 'layout.tess.height', { min: 2, max: 200 })}</div>
+      <div class="f-row">${lenField('Centre width', 'layout.tess.width', { min: 2, max: 200, step: round(tessPeriod(t)[0], 3) })}${lenField('Centre height', 'layout.tess.height', { min: 2, max: 200, step: round(tessPeriod(t)[1], 3) })}</div>
       <div class="f-row">${nudgeField('Nudge across', 'offX', tessPeriod(t)[0])}${nudgeField('Nudge down', 'offY', tessPeriod(t)[1])}</div>
       <label class="check"><input type="checkbox" data-bind="layout.tess.snap" data-type="bool" ${t.snap !== false ? 'checked' : ''}> Fit to whole shapes</label>
       ${t.snap !== false ? `<p class="hint">Fitted size ${fmtSize(...tessSize(t))}.</p>` : ''}
@@ -623,9 +623,9 @@ function quiltParts() {
   const L = doc.layout, Q = Qnow(), t = L.tess;
   const mode = { grid: 'Straight set', onpoint: 'On point', tess: 'Tessellation' }[L.mode];
   const size = L.mode === 'grid' ? `${L.grid.rows} × ${L.grid.cols} blocks of ${fmtLen(L.blockSize)}` : L.mode === 'onpoint' ? `${L.onpoint.rows} × ${L.onpoint.cols} on point, ${fmtLen(L.blockSize)}` : `${tessShape(t.shape).label}, ${fmtLen(t.size)}`;
-  const parts = [{ key: 'setting', label: 'Setting & size', note: `${mode} · ${size}`, icon: 'quilt', keys: ['setting', 'size'] }];
+  const parts = [{ key: 'setting', label: L.mode === 'tess' ? 'Setting' : 'Setting & size', note: L.mode === 'tess' ? `${mode} · ${fmtSize(Q.W, Q.H)} finished` : `${mode} · ${size}`, icon: 'quilt', keys: ['setting', 'size'] }];
   if (L.mode === 'tess') {
-    parts.push({ key: 'shape', label: 'Tessellation', note: `${fmtSize(...tessSize(t))} centre · ${t.edge === 'trim' ? 'trimmed edges' : 'filled edges'}`, icon: 'blocks', keys: ['shape', 'cubes'] });
+    parts.push({ key: 'shape', label: 'Shape & size', note: `${tessShape(t.shape).label.replace(/ \(.*\)$/, '')} · ${fmtSize(...tessSize(t))} centre`, icon: 'blocks', keys: ['shape', 'cubes'] });
     parts.push({ key: 'tessfill', label: 'Fill patterns', note: `${paintSet().length} fabrics`, icon: 'palette', keys: ['tessfill'] });
   }
   if (L.mode === 'grid') { const s = L.grid.sashing; parts.push({ key: 'sashing', label: 'Sashing', note: s.width > 0 ? `${fmtLen(s.width)} wide${s.cornerstones ? ', cornerstones' : ''}` : 'none', icon: 'quilt', keys: ['sashing'], fab: s.width > 0 ? s.fabric : null }); }
