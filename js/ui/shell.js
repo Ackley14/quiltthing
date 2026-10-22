@@ -327,7 +327,7 @@ function applyBinding(el) {
     const hi = el.dataset.max !== undefined ? parseFloat(el.dataset.max) : Infinity;
     const raw = v;
     v = clamp(v, lo, hi);
-    if (v !== raw) toast(`Kept to ${type === 'len' ? fmtLen(v) : v}, the ${v === hi ? 'most' : 'least'} allowed here`, 3000);
+    if (v !== raw) { toast(`Kept to ${type === 'len' ? fmtLen(v) : v}, the ${v === hi ? 'most' : 'least'} allowed here`, 3000); setTimeout(() => { if (document.activeElement !== el) renderView(); else el.value = type === 'len' ? inputLen(v) : String(v); }, 0); }
   }
   if (path.startsWith('ui.')) { setPath(ui, path.slice(3), v); saveUi(); render(); return; }
   setPath(doc, path, v);

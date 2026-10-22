@@ -5,7 +5,7 @@
 // turned four ways into a bullseye, borders, quilting and a backing.
 // A sample just as it was loaded: its name, and nothing done to it since.
 // Its fingerprint is taken when it's loaded (the undo history can't tell: it isn't always stored).
-const isPristineSample = () => !!ui?.sampleSig && hashStr(snapshot()) === ui.sampleSig && !Object.keys(refImgs).length;
+const isPristineSample = () => !!ui?.sampleSig && hashStr(snapshot()) === ui.sampleSig && !Object.keys(refImgs).length && !undoStack.past.length && !undoStack.future.length;
 function loadSampleProject() {
   doc = newDoc();
   doc.fabrics = [

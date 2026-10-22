@@ -443,7 +443,7 @@ details.more ol { margin: 6px 0 0; padding-left: 18px; }
 .sel-bar { position: absolute; z-index: 3; display: flex; align-items: center; gap: 2px; background: var(--bg-panel); border: 1px solid var(--line-strong); border-radius: 9px; box-shadow: var(--shadow); padding: 3px; }
 .sel-bar[hidden] { display: none; }
 .editor .dot { fill: #fff; stroke: #2b3a4a; pointer-events: none; }
-.editor .gridline { stroke: rgba(31,41,51,.13); pointer-events: none; }
+.editor .gridline { stroke: rgba(128,136,146,.38); pointer-events: none; }
 .editor [data-region] { cursor: pointer; }
 .editor.tool-polygon [data-region], .editor.tool-rect [data-region], .editor.tool-seam [data-region], .editor.tool-tri [data-region] { cursor: crosshair; }
 .editor.tool-select [data-region] { cursor: move; }
@@ -900,3 +900,5 @@ body[data-doctool="zoom"] #main { cursor: zoom-in; }
 .on-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-left: 4px; vertical-align: middle; }
 
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+:root[data-theme="light"] .toast-act { color: #7cc0ff; }

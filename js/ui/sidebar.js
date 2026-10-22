@@ -97,7 +97,7 @@ Actions.pickFabric = (id, el) => {
 Actions.addFabric = () => {
   const base = selFabric()?.color || '#1f3a5f';
   const [h, s, l] = hexToHsl(base);
-  const f = makeFabric(hslToHex([h + 137.5, clamp(s, 0.3, 0.55), clamp(l, 0.35, 0.65)]));   // quilting-cotton colours, not neon
+  const f = makeFabric(hslToHex([h + 137.5, clamp(s, 0.25, 0.45), clamp(l, 0.35, 0.55)]));   // quilting-cotton colours, not neon
   doc.fabrics.push(f); ui.fabric = ui.fabPop = f.id; commit();
   focusSoon('.popover input[data-change="fabName"]');
 };

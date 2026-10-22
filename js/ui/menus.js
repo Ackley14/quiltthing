@@ -137,7 +137,7 @@ const MENUS = {
       ...mine.map(id => tick(esc(Panels[id].title), 'togglePanel', id, open.has(id))),
       ...(other.length ? [{ header: 'From other workspaces' }, ...other.map(id => tick(esc(Panels[id].title), 'togglePanel', id, open.has(id)))] : []),
       '-',
-      { label: 'Reopen closed panel', act: 'reopenPanel', disabled: !dockSession.reopen },
+      { label: dockSession.reopen && dockSession.reopenWs === ws ? `Reopen ${dockSession.reopenName}` : 'Reopen closed panel', text: true, act: 'reopenPanel', disabled: !dockSession.reopen || dockSession.reopenWs !== ws },
       tick('Hide panels', 'toggleHidePanels', undefined, dockSession.hidden, 'Ctrl+.'),
       tick('Lock layout', 'toggleLockLayout', undefined, prefs.lockLayout),
       '-',

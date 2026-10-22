@@ -4,10 +4,10 @@ Views.pattern = {
   tools() { return { act: 'docTool', active: ui.docTool || 'pointer', list: [{ key: 'pointer', label: 'Select', kb: 'S', icon: 'pointer' }, { key: 'hand', label: 'Hand', kb: 'H', icon: 'hand' }, { key: 'zoom', label: 'Zoom', kb: 'Z', icon: 'zoomin' }] }; },
   docs() { return [{ label: `${doc.meta.title || 'Quilt'} · pattern`, on: true, icon: 'pages' }]; },
   options() {
-    const a4 = ui.patternPage === 'a4';
+    const a4 = ui.patternPage === 'a4', chip = typeof docToolChip === 'function' ? docToolChip() : '';
     // before printing: anything that would make a poor pattern
     const Q = Qnow(), warn = [...Q.warnings, ...seamWarnings(), ...(doc.meta.title === 'Untitled quilt' ? ['The quilt has no name yet. Name it in Properties.'] : [])];
-    return `<button class="btn primary small" data-act="printPattern" title="In the print dialog: Save as PDF for a file, scale 100%, background graphics on">${icon('print', 14)} Print pattern</button><span class="sep"></span>
+    return `${chip}<button class="btn primary small" data-act="printPattern" title="In the print dialog: Save as PDF for a file, scale 100%, background graphics on">${icon('print', 14)} Print pattern</button><span class="sep"></span>
       <span class="tb-label">Paper</span>
       <div class="seg" role="group" aria-label="Paper size"><button aria-pressed="${!a4}" data-act="setUi" data-arg="patternPage=letter">US Letter</button><button aria-pressed="${a4}" data-act="setUi" data-arg="patternPage=a4">A4</button></div>
       ${warn.length ? `<span class="sep"></span><span class="tb-warn" title="${esc(warn.join(' '))}">${esc(warn[0])}${warn.length > 1 ? ` (+${warn.length - 1})` : ''}</span>` : ''}
@@ -26,6 +26,7 @@ Views.pattern = {
     const z = Math.min(1, (el.clientWidth - 32) / pageW) * docZoom();
     pv.style.zoom = Math.abs(z - 1) > 1e-3 ? String(round(z, 3)) : '';
     for (const b of $$('#statusbar .zoom-pct')) b.textContent = `${Math.round(z * 100)}%`;
+    setTimeout(markCurrentPage, 0);   // the status bar's "Page n of N" comes back after a redraw
     // after a redraw, stay on the same page at the same place (pages are rebuilt, so the old scroll position is meaningless)
     const a = _patAnchor, pg = a && pv.querySelectorAll('.page')[a.i];
     if (pg) el.scrollTop += pg.getBoundingClientRect().top - el.getBoundingClientRect().top + a.f * pg.getBoundingClientRect().height;

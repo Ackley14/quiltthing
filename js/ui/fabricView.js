@@ -31,7 +31,7 @@ Views.fabric = {
   docTools() { return ui.fabPane === 'cut' ? `<button class="tool toggle small" data-act="toggleCutMaps" aria-pressed="${ui.cutDiagrams !== false}">Cutting maps</button>` : ''; },
   options() {
     const Q = Qnow(), plan = cuttingPlan(Q), pre = precutSummary(plan.fabrics);
-    return `<span class="tb-label">${fmtSize(Q.W, Q.H)} · buy <b>${fmtYards(sum(plan.fabrics, f => f.buyIn) + plan.backing.buyIn)}</b>${pre ? ` + ${esc(pre)}` : ''} · ${plural(plan.totalPieces, 'piece')}</span>
+    return `${docToolChip()}<span class="tb-label">${fmtSize(Q.W, Q.H)} · buy <b>${fmtYards(sum(plan.fabrics, f => f.buyIn) + plan.backing.buyIn)}</b>${pre ? ` + ${esc(pre)}` : ''} · ${plural(plan.totalPieces, 'piece')}</span>
 `;
   },
   main() {

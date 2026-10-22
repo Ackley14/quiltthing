@@ -210,8 +210,10 @@ function dockOpen(L, id, def) {
 }
 // Add a panel to a column: a new group under the tallest open group while there's room, otherwise a tab in it.
 function dockAddToColumn(L, id, zone, ci) {
-  const c = L[zone][ci], open = c.groups.map((g, i) => i).filter(i => !c.groups[i].folded), pool = open.length ? open : c.groups.map((g, i) => i);
-  const gi = pool.reduce((b, i) => (c.groups[i].h > c.groups[b].h ? i : b), pool[0]), big = c.groups[gi];
+  const c = L[zone][ci], open = c.groups.map((g, i) => i).filter(i => !c.groups[i].folded), all = open.length ? open : c.groups.map((g, i) => i);
+  // Properties is the workspace's main panel: split it only when it has the column to itself
+  const pool = all.filter(i => !c.groups[i].tabs.includes('props') || c.groups[i].h > 0.99).length ? all.filter(i => !c.groups[i].tabs.includes('props') || c.groups[i].h > 0.99) : all;
+  const gi = pool.reduce((b, i) => (c.groups[i].h >= c.groups[b].h - 1e-9 ? i : b), pool[0]), big = c.groups[gi];
   const crowded = c.groups.length >= 3 || (big && big.h < 0.3);
   return dockMove(L, id, { zone, col: ci, group: gi, how: crowded ? 'tab' : 'below' });
 }

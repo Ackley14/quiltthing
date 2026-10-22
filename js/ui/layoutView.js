@@ -116,7 +116,10 @@ function moveSelCell(arrow) {
   }
   if (!next) return;
   ui.selCell = next.key; saveUi();
-  if (qzZoom() > 1) { const s = qzState(); s.cx = next.cx; s.cy = next.cy; }
+  if (qzZoom() > 1) {
+    const vb = $('#main svg.quilt-svg')?.viewBox.baseVal, h = next.size / 2;
+    if (!vb || next.cx - h < vb.x || next.cx + h > vb.x + vb.width || next.cy - h < vb.y || next.cy + h > vb.y + vb.height) { const s = qzState(); s.cx = next.cx; s.cy = next.cy; }
+  }
   renderView();
   const c = cellContent(next.key);
   const where = `${next.row != null && next.col != null && next.key[0] === 'g' ? `Row ${next.row + 1}, column ${next.col + 1}` : 'Position'}: ${c?.b ? doc.blocks[c.b].name : c?.fab ? `plain ${fabricLabel(c.fab)}` : 'empty'}`;

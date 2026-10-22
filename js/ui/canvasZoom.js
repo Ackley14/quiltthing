@@ -90,3 +90,14 @@ window.addEventListener('blur', () => { _qz.space = false; });
 
 // the Hand or Zoom tool, if one is chosen on this canvas
 function qzNavTool() { const t = ui.view === 'layout' ? ui.layoutTool : ui.view === 'quilting' ? (ui.qTool || 'hand') : null; return t === 'hand' || t === 'zoom' ? t : null; }
+
+// the grey margins around the drawing: the wheel acts as it would over the drawing (and never zooms the page)
+$('#docwrap')?.addEventListener('wheel', e => {
+  if (!['block', 'layout', 'quilting'].includes(ui.view)) return;
+  const svg = $('#main .canvas-wrap > svg');
+  if (!svg || svg.contains(e.target) || !e.target.closest?.('#main')) return;
+  if (e.ctrlKey || e.metaKey) e.preventDefault();
+  const clone = new WheelEvent('wheel', { deltaX: e.deltaX, deltaY: e.deltaY, deltaMode: e.deltaMode, clientX: e.clientX, clientY: e.clientY, ctrlKey: e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey, altKey: e.altKey, cancelable: true, bubbles: false });
+  svg.dispatchEvent(clone);
+  if (clone.defaultPrevented) e.preventDefault();
+}, { passive: false });

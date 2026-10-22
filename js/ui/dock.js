@@ -143,6 +143,7 @@ Actions.dockClose = (id, el, e) => {
   _closeToast?.remove();
   // Undo puts the panel back in the workspace it was closed in: exactly where it was if nothing has
   // changed since, otherwise beside its old neighbours
+  dockSession.reopenWs = ws; dockSession.reopenName = panelTitle(id);
   _closeToast = toastAction(`${panelTitle(id)} closed`, 'Undo', dockSession.reopen = () => {
     dockSession.reopen = null;
     const cur = dockState.ws[ws] || wsLayout(ws), same = JSON.stringify(dockClone(cur)) === afterSig;
@@ -345,10 +346,7 @@ document.addEventListener('pointerdown', e => {
     const mv = ev => {
       f.x = clamp(ev.clientX - x0, -f.w + 80, innerWidth - 80); f.y = clamp(ev.clientY - y0, minY, innerHeight - 40); win.style.left = f.x + 'px'; win.style.top = f.y + 'px';
       const over = document.elementFromPoint(ev.clientX, ev.clientY);
-      const B = $('#body').getBoundingClientRect(), Lnow = wsLayout();
-      const emptyEdge = (!Lnow.left.length && ev.clientX < B.left + ($('#toolstrip').offsetWidth || 0) + 24) || (!Lnow.right.length && ev.clientX > B.right - 24);
-      const dockable = emptyEdge || over?.closest?.('.dock-side, #dock-bottom, .dstrip, .dfloat .dtabs');
-      const t = dockLocked() || ev.ctrlKey || !dockable ? null : dockDropTarget(ev.clientX, ev.clientY);
+      const t = floatMayDock(ev) ? dockDropTarget(ev.clientX, ev.clientY) : null;
       target = t && t.zone !== 'float' && !(t.zone === 'float-join' && t.fi === fi) ? t : null;   // over the canvas it's just moving
       win.classList.toggle('docking', !!target);
       if (target) showDropTarget(target, ids.map(panelTitle).join(', '), ev); else { const hl = $('#drop-layer .drop-hl'), gh = $('#drop-layer .drop-ghost'); if (hl) hl.hidden = true; if (gh) gh.textContent = ''; }
@@ -385,7 +383,12 @@ let dockDrag = null;
 document.addEventListener('pointerdown', e => {
   if (e.button !== 0 || dockLocked() || e.target.closest?.('.dtab-x, [data-split], #flyout-layer')) return;
   const tab = e.target.closest?.('.dtab[data-dtab]');
-  if (tab) { dockDrag = { id: tab.dataset.dtab, ids: [tab.dataset.dtab], x: e.clientX, y: e.clientY, on: false }; return; }
+  if (tab) {
+    const fw = tab.closest('.dfloat'), F = fw && wsLayout().floating[+fw.dataset.fi];
+    // a window's only tab carries the whole window: over the canvas it moves it, over a dock it docks it
+    dockDrag = { id: tab.dataset.dtab, ids: [tab.dataset.dtab], x: e.clientX, y: e.clientY, on: false, fromFloat: F && F.tabs.length === 1 ? { fi: +fw.dataset.fi, ...floatBox(F) } : null };
+    return;
+  }
   // the empty part of a docked group's tab bar moves the whole group
   const bar = e.target.closest?.('.dock-side .dtabs, #dock-bottom .dtabs');
   if (bar && !e.target.closest('button')) {
@@ -399,9 +402,11 @@ document.addEventListener('pointermove', e => {
   if (!dockDrag.on) {
     if (Math.hypot(e.clientX - dockDrag.x, e.clientY - dockDrag.y) < 8) return;
     dockDrag.on = true; document.body.classList.add('dock-dragging');
+    if (dockDrag.fromFloat) { const w = $(`.dfloat[data-fi="${dockDrag.fromFloat.fi}"]`); if (w) w.style.pointerEvents = 'none'; }   // so what's under the window can be found
     $('#drop-layer').innerHTML = `<div class="drop-ghost"></div><div class="drop-hl" hidden></div>`;
   }
-  dockDrag.target = dockDropTarget(e.clientX, e.clientY);
+  dockDrag.target = dockDrag.fromFloat && !floatMayDock(e) ? null : dockDropTarget(e.clientX, e.clientY);
+  if (dockDrag.fromFloat && !dockDrag.target) { const w = $(`.dfloat[data-fi="${dockDrag.fromFloat.fi}"]`); if (w) { w.style.left = `${dockDrag.fromFloat.x + e.clientX - dockDrag.x}px`; w.style.top = `${dockDrag.fromFloat.y + e.clientY - dockDrag.y}px`; } }
   showDropTarget(dockDrag.target, dockDrag.ids.map(panelTitle).join(', '), e);
 });
 // the ghost label beside the pointer (kept on screen) and the outline of where the drop goes
@@ -420,6 +425,11 @@ const endDockDrag = e => {
   document.body.classList.remove('dock-dragging'); $('#drop-layer').innerHTML = '';
   if (!d.on) return;
   _swallowClick = true; setTimeout(() => { _swallowClick = false; }, 0);
+  if (d.fromFloat && !d.target && e.type !== 'pointercancel') {   // moved the window
+    const L = dockClone(wsLayout()), f = L.floating[d.fromFloat.fi];
+    if (f) { f.x = Math.round(d.fromFloat.x + e.clientX - d.x); f.y = Math.round(d.fromFloat.y + e.clientY - d.y); setLayout(L); }
+    return;
+  }
   if (!d.target || e.type === 'pointercancel') { announce('Panel left where it was'); return; }
   setLayout(dockMoveMany(dockClone(wsLayout()), d.ids, d.target, d.id));
   announce(`${d.ids.map(panelTitle).join(', ')} moved`);
@@ -427,6 +437,15 @@ const endDockDrag = e => {
 document.addEventListener('pointerup', endDockDrag);
 document.addEventListener('pointercancel', endDockDrag);
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && dockDrag?.on) { e.stopPropagation(); dockDrag = null; document.body.classList.remove('dock-dragging'); $('#drop-layer').innerHTML = ''; } }, true);
+// A floating window docks only somewhere meant for docking: a dock, an icon strip, another window's
+// tab bar, the window's outer edges (a new column), or the strip just above the status bar (the bottom
+// dock). Over the canvas it just moves. Holding Ctrl keeps it floating.
+function floatMayDock(ev) {
+  if (dockLocked() || ev.ctrlKey) return false;
+  const over = document.elementFromPoint(ev.clientX, ev.clientY), B = $('#body').getBoundingClientRect(), D = $('#docarea').getBoundingClientRect();
+  const edge = ev.clientX < B.left + ($('#toolstrip').offsetWidth || 0) + 14 || ev.clientX > B.right - 14 || (ev.clientY > D.bottom - 14 && ev.clientY < D.bottom + 4);
+  return !!(edge || over?.closest?.('.dock-side, #dock-bottom, .dstrip, .dfloat .dtabs'));
+}
 // Where among a tab strip's tabs a drop at x lands: the index and a thin caret to show it.
 function tabSlot(strip, x) {
   const tabs = [...strip.querySelectorAll('.dtab')], rs = tabs.map(t => t.getBoundingClientRect());
@@ -440,6 +459,9 @@ function dockDropTarget(x, y) {
   if (!el) return null;
   const R = n => n.getBoundingClientRect();
   const body = R($('#body')), doc = R($('#docarea'));
+  // an empty dock (it shows the closed panels): a new column there
+  const empty = el.closest('.dock-side.empty, .dock-side:has(.dempty)');
+  if (empty) { const zone = empty.id === 'dock-left' ? 'left' : 'right', r = R(empty); return { zone, how: 'edge', label: `the ${zone} dock`, rect: { left: r.left, top: r.top, width: Math.max(12, r.width), height: r.height } }; }
   // an icon strip: join its column
   const strip = el.closest('.dstrip');
   if (strip) { const zone = strip.dataset.zone, ci = +strip.dataset.ci, c = L[zone]?.[ci]; if (c) return { zone, col: ci, group: c.groups.length - 1, how: 'tab', label: 'these panels', rect: R(strip) }; }
@@ -476,7 +498,7 @@ function dockDropTarget(x, y) {
     }
   }
   const bt = R($('#statusbar'));
-  if (y > doc.bottom - 48 && y < bt.top && x > doc.left && x < doc.right) return { zone: 'bottom', how: L.bottom.groups.length ? 'tab' : 'new', group: 0, label: 'the bottom dock', rect: { left: doc.left, top: doc.bottom - 48, width: doc.width, height: 48 } };
+  if (y > doc.bottom - (dockDrag?.fromFloat || !dockDrag ? 14 : 48) && y < bt.top && x > doc.left && x < doc.right) return { zone: 'bottom', how: L.bottom.groups.length ? 'tab' : 'new', group: 0, label: 'the bottom dock', rect: { left: doc.left, top: doc.bottom - 48, width: doc.width, height: 48 } };
   // anywhere else on the canvas: its own window, where it was dropped
   if (x > doc.left && x < doc.right && y > doc.top && y < doc.bottom) return { zone: 'float', x: x - 150, y: y - 16, label: 'its own window', rect: { left: x - 150, top: y - 16, width: 300, height: 340 } };
   return null;
@@ -508,6 +530,7 @@ Actions.dockFloatClose = fi => {
   setLayout(M); M = dockClone(wsLayout());
   _closeToast?.remove();
   const afterSig = JSON.stringify(M);
+  dockSession.reopenWs = ws; dockSession.reopenName = names;
   _closeToast = toastAction(`${names} closed`, 'Undo', dockSession.reopen = () => {
     dockSession.reopen = null;
     const cur = dockClone(dockState.ws[ws] || wsLayout(ws)), same = JSON.stringify(cur) === afterSig;

@@ -24,7 +24,7 @@ function welcomeV4(whatsNew) {
     () => { prefs.welcomed = true; ui.seenTour = true; savePrefs(); saveUi(); });
   $('#modal-root .modal').classList.add('wide');
 }
-Actions.welcomeTheme = t => { prefs.theme = t; savePrefs(); applyPrefs(); render(); welcomeV4(_welcomeWhatsNew); };
+Actions.welcomeTheme = t => { prefs.theme = t; savePrefs(); applyPrefs(); render(); welcomeV4(_welcomeWhatsNew); setTimeout(() => $(`#modal-root [data-act="welcomeTheme"][data-arg="${t}"]`)?.focus(), 40); };
 let _welcomeWhatsNew = false;
 Actions.welcomeLarge = v => { prefs.density = v ? 'large' : 'standard'; savePrefs(); applyPrefs(); render(); };
 Actions.whatsNew = () => { _welcomeWhatsNew = true; welcomeV4(true); };
@@ -282,3 +282,9 @@ $('#main')?.addEventListener('wheel', e => {
   Actions.docZoomBy(_docWheel < 0 ? 'in' : 'out', null, null, e); _docWheel = 0;
 }, { passive: false });
 let _docWheel = 0;
+
+// the options bar names the document tool while it isn't the plain Select
+function docToolChip() {
+  const t = { hand: ['hand', 'Hand'], zoom: ['zoomin', 'Zoom'] }[ui.docTool];
+  return t ? `<span class="tool-chip">${icon(t[0], 16)}${t[1]}</span><span class="sep"></span>` : '';
+}
