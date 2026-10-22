@@ -177,6 +177,49 @@ function inflate(poly, d) {
   return res;
 }
 
+// The cut outline of a piece: every edge moved out by d (the seam allowance), corners where the
+// moved edges meet. A very sharp outward point would run far past the piece, so beyond `limit`
+// (as a multiple of d) its tip is trimmed square across; both sides keep their full allowance up
+// to the trim. limit: Infinity keeps every point (a rectangle cut corner to corner must keep the
+// triangle's angles). Built as the union of the piece, a band d wide along every edge and a wedge
+// at every outward corner, so inward corners and narrow notches fill in properly too.
+function seamOutline(poly, d, limit = 4) {
+  const n = poly.length;
+  if (n < 3 || !(d > 0)) return poly.slice();
+  const area = signedArea(poly), out = area > 0 ? -1 : 1;
+  const lines = poly.map((a, i) => {
+    const b = poly[(i + 1) % n], ex = b[0] - a[0], ey = b[1] - a[1], l = Math.hypot(ex, ey) || 1;
+    const nx = out * -ey / l, ny = out * ex / l;
+    return { a, b, nx, ny, p: [a[0] + d * nx, a[1] + d * ny], v: [ex, ey] };
+  });
+  const meet = (L0, L1) => {
+    const det = L0.v[0] * L1.v[1] - L0.v[1] * L1.v[0];
+    if (Math.abs(det) < 1e-12) return null;
+    const t = ((L1.p[0] - L0.p[0]) * L1.v[1] - (L1.p[1] - L0.p[1]) * L1.v[0]) / det;
+    return [L0.p[0] + t * L0.v[0], L0.p[1] + t * L0.v[1]];
+  };
+  const parts = [poly];
+  for (const L of lines) parts.push([L.a, L.b, [L.b[0] + d * L.nx, L.b[1] + d * L.ny], [L.a[0] + d * L.nx, L.a[1] + d * L.ny]]);
+  for (let i = 0; i < n; i++) {
+    const L0 = lines[(i - 1 + n) % n], L1 = lines[i], v = poly[i];
+    if ((L0.v[0] * L1.v[1] - L0.v[1] * L1.v[0]) * area <= 0) continue;   // inward corner: the bands cover it
+    const e0 = [v[0] + d * L0.nx, v[1] + d * L0.ny], e1 = [v[0] + d * L1.nx, v[1] + d * L1.ny], m = meet(L0, L1);
+    if (!m) continue;
+    const ox = m[0] - v[0], oy = m[1] - v[1], ol = Math.hypot(ox, oy), max = d * limit;
+    if (ol <= max || !isFinite(max)) { parts.push([v, e0, m, e1]); continue; }
+    // trim the tip: a line square to the corner's bisector, `max` out from the corner
+    const ux = ox / ol, uy = oy / ol, c = [v[0] + ux * max, v[1] + uy * max], T = { p: c, v: [-uy, ux] };
+    parts.push([v, e0, meet(L0, T) || c, meet(T, L1) || c, e1]);
+  }
+  const u = polyUnion(parts);
+  if (!u.length) return inflate(poly, d);
+  // the outline to cut around: the largest outer ring (a hole inside would only be a deep pocket)
+  let best = u[0];
+  for (const q of u) if (Math.abs(polyArea(q.outer)) > Math.abs(polyArea(best.outer))) best = q;
+  const ring = cleanPoly(best.outer);
+  return Math.sign(signedArea(ring)) === Math.sign(area) ? ring : ring.reverse();
+}
+
 /* ---------- orientation helpers ---------- */
 // Minimum-area bounding rectangle: optimal orientation is always aligned to an edge.
 function minAreaRect(poly) {
@@ -418,6 +461,21 @@ function autoSeamsFor(poly, arcKeys) {
 /* ---------- classification ----------
    Rotation-invariant. Grain decides HST vs QST: an HST keeps its legs on the straight
    grain (legs parallel to the block edges), a QST keeps its long side on the grain. */
+// A finished piece's outline can double back on itself in a zero-width spike where clipping met
+// coinciding edges. The spike isn't part of the piece. Only for finished pieces (makePiece): the
+// seam search scores shapes mid-split, where such a slit is where a seam stops.
+function dropSpikes(pts) {
+  let out = pts.slice(), changed = true;
+  while (changed && out.length > 3) {
+    changed = false;
+    for (let i = 0; i < out.length; i++) {
+      const a = out[(i - 1 + out.length) % out.length], v = out[i], c = out[(i + 1) % out.length];
+      const ux = v[0] - a[0], uy = v[1] - a[1], wx = c[0] - v[0], wy = c[1] - v[1], lu = Math.hypot(ux, uy), lw = Math.hypot(wx, wy);
+      if (lu > 1e-9 && lw > 1e-9 && Math.abs(ux * wy - uy * wx) / (lu * lw) < 2e-5 && ux * wx + uy * wy < 0) { out.splice(i, 1); changed = true; break; }
+    }
+  }
+  return cleanPoly(out);
+}
 function classifyPiece(rawPts, opts = {}) {
   const curved = !!opts.curved;
   const pts = curved ? rawPts : cleanPoly(rawPts);

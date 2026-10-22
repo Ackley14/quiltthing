@@ -98,7 +98,9 @@ const MENUS = {
       { label: 'Zoom out', act: 'edZoomBy', arg: 'out', kb: '−' },
       { label: 'Fit the block', act: 'edZoomBy', arg: 'fit', kb: '0' });
     if (v === 'layout') items.push(tick('Piece outlines', 'toggleUi', 'seamLines', ui.seamLines), { ...tick('Quilting lines', 'toggleUi', 'showQuilting', ui.showQuilting), disabled: !doc.quilting.layers.length });
+    const qzItems = ['-', { label: 'Zoom in', act: 'qZoomBy', arg: 'in', kb: '+' }, { label: 'Zoom out', act: 'qZoomBy', arg: 'out', kb: '−' }, { label: 'Fit the quilt', act: 'qZoomBy', arg: 'fit', kb: '0' }];
     if (v === 'quilting') items.push('-', tick('Front', 'qSide', 'front', ui.qSide !== 'back'), tick('Back', 'qSide', 'back', ui.qSide === 'back'), tick('Fade quilt', 'toggleUi', 'qFade', ui.qFade));
+    if (v === 'layout' || v === 'quilting') items.push(...qzItems);
     if (v === 'fabric' || v === 'cutting') items.push('-', tick('Shopping list', 'fabPane', 'shop', ui.fabPane !== 'cut'), tick('Cutting plan', 'fabPane', 'cut', ui.fabPane === 'cut'), tick('Cutting maps', 'toggleCutMaps', undefined, ui.cutDiagrams !== false));
     return items;
   },
@@ -180,12 +182,13 @@ const CONTEXT_MENUS = [
       { label: 'Paint with it', act: 'pickFabric', arg: id },
       ...(isBg ? [] : [{ label: 'Use as background', act: 'setBackground', arg: id }]),
       { label: 'Duplicate', act: 'dupFabric', arg: id },
+      { label: 'Swap with…', act: 'swapFabricMenu', arg: id },
       '-',
       { label: 'Delete…', act: 'deleteFabric', arg: id, danger: true },
     ];
   }],
   ['#modal-root .blk[data-act="useLibrary"]', el => [
-    { label: 'Add to My blocks', act: 'useLibrary', arg: el.dataset.arg },
+    { label: 'Add to this quilt', act: 'useLibrary', arg: el.dataset.arg },
     { label: 'Add and place in the layout', act: 'useLibraryPlace', arg: el.dataset.arg },
   ]],
   ['#inspector .sec.layer .sec-h', el => {

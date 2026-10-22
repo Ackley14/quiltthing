@@ -176,7 +176,7 @@ function blockPieces(block, w, h, depth = 0) {
   return pieces;
 }
 function makePiece(pts, holes, fab, app, curved) {
-  const cls = classifyPiece(pts, { curved });
+  const cls = classifyPiece(curved ? pts : dropSpikes(pts), { curved });
   if (holes.length) cls.shape = 'holed';
   return { pts: cls.pts, holes, fab, app: !!app, curved: !!curved, cls, bb: bounds(cls.pts) };
 }
@@ -236,6 +236,13 @@ function pieceProblems(block, size) {
     if (mar && Math.min(mar.w, mar.h) < 0.249) out.push({ piece: p, kind: 'tiny', msg: `Very narrow piece (${fmtLen(Math.min(mar.w, mar.h))} finished)` });
   }
   return out;
+}
+
+// Blocks in the quilt with pieces that can't be sewn as drawn. The block editor stays quiet about
+// these while you draw; Layout, Fabric & cutting and Pattern mention them.
+function seamWarnings() {
+  return doc.blockOrder.map(id => doc.blocks[id]).filter(b => b?.kind === 'drawn' && blockUseCount(b.id) && pieceProblems(b, blockFrameSize(b)).some(p => p.kind !== 'tiny'))
+    .map(b => `${b.name} needs set-in seams as drawn. The Seam tool in Blocks can fix that.`);
 }
 
 /* ---------- seam suggestions ----------

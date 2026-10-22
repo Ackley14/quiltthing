@@ -48,6 +48,9 @@ const ICON_PATHS = {
   menu: '<path d="M2.5 4h11M2.5 8h11M2.5 12h11"/>',
   sliders: '<path d="M2.5 4.5h11M2.5 11.5h11"/><circle cx="5.5" cy="4.5" r="1.6" fill="#fff"/><circle cx="10.5" cy="11.5" r="1.6" fill="#fff"/>',
   check: '<path d="M3 8.5l3 3 7-7"/>',
+  fill: '<path d="M7 2.5l5.3 5.3-4.6 4.6a1.4 1.4 0 0 1-2 0L2.4 9.1a1.4 1.4 0 0 1 0-2z"/><path d="M2.6 8.1h9.4M13.4 10.4s1.1 1.5 1.1 2.3a1.1 1.1 0 0 1-2.2 0c0-.8 1.1-2.3 1.1-2.3z"/>',
+  erase: '<path d="M9.4 2.9l3.7 3.7-6.5 6.5H3.9L2.3 11.5a1 1 0 0 1 0-1.4z"/><path d="M6.4 5.9l3.7 3.7M8.4 13.1h5.3"/>',
+  warn: '<path d="M8 2.3l6.2 11H1.8z"/><path d="M8 6.6v3M8 11.6v.1"/>',
   eyeoff: '<path d="M2 2l12 12"/><path d="M6.4 3.8A6.6 6.6 0 0 1 8 3.5c4 0 6.5 4.5 6.5 4.5a11 11 0 0 1-1.9 2.4M10.3 11.6A6.5 6.5 0 0 1 8 12.5c-4 0-6.5-4.5-6.5-4.5a11 11 0 0 1 2.4-2.9"/>',
   flipv: '<path d="M1.5 8h13" stroke-dasharray="1.5 1.5"/><path d="M4 6L12 2.5V6zM4 10l8 3.5V10z"/>',
 };
@@ -76,6 +79,7 @@ function renderView() {
   const main = $('#main'), insp = $('#inspector');
   preserveFocus(main, () => { main.innerHTML = viewBarHtml() + V.main(); });
   V.afterMain?.(main);
+  qzAttach(main);
   preserveFocus(insp, () => { insp.innerHTML = V.inspector(); });
   document.body.classList.toggle('grayscale', !!ui.grayscale);
 }
@@ -85,6 +89,7 @@ function renderMainOnly() {
   const V = Views[ui.view] || Views.block;
   $('#main').innerHTML = viewBarHtml() + V.main();
   V.afterMain?.($('#main'));
+  qzAttach($('#main'));
 }
 function renderInspector() {
   const V = Views[ui.view] || Views.block;
@@ -273,8 +278,9 @@ function viewToggles() {
   if (v === 'block' && activeBlock()?.kind === 'drawn') return t('toggleSeamLines', '', 'Seam lines', ui.showSeamLines !== false) + t('toggleUi', 'showPieces', 'Cut pieces', ui.showPieces) + t('toggleUi', 'showCentre', 'Centre lines', ui.showCentre) + value
     + `<span class="zoom-ctl"><button class="tool" data-act="edZoomBy" data-arg="out" title="Zoom out (−)" aria-label="Zoom out">−</button><button class="tool" id="ed-zoom" data-act="edZoomBy" data-arg="fit" title="Fit (0)">${Math.round(edZoom() * 100)}%</button><button class="tool" data-act="edZoomBy" data-arg="in" title="Zoom in (+)" aria-label="Zoom in">+</button></span>`;
   if (v === 'block') return t('toggleUi', 'showPieces', 'Cut pieces', ui.showPieces) + value;
-  if (v === 'layout') return t('toggleUi', 'seamLines', 'Piece outlines', ui.seamLines) + value + t('toggleUi', 'showQuilting', 'Quilting', ui.showQuilting && doc.quilting.layers.length).replace('<button', `<button ${doc.quilting.layers.length ? '' : 'disabled'}`);
-  if (v === 'quilting') return (ui.qSide === 'back' ? '' : t('toggleUi', 'qFade', 'Fade quilt', ui.qFade)) + value;
+  const qz = `<span class="zoom-ctl"><button class="tool" data-act="qZoomBy" data-arg="out" title="Zoom out (−)" aria-label="Zoom out">−</button><button class="tool" id="q-zoom" data-act="qZoomBy" data-arg="fit" title="Fit (0)">${Math.round(qzZoom() * 100)}%</button><button class="tool" data-act="qZoomBy" data-arg="in" title="Zoom in (+)" aria-label="Zoom in">+</button></span>`;
+  if (v === 'layout') return t('toggleUi', 'seamLines', 'Piece outlines', ui.seamLines) + value + t('toggleUi', 'showQuilting', 'Quilting', ui.showQuilting && doc.quilting.layers.length).replace('<button', `<button ${doc.quilting.layers.length ? '' : 'disabled'}`) + qz;
+  if (v === 'quilting') return (ui.qSide === 'back' ? '' : t('toggleUi', 'qFade', 'Fade quilt', ui.qFade)) + value + qz;
   return '';
 }
 
@@ -511,7 +517,7 @@ Actions.shortcuts = () => openModal(`<h2>Keyboard shortcuts</h2>
     <div>Click or drag to place · right-click to clear</div>
     <div>Click a placed block again to turn it</div>
     <div><kbd>Shift</kbd> places it mirrored</div>
-    <div>Drag a block from My blocks onto the quilt</div>
+    <div>Drag a block from Quilt blocks onto the quilt</div>
   </div>
   <div class="actions"><button class="btn primary" data-act="closeModal">Close</button></div>`);
 Actions.about = () => openModal(`<h2>Quilt Designer ${APP_VERSION}</h2>

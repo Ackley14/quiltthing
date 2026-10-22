@@ -51,14 +51,9 @@ function fabricSheetSvg(sheet, fab, opts = {}) {
       const r = b.recipe, lean = (r.hand === 'L' ? -1 : 1) * h / Math.tan(r.angle * Math.PI / 180), x0 = Math.max(0, lean);
       for (let i = 0; i < b.n; i++) { const xa = x0 + i * r.step; s += poly([[xa, y], [xa + r.step, y], [xa + r.step - lean, y + h], [xa - lean, y + h]], b.step); }
     } else if (b.kind === 'trap') {
-      const r = b.recipe, A = r.a, B = r.b, d = (A - B) / 2;
-      for (let i = 0; i < b.n; i++) {
-        const m = Math.floor(i / 2), o = m * (A + B);
-        const p = !r.alternate ? [[i * A + d, y], [i * A + d + B, y], [i * A + A, y + h], [i * A, y + h]]
-          : i % 2 === 0 ? [[o + d, y], [o + d + B, y], [o + A, y + h], [o, y + h]]
-          : [[o + d + B, y], [o + d + B + A, y], [o + A + B, y + h], [o + A, y + h]];
-        s += poly(p, b.step);
-      }
+      // the real outline of each piece, centred across the strip
+      const off = (h - b.recipe.shape.h) / 2;
+      for (const p of trapPieces(b.recipe, b.n)) s += poly(p.map(([x, py]) => [x, y + off + py]), b.step);
     } else if (b.kind === 'tri60') {
       const Bw = h * 2 / Math.sqrt(3);
       for (let i = 0; i < b.n; i++) {
@@ -115,6 +110,9 @@ function cutIconSvg(recipe, fab, px = 34) {
     if (recipe.cut === 'diagL' || recipe.cut === 'cross') inner += dl(b.x + b.W, b.y, b.x, b.y + b.H);
   } else if (recipe.method === 'angled') {
     inner = `<path d="M10,6H30L22,26H2Z" fill="${col}" stroke="#2b3a4a"/>`;
+  } else if (recipe.method === 'trap' && recipe.shape) {
+    const { t0, t1, b0, b1, h } = recipe.shape, W = Math.max(t1, b1), k = 28 / Math.max(W, h);
+    inner = `<path d="${polyToPath(translatePoly(scalePts([[t0, 0], [t1, 0], [b1, h], [b0, h]], k), (32 - W * k) / 2, (32 - h * k) / 2))}" fill="${col}" stroke="#2b3a4a"/>`;
   } else if (recipe.method === 'trap') {
     inner = `<path d="M9,8H23L30,24H2Z" fill="${col}" stroke="#2b3a4a"/>`;
   } else if (recipe.method === 'tri60') {

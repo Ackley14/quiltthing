@@ -5,7 +5,9 @@
 
 const BLOCK_TOOLS = [
   { key: 'paint', label: 'Paint', kb: 'V', icon: 'paint' },
+  { key: 'fill', label: 'Fill', kb: 'F', icon: 'fill' },
   { key: 'select', label: 'Select', kb: 'S', icon: 'select' },
+  { key: 'erase', label: 'Eraser', kb: 'E', icon: 'erase' },
   { key: 'polygon', label: 'Shape', kb: 'P', icon: 'shape' },
   { key: 'rect', label: 'Rectangle', kb: 'R', icon: 'rect' },
   { key: 'tri', label: 'Triangle', kb: 'T', icon: 'tri' },
@@ -20,7 +22,7 @@ Views.block = {
   toolbar() {
     const b = activeBlock();
     if (!b || b.kind === 'compound') return '';
-    const tools = BLOCK_TOOLS.map(t => `<button class="tool icon-only" data-act="blockTool" data-arg="${t.key}" aria-pressed="${ui.tool === t.key}" title="${t.label} (${t.kb})" aria-label="${t.label}">${icon(t.icon)}</button>`).join('');
+    const tools = BLOCK_TOOLS.map(t => `<button class="tool icon-only" data-act="blockTool" data-arg="${t.key}" aria-pressed="${ui.tool === t.key}" title="${t.label} (${t.kb})" aria-label="${t.label}">${icon(t.icon)}${t.key === 'seam' ? seamBadge(b) : ''}</button>`).join('');
     // options for the current tool, or for the selection
     const sel = selList(), fabBtn = (act, f, mixed) => `<button class="tool fab-drop" data-act="${act}" aria-haspopup="menu" title="Fabric">${f ? swatchHtml(f === BG ? doc.layout.background : f, 16) : '<span class="sw mixed"></span>'} ${mixed ? 'Mixed' : esc(f === BG ? 'Background' : fabricLabel(f))} ${icon('down', 12)}</button>`;
     let opts = '';
@@ -29,7 +31,7 @@ Views.block = {
       const ib = (act, arg, ic, label) => `<button class="tool icon-only" data-act="${act}" ${arg ? `data-arg="${arg}"` : ''} title="${label}" aria-label="${label}">${icon(ic)}</button>`;
       opts = `<span class="tb-label">${plural(sel.length, 'shape')}</span>${fabBtn('selFabricMenu', fs.length === 1 ? fs[0] : null, fs.length > 1)}
         ${ib('selDup', '', 'dup', 'Duplicate (Ctrl+D)')}${ib('selRotate', 'cw', 'rotate', 'Rotate 90° (E)')}${ib('selMirror', 'h', 'mirror', 'Flip horizontal (X)')}${ib('selMirror', 'v', 'flipv', 'Flip vertical (Y)')}${ib('selOrder', 'front', 'front', 'Bring to front')}${ib('selOrder', 'back', 'back', 'Send to back')}${ib('selDelete', '', 'trash', 'Delete (Del)')}`;
-    } else if (ui.tool === 'paint') opts = `<span class="tb-label">Paint with</span>${fabBtn('paintFabricMenu', ui.fabric)}`;
+    } else if (ui.tool === 'paint' || ui.tool === 'fill') opts = `<span class="tb-label">${ui.tool === 'fill' ? 'Fill with' : 'Paint with'}</span>${fabBtn('paintFabricMenu', ui.fabric)}`;
     else if (ui.tool !== 'select') opts = `<button class="tool toggle" data-act="toggleSnap" aria-pressed="${!ui.snapOff}" title="Snap points to the grid">Snap</button>`;
     return `${tools}<span class="sep"></span>${opts}
       ${refImgs[b.id] ? `<button class="tool toggle" data-act="refAdjustToggle" aria-pressed="${!!ui.refAdjust}" title="Drag to move the tracing picture, scroll to resize it">Move picture</button>` : ''}
@@ -45,6 +47,7 @@ Views.block = {
     }
     return `<div class="stage"><div class="canvas-wrap"><svg id="editor" class="editor tool-${ui.refAdjust && refImgs[b.id] ? 'ref' : ui.tool}" viewBox="${edViewBox(S).map(v => round(v, 4)).join(' ')}" aria-label="Block editor"><g ${edTurn(b, S)}><g id="ed-c">${editorShapes(b)}</g></g><g id="ed-ref" pointer-events="none">${refImageSvg(b, S)}</g><g ${edTurn(b, S)}><g id="ed-g">${editorGuides(b)}</g><g id="ed-ov" pointer-events="none"></g></g></svg>
         <div id="seam-card" class="seam-card" hidden></div></div>
+      <button id="seam-flag" class="seam-flag" data-act="blockTool" data-arg="seam" hidden>${icon('warn', 18)}</button>
       <div class="status-bar" id="ed-status">${blockStatus(b)}</div></div>`;
   },
   afterMain(el) {
@@ -55,7 +58,7 @@ Views.block = {
     svg.addEventListener('pointermove', edMove);
     svg.addEventListener('pointerup', edUp);
     svg.addEventListener('pointercancel', () => { ed.drag = null; });
-    svg.addEventListener('pointerleave', () => { ed.hover = null; drawOverlay(); });
+    svg.addEventListener('pointerleave', () => { ed.hover = null; ed.eraseHover = null; ed.fillHover = null; drawOverlay(); });
     svg.addEventListener('dblclick', edDbl);
     svg.addEventListener('contextmenu', edContext);
     svg.addEventListener('wheel', edWheel, { passive: false });
@@ -222,14 +225,15 @@ function editorGuides(b) {
       <circle cx="${c}" cy="${c}" r="${u * 0.012}" fill="#d6336c" pointer-events="none"/>`;
   }
   // seams (always shown while the seam tool is active, so they can be clicked to remove)
-  if (ui.showSeamLines !== false || ui.tool === 'seam') [['s', b.seams], ['a', b.appSeams]].forEach(([tag, list]) => (list || []).forEach(([A, B], i) => {
+  if (ui.showSeamLines !== false || ui.tool === 'seam' || ui.tool === 'erase') [['s', b.seams], ['a', b.appSeams]].forEach(([tag, list]) => (list || []).forEach(([A, B], i) => {
     s += `<line class="seam-line" x1="${A[0] * k}" y1="${A[1] * k}" x2="${B[0] * k}" y2="${B[1] * k}" stroke-width="${hair * 1.6}"/>`;
-    if (ui.tool === 'seam') s += `<line data-seam="${tag}:${i}" x1="${A[0] * k}" y1="${A[1] * k}" x2="${B[0] * k}" y2="${B[1] * k}" stroke="transparent" stroke-width="${u * 0.025}" style="cursor:pointer"/>`;
+    if (ui.tool === 'seam' || ui.tool === 'erase') s += `<line data-seam="${tag}:${i}" x1="${A[0] * k}" y1="${A[1] * k}" x2="${B[0] * k}" y2="${B[1] * k}" stroke="transparent" stroke-width="${u * 0.025}" style="cursor:pointer"/>`;
   }));
   if (ui.showPieces) {
     for (const p of blockPieces(b, S, S)) s += `<path d="${polyToPath(p.pts)}" fill="none" stroke="rgba(20,30,40,.75)" stroke-width="${hair * 1.4}" stroke-dasharray="${hair * 5} ${hair * 3}" pointer-events="none"/>`;
   }
-  for (const pr of pieceProblems(b, S)) if (pr.kind !== 'tiny') s += `<path class="problem" d="${polyToPath(pr.piece.pts)}${pr.piece.holes.map(h => polyToPath(h)).join('')}" fill-rule="evenodd" stroke-width="${hair * 1.5}"/>`;
+  // problem pieces are shown only with the Seam tool, so a block in progress isn't covered in red
+  if (ui.tool === 'seam') for (const pr of pieceProblems(b, S)) if (pr.kind !== 'tiny') s += `<path class="problem" d="${polyToPath(pr.piece.pts)}${pr.piece.holes.map(h => polyToPath(h)).join('')}" fill-rule="evenodd" stroke-width="${hair * 1.5}"/>`;
   // selection: outline every selected shape; corner/edge handles when exactly one is selected
   const sel = selList();
   if (ui.tool === 'select') for (const i of sel) s += `<path class="sel-outline" d="${regionPathD(b.regions[i], k)}" stroke-width="${hair * 3}"/>`;
@@ -250,6 +254,10 @@ function drawOverlay() {
   if (!ov || !b || b.kind !== 'drawn') return;
   const S = blockFrameSize(b), k = gridScale(b), u = S / edZoom(), hair = u * 0.003;
   let s = '';
+  if (ui.tool === 'fill' && ed.fillHover) s += `<path d="${[ed.fillHover.pts, ...ed.fillHover.holes].map(r => polyToPath(r.map(([x, y]) => [x * k, y * k]))).join('')}" fill-rule="evenodd" fill="${fabricFill(resolveFab(ui.fabric))}" fill-opacity=".7" stroke="#c98a1f" stroke-width="${hair * 2}" pointer-events="none"/>`;
+  // the eraser shows what it would remove (a whole word for lettering)
+  const eh = ui.tool === 'erase' && ed.eraseHover != null ? b.regions[ed.eraseHover] : null;
+  if (eh) for (const r of eh.txt ? b.regions.filter(x => x.txt === eh.txt) : [eh]) s += `<path class="erase-hover" d="${regionPathD(r, k)}" stroke-width="${hair * 2.5}" stroke-dasharray="${hair * 6} ${hair * 4}"/>`;
   const dr = ui.drawing;
   const h = ed.hover;
   if (ui.tool === 'polygon' && dr.length) {
@@ -299,6 +307,8 @@ function blockStatus(b) {
     case 'text': return loadedFont(textOpts().font) ? '<b>Text</b>: click where the words go. Type them on the right.' : 'Loading the font…';
     case 'arc': return isHexBlock(b) || b.lattice === 'tri' ? 'Quarter circles need a square grid.' : '<b>Quarter circle</b>: click a square, or drag from a corner for a bigger one.';
     case 'tri': return b.lattice === 'tri' || isHexBlock(b) ? '<b>Triangle</b>: click inside a lattice triangle. Shift for half size.' : '<b>Triangle</b>: click near a corner of a square. Shift for half size.';
+    case 'fill': return `<b>Fill</b> with ${fab}: click empty space to fill it with a new shape, or a shape to repaint it.`;
+    case 'erase': return '<b>Eraser</b>: click a shape or seam line to remove it, or drag across several.';
     case 'seam': return ui.drawing.length ? 'Now click a point on another line. Esc cancels.' : '<b>Seam line</b>: click a point on any edge, then on another. Through appliqué or lettering it cuts them too. Click a seam to remove it.';
   }
   return '';
@@ -338,6 +348,36 @@ function regionAtEvent(e) {
   const el = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('[data-region]');
   return el ? +el.dataset.region : null;
 }
+// What the Fill tool would fill at grid point p: empty space (the background showing between
+// shapes, bounded by the block edge, shapes and seam lines) or an existing shape.
+function fillTarget(b, p) {
+  if (b.kind !== 'drawn') return null;
+  const inside = q => pointInPoly(p, q.pts) && !q.holes.some(h => pointInPoly(p, h));
+  const app = blockPieces(b, b.n, b.n).find(q => q.app && inside(q));
+  if (app) return { kind: 'shape' };
+  const piece = blockPieces(b, b.n, b.n).find(q => !q.app && inside(q));
+  if (!piece) return null;
+  const covered = b.regions.some(r => !r.app && r.pts.length > 2 && pointInPoly(p, regionRing(r, 1, 1, new Set())));
+  return covered ? { kind: 'shape' } : { kind: 'empty', pts: cleanPoly(piece.pts.map(q => [round(q[0], 4), round(q[1], 4)])), holes: piece.holes };
+}
+function removeSeam(b, ref) {
+  const [list, i] = ref.split(':'), arr = list === 'a' ? b.appSeams : b.seams, [A, B] = arr[+i];
+  arr.splice(+i, 1);
+  // a seam through appliqué is stored in both lists
+  const other = list === 'a' ? b.seams : b.appSeams, j = (other || []).findIndex(([P, Q]) => samePt(P, A) && samePt(Q, B));
+  if (j >= 0) other.splice(j, 1);
+}
+// The eraser removes the seam line or shape under the pointer; lettering goes as a whole word.
+function eraseAt(e, b) {
+  const el = document.elementFromPoint(e.clientX, e.clientY), sl = el?.closest?.('[data-seam]');
+  if (sl) { removeSeam(b, sl.dataset.seam); ed.drag.changed = true; refreshEditor(false); return; }
+  const ri = regionAtEvent(e);
+  if (ri == null) return;
+  const tid = b.regions[ri].txt;
+  if (tid) { b.regions = b.regions.filter(r => r.txt !== tid); if (b.texts) delete b.texts[tid]; }
+  else b.regions.splice(ri, 1);
+  ed.eraseHover = null; setSel([]); ed.drag.changed = true; refreshEditor(false);
+}
 function edDown(e) {
   const b = activeBlock(); if (!b) return;
   const svg = e.currentTarget;
@@ -356,6 +396,24 @@ function edDown(e) {
     return;
   }
   if (tool === 'text') { if (e.button === 0) placeText(b, ui.snapOff ? p : snapDot(b, p, fine)); return; }
+  if (tool === 'fill') {
+    if (e.button !== 0) return;
+    const t = fillTarget(b, p);
+    if (t?.kind === 'empty') {
+      if (resolveFab(ui.fabric) === doc.layout.background || ui.fabric === BG) { toast('That space already shows the background. Pick another fabric to fill it.', 2200); return; }
+      // under everything, so shapes inside it (and lettering on top) stay in front
+      b.regions.unshift({ pts: t.pts, fab: ui.fabric });
+      ed.fillHover = null; setSel([]); commit();
+    } else if (t) { ed.drag = { kind: 'paint', changed: false }; paintAt(e, b); const ch = ed.drag.changed; ed.drag = null; if (ch) commit(); }
+    return;
+  }
+  if (tool === 'erase') {
+    if (e.button !== 0) return;
+    svg.setPointerCapture(e.pointerId);
+    ed.drag = { kind: 'erase', changed: false };
+    eraseAt(e, b);
+    return;
+  }
   if (tool === 'paint') {
     const ri = regionAtEvent(e);
     if (e.altKey || e.button === 2) { ui.fabric = ri != null ? b.regions[ri].fab : BG; saveUi(); renderSidebar(); refreshEditor(); toast(`Picked ${ri != null ? fabricLabel(b.regions[ri].fab) : 'quilt background'}`, 1200); return; }
@@ -423,14 +481,7 @@ function edDown(e) {
   }
   if (tool === 'seam') {
     const sl = e.target.closest('[data-seam]');
-    if (sl && !ui.drawing.length) {
-      const [list, i] = sl.dataset.seam.split(':'), arr = list === 'a' ? b.appSeams : b.seams, [A, B] = arr[+i];
-      arr.splice(+i, 1);
-      // a seam through appliqué is stored in both lists
-      const other = list === 'a' ? b.seams : b.appSeams, j = (other || []).findIndex(([P, Q]) => samePt(P, A) && samePt(Q, B));
-      if (j >= 0) other.splice(j, 1);
-      commit(); toast('Seam removed', 1200); return;
-    }
+    if (sl && !ui.drawing.length) { removeSeam(b, sl.dataset.seam); commit(); toast('Seam removed', 1200); return; }
     const d = seamSnap(b, p, fine);
     if (!d) { toast(ui.drawing.length ? 'End the seam on a line or the block edge' : 'Start the seam on a line or the block edge', 1600); return; }
     if (!ui.drawing.length) { ui.drawing = [d]; refreshEditor(); return; }
@@ -448,6 +499,7 @@ function edMove(e) {
   const p = evtGrid(e, b), fine = e.shiftKey;
   const dr = ed.drag;
   if (dr?.kind === 'paint') { paintAt(e, b); return; }
+  if (dr?.kind === 'erase') { eraseAt(e, b); return; }
   if (dr?.kind === 'pan') {
     if (edZoom() <= 1) return;
     ed.cx = dr.cx - (e.clientX - dr.x) * dr.px; ed.cy = dr.cy - (e.clientY - dr.y) * dr.px;
@@ -515,12 +567,18 @@ function edMove(e) {
   } else if (ui.tool === 'arc') {
     ed.triPreview = pieAt(b, p, fine);
     drawOverlay();
+  } else if (ui.tool === 'fill') {
+    const t = fillTarget(b, p), hv = t?.kind === 'empty' ? t : null;
+    if (hv?.pts.join() !== ed.fillHover?.pts.join()) { ed.fillHover = hv; drawOverlay(); }
+  } else if (ui.tool === 'erase') {
+    const ri = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('[data-seam]') ? null : regionAtEvent(e);
+    if (ri !== ed.eraseHover) { ed.eraseHover = ri; drawOverlay(); }
   }
 }
 function edUp(e) {
   const b = activeBlock(); const dr = ed.drag; ed.drag = null;
   if (!b || !dr) return;
-  if (dr.kind === 'paint') { if (dr.changed) commit(); return; }
+  if (dr.kind === 'paint' || dr.kind === 'erase') { if (dr.changed) commit(); return; }
   if (dr.kind === 'ref') { saveRefsSoon(); return; }
   if (dr.kind === 'pan') return;
   if (dr.kind === 'vertex' || dr.kind === 'edge') { if (dr.moved) { cleanupRegion(b.regions[ui.selRegion]); commit(); } else { positionSelBar(); refreshEditor(); } return; }
@@ -760,7 +818,7 @@ Actions.blockViewMenu = (a, el) => {
     { label: `${on(!!ui.grayscale)} Value view`, act: 'toggleUi', arg: 'grayscale', kb: 'G' },
   ]);
 };
-Actions.blockTool = t => { ui.tool = t; ui.drawing = []; ed.triPreview = null; ed.hover = null; if (t !== 'select') ui.selEdge = null; saveUi(); renderView(); };
+Actions.blockTool = t => { ui.tool = t; ui.drawing = []; ed.triPreview = null; ed.hover = null; ed.eraseHover = null; ed.fillHover = null; if (t !== 'select') ui.selEdge = null; saveUi(); renderView(); };
 Actions.toggleSnap = () => { ui.snapOff = !ui.snapOff; saveUi(); renderView(); toast(ui.snapOff ? 'Snap off' : 'Snap on', 1400); };
 // Arc snaps for Shift-dragging an edge: bulge = tan(sweep / 4)
 const ARC_SNAPS = [0, 30, 45, 60, 90, 120, 180].flatMap(d => d ? [Math.tan(d * Math.PI / 720), -Math.tan(d * Math.PI / 720)] : [0]);
@@ -781,14 +839,32 @@ function scheduleSeamCheck() {
     showSeamCard();
   }, _seamState.key === blockKey(b) ? 0 : 250);
 }
+// how many pieces the seam suggestion would change, shown on the Seam tool instead of a popup
+function seamBadge(b) {
+  const sg = _seamState.block === b.id && _seamState.key === blockKey(b) ? _seamState.s : null;
+  const n = sg ? sg.reqPieces + sg.optPieces : 0;
+  return n ? `<span class="badge${sg.required.length ? '' : ' soft'}">${n}</span>` : '';
+}
 function seamDismissed(b) { return (ui.seamDismiss || {})[b.id] === blockKey(b); }
 function showSeamCard() {
   const card = $('#seam-card'), slot = $('#seam-tool-slot'), b = activeBlock();
   if (!card || !b) return;
   const sg = _seamState.s;
-  const has = sg && (sg.required.length || sg.optional.length);
-  if (slot) slot.innerHTML = has && seamDismissed(b) ? `<button class="tool" data-act="undismissSeams" title="Show the seam suggestion again">Seam suggestion</button>` : '';
-  if (!has || seamDismissed(b)) { card.hidden = true; drawOverlay(); return; }
+  const has = sg && (sg.required.length || sg.optional.length), seamTool = ui.tool === 'seam';
+  const tb = $('#tooltools .tool[data-arg="seam"]');
+  if (tb) {
+    tb.querySelector('.badge')?.remove();
+    tb.insertAdjacentHTML('beforeend', seamBadge(b));
+    const n = has ? sg.reqPieces + sg.optPieces : 0;
+    tb.setAttribute('aria-label', n ? `Seam line, ${plural(n, 'piece')} could use seams` : 'Seam line');
+  }
+  const flag = $('#seam-flag');
+  if (flag) {
+    flag.hidden = !(sg?.required.length && !seamTool);
+    if (!flag.hidden) { const t = `${plural(sg.reqPieces, 'piece')} need${sg.reqPieces === 1 ? 's' : ''} seam lines. Click to see.`; flag.title = t; flag.setAttribute('aria-label', t); }
+  }
+  if (slot) slot.innerHTML = has && seamTool && seamDismissed(b) ? `<button class="tool" data-act="undismissSeams" title="Show the seam suggestion again">Seam suggestion</button>` : '';
+  if (!has || !seamTool || seamDismissed(b)) { card.hidden = true; drawOverlay(); return; }
   const lines = [];
   if (sg.required.length) lines.push(`${plural(sg.reqPieces, 'piece')} need${sg.reqPieces === 1 ? 's' : ''} set-in seams as drawn. ${plural(sg.required.length, 'seam line')} fix${sg.required.length === 1 ? 'es' : ''} that.`);
   if (sg.optional.length) lines.push(`${plural(sg.optPieces, 'piece')} need${sg.optPieces === 1 ? 's' : ''} a template. ${plural(sg.optional.length, 'more seam')} make${sg.optional.length === 1 ? 's' : ''} ${sg.optPieces === 1 ? 'it' : 'them'} rotary-cut.`);
