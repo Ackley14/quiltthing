@@ -1009,25 +1009,35 @@ Actions.selFabricMenu = (a, el) => {
   ], { align: 'left' });
 };
 Actions.selPick = () => { const b = activeBlock(), sel = selList(); if (!sel.length) return; ui.fabric = b.regions[sel[sel.length - 1]].fab; saveUi(); render(); toast(`Picked ${ui.fabric === BG ? 'quilt background' : fabricLabel(ui.fabric)}`, 1200); };
+// How far to shift copies (in grid squares) so they stay on the block: the wanted step if it fits,
+// else back toward the top left, else in place.
+function shapeOffset(b, pts, want) {
+  if (!pts.length || !want) return 0;
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]), lo = Math.min(...xs, ...ys), hi = Math.max(...xs, ...ys);
+  if (hi + want <= b.n + 1e-9) return want;
+  if (lo - 1 >= -1e-9) return -1;
+  return 0;
+}
 Actions.selDup = () => {
   const b = activeBlock(), sel = selList(); if (!sel.length) return;
-  const copies = sel.map(i => { const c = JSON.parse(JSON.stringify(b.regions[i])); c.pts = c.pts.map(([x, y]) => [x + 1, y + 1]); return c; });
+  const d = shapeOffset(b, sel.flatMap(i => b.regions[i].pts), 1);
+  const copies = sel.map(i => { const c = JSON.parse(JSON.stringify(b.regions[i])); c.pts = c.pts.map(([x, y]) => [x + d, y + d]); return c; });
   forkTextIds(b, copies);
   const start = b.regions.length;
   b.regions.push(...copies);
   setSel(copies.map((_, k) => start + k)); ui.tool = 'select'; commit();
 };
 Actions.selCopy = () => { const b = activeBlock(), sel = selList(); if (!sel.length) return; _edClip = { n: b.n, regions: sel.map(i => JSON.parse(JSON.stringify(b.regions[i]))), texts: JSON.parse(JSON.stringify(b.texts || {})), pastes: 0 }; toast(`Copied ${plural(sel.length, 'shape')}`, 1200); };
-Actions.selCut = () => { if (!selList().length) return; const n = selList().length; Actions.selCopy(); nextCommitLabel = 'Cut'; Actions.selDelete(); toast(`Cut ${plural(n, 'shape')}`, 1200); };
+Actions.selCut = () => { if (!selList().length) return; const n = selList().length; Actions.selCopy(); _edClip.pastes = -1; nextCommitLabel = 'Cut'; Actions.selDelete(); nextCommitLabel = null; toast(`Cut ${plural(n, 'shape')}`, 1200); };
 Actions.selPaste = () => {
   const b = activeBlock(); if (!_edClip || !b || b.kind !== 'drawn') return;
   _edClip.pastes++;
-  const k = b.n / _edClip.n, off = _edClip.pastes;
+  const k = b.n / _edClip.n, off = shapeOffset(b, _edClip.regions.flatMap(r => r.pts.map(([x, y]) => [x * k, y * k])), _edClip.pastes);
   const start = b.regions.length;
   const pasted = _edClip.regions.map(r => { const c = JSON.parse(JSON.stringify(r)); c.pts = c.pts.map(([x, y]) => [round(x * k + off, 6), round(y * k + off, 6)]); return c; });
   forkTextIds(b, pasted, _edClip.texts || {});
   b.regions.push(...pasted);
-  setSel(_edClip.regions.map((_, i) => start + i)); ui.tool = 'select'; commit();
+  setSel(_edClip.regions.map((_, i) => start + i)); ui.tool = 'select'; commit('Paste');
 };
 Actions.selRotate = dir => {
   const b = activeBlock(), sel = selList(); if (!sel.length) return;

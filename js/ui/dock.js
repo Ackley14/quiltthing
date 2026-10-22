@@ -143,7 +143,8 @@ Actions.dockClose = (id, el, e) => {
   _closeToast?.remove();
   // Undo puts the panel back in the workspace it was closed in: exactly where it was if nothing has
   // changed since, otherwise beside its old neighbours
-  _closeToast = toastAction(`${panelTitle(id)} closed`, 'Undo', () => {
+  _closeToast = toastAction(`${panelTitle(id)} closed`, 'Undo', dockSession.reopen = () => {
+    dockSession.reopen = null;
     const cur = dockState.ws[ws] || wsLayout(ws), same = JSON.stringify(dockClone(cur)) === afterSig;
     const L = same ? before : dockOpen(dockClone(cur), id, before);
     L.__ok = true; dockState.ws[ws] = L; saveDock(); dockSession.sig = '';
@@ -199,7 +200,8 @@ function nextFloatSpot(L, w = 300, h = 340) {
   const d = $('#docarea')?.getBoundingClientRect() || { left: 200, top: 120, right: innerWidth - 200, bottom: innerHeight - 40 };
   const clash = (x, y) => L.floating.some(f => x < f.x + f.w + 8 && x + w + 8 > f.x && y < f.y + f.h + 8 && y + h + 8 > f.y);
   // across the canvas from the right, then down; otherwise cascade from the centre
-  for (let y = d.top + 16; y + h <= d.bottom; y += 60) for (let x = d.right - w - 16; x >= d.left + 8; x -= w + 16) if (!clash(x, y)) return { x: Math.round(x), y: Math.round(y) };
+  const top0 = ($('#docwrap')?.getBoundingClientRect().top || d.top) + (parseFloat($('#docwrap')?.style.getPropertyValue('--hud-top')) || 28) + 8;
+  for (let y = top0; y + h <= d.bottom; y += 60) for (let x = d.right - w - 16; x >= d.left + 8; x -= w + 16) if (!clash(x, y)) return { x: Math.round(x), y: Math.round(y) };
   let x = Math.round(innerWidth / 2 - w / 2), y = 140;
   while (L.floating.some(f => Math.abs(f.x - x) < 30 && Math.abs(f.y - y) < 30)) { x += 48; y += 40; }
   return { x, y };
@@ -342,7 +344,9 @@ document.addEventListener('pointerdown', e => {
     $('#drop-layer').innerHTML = `<div class="drop-ghost"></div><div class="drop-hl" hidden></div>`;
     const mv = ev => {
       f.x = clamp(ev.clientX - x0, -f.w + 80, innerWidth - 80); f.y = clamp(ev.clientY - y0, minY, innerHeight - 40); win.style.left = f.x + 'px'; win.style.top = f.y + 'px';
-      const t = dockLocked() ? null : dockDropTarget(ev.clientX, ev.clientY);
+      const over = document.elementFromPoint(ev.clientX, ev.clientY);
+      const dockable = over?.closest?.('.dock-side, #dock-bottom, .dstrip, .dfloat .dtabs');
+      const t = dockLocked() || ev.ctrlKey || !dockable ? null : dockDropTarget(ev.clientX, ev.clientY);
       target = t && t.zone !== 'float' && !(t.zone === 'float-join' && t.fi === fi) ? t : null;   // over the canvas it's just moving
       win.classList.toggle('docking', !!target);
       if (target) showDropTarget(target, ids.map(panelTitle).join(', '), ev); else { const hl = $('#drop-layer .drop-hl'), gh = $('#drop-layer .drop-ghost'); if (hl) hl.hidden = true; if (gh) gh.textContent = ''; }
@@ -475,7 +479,9 @@ function dockDropTarget(x, y) {
 function refitCanvas() { if (ui.view === 'pattern') Views.pattern.afterMain?.($('#main')); if (typeof renderHud === 'function' && hudSession.compact) renderHud(); }
 function announce(msg) { const el = $('#sr-live'); if (!el) return; el.textContent = ''; setTimeout(() => { el.textContent = msg; }, 30); }
 function toastAction(msg, label, fn) {
+  for (const old of $$('#toast-root .toast.has-act')) old.remove();
   const t = toast(msg, 10000);
+  t?.classList.add('has-act');
   if (t && label) { const b = document.createElement('button'); b.className = 'toast-act'; b.textContent = label; b.onclick = () => { fn(); t.remove(); }; t.appendChild(b); }
   return t;
 }
@@ -496,7 +502,8 @@ Actions.dockFloatClose = fi => {
   setLayout(M); M = dockClone(wsLayout());
   _closeToast?.remove();
   const afterSig = JSON.stringify(M);
-  _closeToast = toastAction(`${names} closed`, 'Undo', () => {
+  _closeToast = toastAction(`${names} closed`, 'Undo', dockSession.reopen = () => {
+    dockSession.reopen = null;
     const cur = dockClone(dockState.ws[ws] || wsLayout(ws)), same = JSON.stringify(cur) === afterSig;
     const L = same ? before : dockMoveMany(cur, ids.filter(id => !dockFind(cur, id)), { zone: 'float', x: f.x, y: f.y, w: f.w, h: f.h }, f.active);
     L.__ok = true; dockState.ws[ws] = L; saveDock(); dockSession.sig = '';
@@ -512,3 +519,5 @@ function markTabOverflow() {
     if (!over && b) b.remove();
   }
 }
+
+Actions.reopenPanel = () => { if (dockSession.reopen) { dockSession.reopen(); _closeToast?.remove(); } };

@@ -136,7 +136,7 @@ document.addEventListener('pointerdown', e => {
 }, true);
 document.addEventListener('keydown', e => {
   if (e.key !== 'Tab' || !isField(e.target)) return;
-  const all = [...document.querySelectorAll('input, select, textarea, button, a[href]')].filter(x => !x.disabled && x.offsetParent && x.tabIndex >= 0);
+  const all = [...document.querySelectorAll('input, select, textarea, button, a[href], [tabindex]')].filter(x => !x.disabled && x.offsetParent && x.tabIndex >= 0);
   const next = all[all.indexOf(e.target) + (e.shiftKey ? -1 : 1)];
   _focusTarget = next && focusSig(next) ? { sig: focusSig(next), at: Date.now(), select: true } : null;   // Tab selects the next field's text
 }, true);
@@ -235,6 +235,7 @@ function renderStatusChips() {
   bar.querySelector('.sb-r').innerHTML = `<span class="sb-pos" id="sb-pos" title="Pointer position, from the top left"></span>
     ${typeof dockSession !== 'undefined' && dockSession.hidden ? '<button class="sb-chip sb-hidden" data-act="toggleHidePanels" title="Show panels (Ctrl+.)">Panels hidden · show</button>' : ''}
     ${issues ? `<button class="sb-chip warn" data-act="openPanel" data-arg="issues" title="Things to check">${icon('warn', 13)} ${plural(issues, 'issue')}</button>` : ''}
+    ${['fabric', 'pattern'].includes(ui.view) && typeof docZoom === 'function' ? `<span class="sb-zoom" role="group" aria-label="Zoom"><button class="sb-chip" data-act="docZoomBy" data-arg="out" aria-label="Zoom out" title="Zoom out (−)">−</button><button class="sb-chip zoom-pct" data-act="docZoomBy" data-arg="fit" title="${ui.view === 'pattern' ? 'Fit the page (0)' : 'Actual size (0)'}">${Math.round((ui.view === 'pattern' ? (parseFloat($('#pattern-preview')?.style.zoom) || 1) : docZoom()) * 100)}%</button><button class="sb-chip" data-act="docZoomBy" data-arg="in" aria-label="Zoom in" title="Zoom in (+)">+</button></span>` : ''}
     ${ui.view === 'block' ? `<button class="sb-chip" data-act="toggleSnap" aria-pressed="${!ui.snapOff}" title="Snap points to the grid">Snap ${ui.snapOff ? 'off' : 'on'}</button>` : ''}
     <button class="sb-chip" data-act="setUnits" data-arg="${ui.units === 'cm' ? 'in' : 'cm'}" title="Switch units">${ui.units === 'cm' ? 'cm' : 'inches'}</button>`;
 }
@@ -488,7 +489,7 @@ document.addEventListener('click', e => {
 });
 
 function toast(msg, ms = 2600) {
-  for (const old of $$('#toast-root .toast')) old.remove();   // one at a time: the newest replaces the last
+  for (const old of $$('#toast-root .toast:not(.has-act)')) old.remove();   // one message at a time (one with a button keeps its place)
   const t = document.createElement('div');
   t.className = 'toast';
   t.setAttribute('role', 'status');

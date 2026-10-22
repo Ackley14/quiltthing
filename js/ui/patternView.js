@@ -25,7 +25,7 @@ Views.pattern = {
     const pageW = (ui.patternPage === 'a4' ? 8.27 : 8.5) * 96;
     const z = Math.min(1, (el.clientWidth - 32) / pageW) * docZoom();
     pv.style.zoom = Math.abs(z - 1) > 1e-3 ? String(round(z, 3)) : '';
-    for (const b of $$('#hud .zoom-pct')) b.textContent = `${Math.round(z * 100)}%`;
+    for (const b of $$('#statusbar .zoom-pct')) b.textContent = `${Math.round(z * 100)}%`;
     // after a redraw, stay on the same page at the same place (pages are rebuilt, so the old scroll position is meaningless)
     const a = _patAnchor, pg = a && pv.querySelectorAll('.page')[a.i];
     if (pg) el.scrollTop += pg.getBoundingClientRect().top - el.getBoundingClientRect().top + a.f * pg.getBoundingClientRect().height;

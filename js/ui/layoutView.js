@@ -115,9 +115,12 @@ function moveSelCell(arrow) {
     }
   }
   if (!next) return;
-  ui.selCell = next.key; saveUi(); renderView();
+  ui.selCell = next.key; saveUi();
+  if (qzZoom() > 1) { const s = qzState(); s.cx = next.cx; s.cy = next.cy; }
+  renderView();
   const c = cellContent(next.key);
-  announce(`${next.row != null && next.col != null && next.key[0] === 'g' ? `Row ${next.row + 1}, column ${next.col + 1}` : 'Position'}: ${c?.b ? doc.blocks[c.b].name : c?.fab ? `plain ${fabricLabel(c.fab)}` : 'empty'}`);
+  const where = `${next.row != null && next.col != null && next.key[0] === 'g' ? `Row ${next.row + 1}, column ${next.col + 1}` : 'Position'}: ${c?.b ? doc.blocks[c.b].name : c?.fab ? `plain ${fabricLabel(c.fab)}` : 'empty'}`;
+  announce(where); const st = $('#statusbar .sb-l'); if (st) st.textContent = where;
   $('#main').focus({ preventScroll: true });
 }
 function layoutCanvasSvg(Q) {

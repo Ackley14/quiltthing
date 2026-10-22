@@ -37,6 +37,8 @@ function commandList() {
   }
   VIEW_LIST.forEach((v, i) => add({ label: `Go to ${v.label}`, path: 'Workspace', act: 'view', arg: v.key, kb: String(i + 1) }));
   for (const c of CMD_PLACES()) if (!out.some(x => x.label === c.label)) add(c);
+  const T = Views[ui.view]?.tools?.();
+  for (const t of T?.list || []) if (!t.sep) add({ label: `${t.label} tool`, path: `Tools · ${wsLabel(curWs())}`, act: T.act, arg: t.key, kb: t.kb, checked: T.active === t.key });
   for (const [id, P] of Object.entries(Panels)) add({ label: `${dockFind(wsLayout(), id) ? 'Show' : 'Open'} the ${P.title} panel`, path: 'Window', act: 'openPanel', arg: id });
   for (const p of (typeof quiltParts === 'function' ? quiltParts() : [])) add({ label: `${p.label} (quilt)`, path: 'Layout › Quilt panel', act: 'goQuiltPart', arg: p.key });
   if (ui.view === 'layout' && ui.selCell && cellContent(ui.selCell)?.b) for (const [l, a] of [['Rotate the selected block', 'cellRotate'], ['Flip the selected block', 'cellFlip'], ['Clear the selected position', 'cellClear']]) add({ label: l, path: 'Layout › selected position', act: a });

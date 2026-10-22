@@ -61,6 +61,7 @@ const MENUS = {
       items.push('-', { header: plural(n, 'shape') },
         { label: 'Cut', act: 'selCut', kb: 'Ctrl+X' },
         { label: 'Copy', act: 'selCopy', kb: 'Ctrl+C' },
+        { label: 'Paste', act: 'selPaste', kb: 'Ctrl+V', disabled: !_edClip },
         { label: 'Duplicate', act: 'selDup', kb: 'Ctrl+D' },
         { label: 'Rotate 90°', act: 'selRotate', arg: 'cw', kb: 'E' },
         { label: 'Flip horizontal', act: 'selMirror', arg: 'h', kb: 'X' },
@@ -71,7 +72,7 @@ const MENUS = {
     }
     if (ui.view === 'block' && b) {
       items.push('-', { header: esc(b.name) },
-        ...(b.kind === 'drawn' ? [{ label: 'Select all shapes', act: 'selAll', kb: 'Ctrl+A' }, { label: 'Paste', act: 'selPaste', kb: 'Ctrl+V', disabled: !_edClip }, '-'] : []),
+        ...(b.kind === 'drawn' ? [{ label: 'Select all shapes', act: 'selAll', kb: 'Ctrl+A' }, ...(n ? [] : [{ label: 'Paste', act: 'selPaste', kb: 'Ctrl+V', disabled: !_edClip }]), '-'] : []),
         ...(b.kind === 'drawn' ? [{ label: `Rotate block ${isHexBlock(b) ? 60 : 90}°`, act: 'blockRotate' }, { label: 'Flip block', act: 'blockMirror' }] : []),
         { label: 'Duplicate block', act: 'blockDuplicate' },
         ...(b.kind === 'drawn' ? [{ label: 'Add suggested seams', act: 'autoSeams' }, { label: 'Remove all seams', act: 'clearSeams', disabled: !(b.seams?.length || b.appSeams?.length) }, { label: 'Clear all shapes…', act: 'blockClear', danger: true }] : []),
@@ -102,6 +103,7 @@ const MENUS = {
     const qzItems = ['-', { label: 'Zoom in', act: 'qZoomBy', arg: 'in', kb: '+' }, { label: 'Zoom out', act: 'qZoomBy', arg: 'out', kb: '−' }, { label: 'Fit the quilt', act: 'qZoomBy', arg: 'fit', kb: '0' }, { label: 'Actual size', act: 'zoomActual', kb: 'Shift+0' }];
     if (v === 'quilting') items.push('-', tick('Front', 'qSide', 'front', ui.qSide !== 'back'), tick('Back', 'qSide', 'back', ui.qSide === 'back'), tick('Fade quilt', 'toggleUi', 'qFade', ui.qFade));
     if (v === 'layout' || v === 'quilting') items.push(...qzItems);
+    if (v === 'fabric' || v === 'cutting' || v === 'pattern') items.push('-', { label: 'Zoom in', act: 'docZoomBy', arg: 'in', kb: '+' }, { label: 'Zoom out', act: 'docZoomBy', arg: 'out', kb: '−' }, { label: v === 'pattern' ? 'Fit the page' : 'Actual size', act: 'docZoomBy', arg: 'fit', kb: '0' });
     if (v === 'fabric' || v === 'cutting') items.push('-', tick('Shopping list', 'fabPane', 'shop', ui.fabPane !== 'cut'), tick('Cutting plan', 'fabPane', 'cut', ui.fabPane === 'cut'), tick('Cutting maps', 'toggleCutMaps', undefined, ui.cutDiagrams !== false));
     // how the app looks (yours, not the quilt's)
     items.push('-', { header: 'Theme' }, tick('Dark', 'setTheme', 'dark', prefs.theme !== 'light'), tick('Light', 'setTheme', 'light', prefs.theme === 'light'),
@@ -135,6 +137,7 @@ const MENUS = {
       ...mine.map(id => tick(esc(Panels[id].title), 'togglePanel', id, open.has(id))),
       ...(other.length ? [{ header: 'From other workspaces' }, ...other.map(id => tick(esc(Panels[id].title), 'togglePanel', id, open.has(id)))] : []),
       '-',
+      { label: 'Reopen closed panel', act: 'reopenPanel', disabled: !dockSession.reopen },
       tick('Hide panels', 'toggleHidePanels', undefined, dockSession.hidden, 'Ctrl+.'),
       tick('Lock layout', 'toggleLockLayout', undefined, prefs.lockLayout),
       '-',

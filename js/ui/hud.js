@@ -9,10 +9,10 @@ const HUD_WIDGETS = {
   view: { label: 'View switches', corner: 'tr', ws: ['block', 'layout', 'quilting'], html: () => {
     const items = viewToggleItems(); if (!items.length) return '';
     // a row of switches; one View button only when the row would run into the other corner
-    if (hudSession.compact) return `<div class="hud-group"><button class="tool" data-act="viewMenu" aria-haspopup="menu">${icon('eye', 14)} View${items.some(t => t.on && t.arg !== 'grayscale') ? ' ·' : ''} ${icon('down', 12)}</button></div>`;
+    if (hudSession.compact) return `<div class="hud-group"><button class="tool" data-act="viewMenu" aria-haspopup="menu">${icon('eye', 14)} View${items.some(t => t.on && t.arg !== 'grayscale') ? '<span class="on-dot" aria-label="(some on)"></span>' : ''} ${icon('down', 12)}</button></div>`;
     return `<div class="hud-group" role="toolbar" aria-label="View">${viewToggles()}</div>`;
   } },
-  zoom: { label: 'Zoom', corner: 'br', ws: ['block', 'layout', 'quilting', 'fabric', 'pattern'], html: hudZoom },
+  zoom: { label: 'Zoom', corner: 'br', ws: ['block', 'layout', 'quilting'], html: hudZoom },
 };
 // Settings per workspace (prefs.hud[ws][id]); older settings saved for every workspace still count.
 const hudPref = (id, ws = curWs()) => ({ show: true, corner: HUD_WIDGETS[id].corner, order: Object.keys(HUD_WIDGETS).indexOf(id), ...(prefs.hud?.[id] || {}), ...(prefs.hud?.[ws]?.[id] || {}) });
@@ -55,7 +55,14 @@ function renderHud() {
   requestAnimationFrame(() => { for (const el of $$('#ed-zoom, #q-zoom')) el.textContent = zoomPctText(); });
   // the canvas fits between the HUD's top and bottom rows, so nothing covers the quilt's corners
   const dw = $('#docwrap'), D = dw?.getBoundingClientRect();
-  const band = cs => Math.max(0, ...cs.map(c => { const el = $(`#hud .hud-c.${c}`), r = el?.getBoundingClientRect(); return r && r.height ? Math.round((c[0] === 't' ? r.bottom - D.top : D.bottom - r.top) + 10) : 0; }));
+  // where the drawing sits when fitted with the plain margin (it's centred, so its sides are known)
+  const art = $('#main .canvas-wrap > svg'), vb = art?.viewBox?.baseVal, aw = D ? D.width - 56 : 0, ah = D ? D.height - 56 : 0;
+  const ratio = vb && vb.height ? vb.width / vb.height : 1, artW = Math.min(aw, ah * ratio), artL = D ? D.left + (D.width - artW) / 2 : 0;
+  const band = cs => Math.max(0, ...cs.map(c => {
+    const el = $(`#hud .hud-c.${c}`), r = el?.getBoundingClientRect();
+    if (!r || !r.height || (art && (r.right < artL - 4 || r.left > artL + artW + 4))) return 0;   // beside the drawing: no room needed
+    return Math.round((c[0] === 't' ? r.bottom - D.top : D.bottom - r.top) + 10);
+  }));
   if (dw) { const t = `${Math.max(28, band(['tl', 'tr']))}px`, b2 = `${Math.max(28, band(['bl', 'br']))}px`; if (dw.style.getPropertyValue('--hud-top') !== t) dw.style.setProperty('--hud-top', t); if (dw.style.getPropertyValue('--hud-bottom') !== b2) dw.style.setProperty('--hud-bottom', b2); }
   // measure: does the row of View switches fit beside what's in the top-left corner?
   const W = $('#docarea')?.clientWidth || 0;

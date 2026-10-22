@@ -82,6 +82,8 @@ function inputLen(inches) {
     const w = Math.floor(e / 8), f = ['', '⅛', '¼', '⅜', '½', '⅝', '¾', '⅞'][e % 8];
     return (w || !f ? String(w) : '') + f;
   }
+  const s16 = Math.round(inches * 16);
+  if (Math.abs(inches * 16 - s16) < 1e-4 && s16 > 0) { const w = Math.floor(s16 / 16), r = s16 % 16; return `${w ? `${w} ` : ''}${r}/16`; }
   return String(round(inches, 4));
 }
 function unitLabel() { return displayUnits === 'cm' ? 'cm' : 'in'; }

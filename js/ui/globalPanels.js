@@ -38,8 +38,7 @@ function historyPanel() {
   for (let j = fut.length - 1, k = cur + 1; j >= 0; j--, k++) rows.push(`<button class="hist-row undone" data-act="histGo" data-arg="${k}" aria-label="${esc(fut[j])} (undone)"><span class="hist-n">${k}</span><span>${esc(fut[j])}</span></button>`);
   return `<div class="panel-tools"><span class="pt-note">${plural(past.length, 'step')}${fut.length ? ` · ${fut.length} undone` : ''}</span><span class="grow"></span>
     <button class="btn small quiet" data-act="undo" ${past.length ? '' : 'disabled'} title="Undo (Ctrl+Z)">${icon('undo', 14)}</button><button class="btn small quiet" data-act="redo" ${fut.length ? '' : 'disabled'} title="Redo (Ctrl+Shift+Z)">${icon('redo', 14)}</button></div>
-    <div class="hist-list" aria-label="Undo history">${rows.join('')}</div>
-    <p class="hint pad">A new change after going back drops the later steps.</p>`;
+    <div class="hist-list" aria-label="Undo history">${rows.join('')}</div>`;
 }
 registerPanel('history', { title: 'History', short: 'History', icon: 'history', render: historyPanel, after: host => host.querySelector('.hist-row.on')?.scrollIntoView({ block: 'nearest' }) });
 Actions.histGo = n => {

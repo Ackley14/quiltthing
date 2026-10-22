@@ -28,6 +28,12 @@ const dockOpenIds = L => dockGroups(L).flatMap(x => x.g.tabs);
 function dockTidy(L) {
   for (const side of ['left', 'right']) {
     for (const c of L[side]) {
+      c.groups.forEach((g, i) => {
+        if (g.tabs.length || !(g.h > 0)) return;
+        const nb = (c.groups[i - 1]?.tabs.length ? c.groups[i - 1] : null) || c.groups.slice(i + 1).find(x => x.tabs.length) || c.groups.slice(0, i).reverse().find(x => x.tabs.length);
+        if (nb) nb.h = (nb.h > 0 ? nb.h : 0) + g.h;
+        g.h = 0;
+      });
       c.groups = c.groups.filter(g => g.tabs.length);
       for (const g of c.groups) if (!g.tabs.includes(g.active)) g.active = g.tabs[0];
       const sum = c.groups.reduce((s, g) => s + (g.h > 0 ? g.h : 0), 0);
@@ -204,9 +210,10 @@ function dockOpen(L, id, def) {
 }
 // Add a panel to a column: a new group at the bottom while there's room, otherwise a tab in the last group.
 function dockAddToColumn(L, id, zone, ci) {
-  const c = L[zone][ci], last = c.groups[c.groups.length - 1];
-  const crowded = c.groups.length >= 3 || (last && last.h < 0.3);
-  return dockMove(L, id, { zone, col: ci, group: c.groups.length - 1, how: crowded ? 'tab' : 'below' });
+  const c = L[zone][ci];
+  const gi = c.groups.reduce((b, g, i) => (g.h > c.groups[b].h ? i : b), 0), big = c.groups[gi];
+  const crowded = c.groups.length >= 3 || (big && big.h < 0.3);
+  return dockMove(L, id, { zone, col: ci, group: gi, how: crowded ? 'tab' : 'below' });
 }
 function dockActivate(L, id) { const at = dockFind(L, id); if (at) at.g.active = id; return L; }
 

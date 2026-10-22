@@ -252,15 +252,29 @@ function applyDocZoom(el = $('#main')) {
   const z = docZoom();
   d.classList.toggle('zoomed', z !== 1); d.style.zoom = z !== 1 ? String(z) : '';
 }
-Actions.docZoomBy = a => {
+Actions.docZoomBy = (a, el, ev, pt) => {
+  // keep the point under the pointer (or the centre) where it is
+  const m = $('#main'), mr = m.getBoundingClientRect(), px = pt?.clientX ?? mr.left + mr.width / 2, py = pt?.clientY ?? mr.top + mr.height / 2;
+  const fx = (m.scrollLeft + px - mr.left) / (m.scrollWidth || 1), fy = (m.scrollTop + py - mr.top) / (m.scrollHeight || 1);
   const z = docZoom(), i = DOC_ZOOMS.findIndex(x => x >= z - 1e-6);
   const nz = a === 'in' ? DOC_ZOOMS[Math.min(DOC_ZOOMS.length - 1, (DOC_ZOOMS[i] > z + 1e-6 ? i : i + 1))] : a === 'out' ? DOC_ZOOMS[Math.max(0, i - 1)] : 1;
   ui.docZoom = { ...(ui.docZoom || {}), [ui.view]: nz }; saveUi();
-  if (ui.view === 'pattern') Views.pattern.afterMain?.($('#main')); else applyDocZoom();
-  renderHud();
+  if (ui.view === 'pattern') { _patAnchor = null; Views.pattern.afterMain?.($('#main')); } else applyDocZoom();
+  m.scrollLeft = fx * m.scrollWidth - (px - mr.left); m.scrollTop = fy * m.scrollHeight - (py - mr.top);
+  renderHud(); renderStatusChips();
 };
 // the Zoom tool on a document: click to zoom in, Alt-click to zoom out
 document.addEventListener('pointerdown', e => {
   if (!['fabric', 'pattern'].includes(ui.view) || ui.docTool !== 'zoom' || e.button !== 0 || !e.target.closest?.('#main') || e.target.id === 'main' || e.target.closest('button, input, select, a, label')) return;
-  e.preventDefault(); Actions.docZoomBy(e.altKey ? 'out' : 'in');
+  e.preventDefault(); Actions.docZoomBy(e.altKey ? 'out' : 'in', null, null, e);
 });
+
+document.addEventListener('keydown', e => {
+  if (!(e.ctrlKey || e.metaKey) || (e.key !== 'a' && e.key !== 'A') || !['fabric', 'pattern'].includes(ui.view) || e.target.closest?.('input, textarea, select') || $('#modal-root').innerHTML) return;
+  const d = $('#main .docview, #main #pattern-preview'); if (!d) return;
+  e.preventDefault(); getSelection().selectAllChildren(d);
+}, true);
+$('#main')?.addEventListener('wheel', e => {
+  if (!(e.ctrlKey || e.metaKey) || !['fabric', 'pattern'].includes(ui.view)) return;
+  e.preventDefault(); Actions.docZoomBy(e.deltaY < 0 ? 'in' : 'out', null, null, e);
+}, { passive: false });

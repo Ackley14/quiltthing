@@ -890,3 +890,11 @@ body[data-doctool="zoom"] #main { cursor: zoom-in; }
 .modal > h2:first-of-type { padding-right: 36px; }
 .layout-locked .dock-side .dtabs, .layout-locked #dock-bottom .dtabs { cursor: default; }
 @media (max-width: 900px) { .canvas-wrap { padding: 12px; } }
+
+.canvas-wrap { overflow: hidden; }
+.canvas-wrap svg.editor, .canvas-wrap svg.quilt-svg { overflow: visible; }
+
+.sb-zoom { display: inline-flex; gap: 2px; }
+.sb-zoom .sb-chip { min-width: 26px; justify-content: center; }
+
+.on-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-left: 4px; vertical-align: middle; }
