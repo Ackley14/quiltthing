@@ -165,7 +165,7 @@ const _saveSoon = debounce(() => { if (savePending) saveNow(); }, 400);
 const scheduleSave = () => { savePending = true; _saveSoon(); };
 // save when the page is closed or put in the background, so the last edit isn't lost
 if (typeof window !== 'undefined' && window.addEventListener) {
-  window.addEventListener('pagehide', () => { if (savePending) saveNow(); });
+  window.addEventListener('pagehide', () => { if (savePending) saveNow(); if (typeof saveRefs === 'function' && !savePaused) saveRefs(); });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && savePending) saveNow(); });
 }
 let savePaused = false;   // another tab changed the design: don't overwrite it until the person chooses

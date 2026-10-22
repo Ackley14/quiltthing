@@ -174,7 +174,7 @@ Actions.openPanel = id => {
   if (!Panels[id]) return;
   dockSession.hidden = false;
   const L = dockClone(wsLayout()), at = dockFind(L, id);
-  if (!at) { setLayout(dockOpen(L, id, DOCK_DEFAULTS[curWs()] || emptyLayout())); }
+  if (!at) { const M = dockOpen(L, id, DOCK_DEFAULTS[curWs()] || emptyLayout()), a2 = dockFind(M, id); if (a2) { a2.g.folded = false; a2.g.active = id; } setLayout(M); }
   else {
     dockActivate(L, id); at.g.folded = false;
     const collapsed = (at.zone === 'left' || at.zone === 'right') && colCollapsed(L[at.zone][at.ci], at.zone, at.ci);
@@ -345,16 +345,22 @@ document.addEventListener('pointerdown', e => {
     const mv = ev => {
       f.x = clamp(ev.clientX - x0, -f.w + 80, innerWidth - 80); f.y = clamp(ev.clientY - y0, minY, innerHeight - 40); win.style.left = f.x + 'px'; win.style.top = f.y + 'px';
       const over = document.elementFromPoint(ev.clientX, ev.clientY);
-      const dockable = over?.closest?.('.dock-side, #dock-bottom, .dstrip, .dfloat .dtabs');
+      const B = $('#body').getBoundingClientRect(), Lnow = wsLayout();
+      const emptyEdge = (!Lnow.left.length && ev.clientX < B.left + ($('#toolstrip').offsetWidth || 0) + 24) || (!Lnow.right.length && ev.clientX > B.right - 24);
+      const dockable = emptyEdge || over?.closest?.('.dock-side, #dock-bottom, .dstrip, .dfloat .dtabs');
       const t = dockLocked() || ev.ctrlKey || !dockable ? null : dockDropTarget(ev.clientX, ev.clientY);
       target = t && t.zone !== 'float' && !(t.zone === 'float-join' && t.fi === fi) ? t : null;   // over the canvas it's just moving
       win.classList.toggle('docking', !!target);
       if (target) showDropTarget(target, ids.map(panelTitle).join(', '), ev); else { const hl = $('#drop-layer .drop-hl'), gh = $('#drop-layer .drop-ghost'); if (hl) hl.hidden = true; if (gh) gh.textContent = ''; }
     };
-    const esc = ke => { if (ke.key !== 'Escape') return; ke.stopPropagation(); target = null; up({ type: 'pointercancel' }); };
+    const esc = ke => { if (ke.key !== 'Escape') return; if (!win.isConnected) { up({ type: 'lost' }); return; } ke.stopPropagation(); target = null; up({ type: 'pointercancel' }); };
     document.addEventListener('keydown', esc, true);
+    let done = false;
+    bar.addEventListener('lostpointercapture', () => up({ type: 'lost' }), { once: true });
     const up = e2 => {
+      if (done) return; done = true;
       document.removeEventListener('keydown', esc, true);
+      if (e2.type === 'lost') { $('#drop-layer').innerHTML = ''; win.style.pointerEvents = ''; if (win.isConnected) setLayout(L); return; }
       if (e2.type === 'pointercancel') { Object.assign(f, before.floating[fi]); win.style.left = f.x + 'px'; win.style.top = f.y + 'px'; win.classList.remove('docking'); }
       bar.removeEventListener('pointermove', mv); bar.removeEventListener('pointerup', up); bar.removeEventListener('pointercancel', up);
       win.style.pointerEvents = ''; $('#drop-layer').innerHTML = '';
@@ -521,3 +527,5 @@ function markTabOverflow() {
 }
 
 Actions.reopenPanel = () => { if (dockSession.reopen) { dockSession.reopen(); _closeToast?.remove(); } };
+// the reopen offer lasts as long as its Undo toast
+setInterval(() => { if (dockSession.reopen && !_closeToast?.isConnected) dockSession.reopen = null; }, 2000);

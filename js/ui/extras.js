@@ -276,5 +276,9 @@ document.addEventListener('keydown', e => {
 }, true);
 $('#main')?.addEventListener('wheel', e => {
   if (!(e.ctrlKey || e.metaKey) || !['fabric', 'pattern'].includes(ui.view)) return;
-  e.preventDefault(); Actions.docZoomBy(e.deltaY < 0 ? 'in' : 'out', null, null, e);
+  e.preventDefault();
+  _docWheel += e.deltaY;   // a trackpad sends many small steps: add them up to one notch
+  if (Math.abs(_docWheel) < 80) return;
+  Actions.docZoomBy(_docWheel < 0 ? 'in' : 'out', null, null, e); _docWheel = 0;
 }, { passive: false });
+let _docWheel = 0;

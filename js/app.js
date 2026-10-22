@@ -4,7 +4,8 @@
 // "Midnight Bullseye": a straight set showing library blocks recoloured, a custom curved block
 // turned four ways into a bullseye, borders, quilting and a backing.
 // A sample just as it was loaded: its name, and nothing done to it since.
-const isPristineSample = () => ['Midnight Bullseye', 'Hexie Bloom'].includes(doc?.meta?.title) && !undoStack.past.length;
+// Its fingerprint is taken when it's loaded (the undo history can't tell: it isn't always stored).
+const isPristineSample = () => !!ui?.sampleSig && hashStr(snapshot()) === ui.sampleSig && !Object.keys(refImgs).length;
 function loadSampleProject() {
   doc = newDoc();
   doc.fabrics = [
@@ -50,7 +51,7 @@ function loadSampleProject() {
   doc.meta = { title: 'Midnight Bullseye', designer: '', description: 'A curved-pieced bullseye in rust, mustard and cream glows in a midnight sky, ringed by sawtooth stars in two colourways with LeMoyne stars in the corners. Concentric quilting ripples out from the centre.', skill: 'auto' };
   ui.activeBlock = ui.placeBlock = quarter.id; ui.fabric = mustard; ui.view = 'layout'; ui.layoutTool = 'place';
   ui.selCell = null; ui.selRegion = null;
-  resetHistory(); saveNow(); render();
+  resetHistory(); ui.sampleSig = hashStr(snapshot()); saveUi(); saveNow(); render();
 }
 
 // "Hexie Bloom": a hexagon tessellation with colour rings, custom hexagon blocks, an inset panel
@@ -119,7 +120,7 @@ async function loadTessSample() {
   ];
   doc.meta = { title: 'Hexie Bloom', designer: '', description: 'Hexagons ripple out in rings of teal, sage and peach from a framed "Bloom" panel, sprinkled with pieced hexie stars and 3D cubes. The edge pieces are cut to shape, and the panel and the hexagons are quilted differently.', skill: 'auto' };
   ui.activeBlock = ui.placeBlock = star.id; ui.fabric = coral; ui.view = 'layout'; ui.layoutTool = 'place'; ui.selCell = null; ui.selRegion = null;
-  resetHistory(); saveNow(); render();
+  resetHistory(); ui.sampleSig = hashStr(snapshot()); saveUi(); saveNow(); render();
 }
 
 function startBlank() {

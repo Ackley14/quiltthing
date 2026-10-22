@@ -847,7 +847,7 @@ body[data-ws="layout"] #main svg.quilt-svg, body[data-ws="quilting"] #main svg.q
 .bar-btn .bar-l { margin: 0 6px 0 4px; }
 @media (max-width: 900px) { .bar-btn .bar-l { display: none; } }
 
-.canvas-wrap { padding: var(--hud-top, 28px) 28px var(--hud-bottom, 28px); }
+.canvas-wrap { --side: 28px; padding: var(--hud-top, 28px) var(--side) var(--hud-bottom, 28px); }
 /* a panel whose content runs past its bottom (or top) shows a soft shadow there */
 .dbody {
   background:
@@ -889,7 +889,7 @@ body[data-doctool="zoom"] #main { cursor: zoom-in; }
 
 .modal > h2:first-of-type { padding-right: 36px; }
 .layout-locked .dock-side .dtabs, .layout-locked #dock-bottom .dtabs { cursor: default; }
-@media (max-width: 900px) { .canvas-wrap { padding: 12px; } }
+@media (max-width: 900px) { .canvas-wrap { --side: 12px; padding: var(--hud-top, 12px) 12px var(--hud-bottom, 12px); } }
 
 .canvas-wrap { overflow: hidden; }
 .canvas-wrap svg.editor, .canvas-wrap svg.quilt-svg { overflow: visible; }
@@ -898,3 +898,5 @@ body[data-doctool="zoom"] #main { cursor: zoom-in; }
 .sb-zoom .sb-chip { min-width: 26px; justify-content: center; }
 
 .on-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-left: 4px; vertical-align: middle; }
+
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

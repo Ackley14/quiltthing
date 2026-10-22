@@ -1011,17 +1011,24 @@ Actions.selFabricMenu = (a, el) => {
 Actions.selPick = () => { const b = activeBlock(), sel = selList(); if (!sel.length) return; ui.fabric = b.regions[sel[sel.length - 1]].fab; saveUi(); render(); toast(`Picked ${ui.fabric === BG ? 'quilt background' : fabricLabel(ui.fabric)}`, 1200); };
 // How far to shift copies (in grid squares) so they stay on the block: the wanted step if it fits,
 // else back toward the top left, else in place.
+// The step for a copy, as [dx, dy] in grid units: `want` lattice steps down and right (a square lattice
+// moves 1,1; a 60° lattice ½,√3/2), else fewer, else up and left, so the copy stays on the block and
+// doesn't sit exactly on what it was copied from; in place only when nothing else fits.
 function shapeOffset(b, pts, want) {
-  if (!pts.length || !want) return 0;
-  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]), lo = Math.min(...xs, ...ys), hi = Math.max(...xs, ...ys);
-  if (hi + want <= b.n + 1e-9) return want;
-  if (lo - 1 >= -1e-9) return -1;
-  return 0;
+  if (!pts.length || !want) return [0, 0];
+  const tri = b.lattice === 'tri' || isHexBlock(b), st = tri ? [0.5, TRI_H] : [1, 1];
+  const fr = isHexBlock(b) ? hexFrame(b.n) : [[0, 0], [b.n, b.n]];
+  const fx0 = Math.min(...fr.map(p => p[0])), fx1 = Math.max(...fr.map(p => p[0])), fy0 = Math.min(...fr.map(p => p[1])), fy1 = Math.max(...fr.map(p => p[1]));
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const fits = k => x0 + k * st[0] >= fx0 - 1e-9 && x1 + k * st[0] <= fx1 + 1e-9 && y0 + k * st[1] >= fy0 - 1e-9 && y1 + k * st[1] <= fy1 + 1e-9;
+  for (let k = want; k >= 1; k--) if (fits(k)) return [k * st[0], k * st[1]];
+  for (let k = -1; k >= -Math.max(1, want); k--) if (fits(k)) return [k * st[0], k * st[1]];
+  return [0, 0];
 }
 Actions.selDup = () => {
   const b = activeBlock(), sel = selList(); if (!sel.length) return;
-  const d = shapeOffset(b, sel.flatMap(i => b.regions[i].pts), 1);
-  const copies = sel.map(i => { const c = JSON.parse(JSON.stringify(b.regions[i])); c.pts = c.pts.map(([x, y]) => [x + d, y + d]); return c; });
+  const [dx, dy] = shapeOffset(b, sel.flatMap(i => b.regions[i].pts), 1);
+  const copies = sel.map(i => { const c = JSON.parse(JSON.stringify(b.regions[i])); c.pts = c.pts.map(([x, y]) => [round(x + dx, 6), round(y + dy, 6)]); return c; });
   forkTextIds(b, copies);
   const start = b.regions.length;
   b.regions.push(...copies);
@@ -1032,9 +1039,9 @@ Actions.selCut = () => { if (!selList().length) return; const n = selList().leng
 Actions.selPaste = () => {
   const b = activeBlock(); if (!_edClip || !b || b.kind !== 'drawn') return;
   _edClip.pastes++;
-  const k = b.n / _edClip.n, off = shapeOffset(b, _edClip.regions.flatMap(r => r.pts.map(([x, y]) => [x * k, y * k])), _edClip.pastes);
+  const k = b.n / _edClip.n, [dx, dy] = shapeOffset(b, _edClip.regions.flatMap(r => r.pts.map(([x, y]) => [x * k, y * k])), _edClip.pastes);
   const start = b.regions.length;
-  const pasted = _edClip.regions.map(r => { const c = JSON.parse(JSON.stringify(r)); c.pts = c.pts.map(([x, y]) => [round(x * k + off, 6), round(y * k + off, 6)]); return c; });
+  const pasted = _edClip.regions.map(r => { const c = JSON.parse(JSON.stringify(r)); c.pts = c.pts.map(([x, y]) => [round(x * k + dx, 6), round(y * k + dy, 6)]); return c; });
   forkTextIds(b, pasted, _edClip.texts || {});
   b.regions.push(...pasted);
   setSel(_edClip.regions.map((_, i) => start + i)); ui.tool = 'select'; commit('Paste');

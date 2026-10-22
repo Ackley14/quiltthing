@@ -32,7 +32,7 @@ function commandList() {
       if (!it) continue;
       if (it.header) { head = it.header.replace(/<[^>]+>/g, ''); continue; }
       if (!it.act) continue;
-      add({ label: it.label.replace(/<[^>]+>/g, '').trim(), path: `${name}${head ? ` › ${head}` : ''}`, act: it.act, arg: it.arg, kb: it.kb, checked: it.checked, disabled: !!it.disabled });
+      add({ label: it.text ? it.label : it.label.replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').trim(), path: `${name}${head ? ` › ${head}` : ''}`, act: it.act, arg: it.arg, kb: it.kb, checked: it.checked, disabled: !!it.disabled });
     }
   }
   VIEW_LIST.forEach((v, i) => add({ label: `Go to ${v.label}`, path: 'Workspace', act: 'view', arg: v.key, kb: String(i + 1) }));

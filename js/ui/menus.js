@@ -51,8 +51,8 @@ const MENUS = {
     // History, then what the current step works on, then the quilt's defaults and your preferences
     const items = [
       { header: 'History' },
-      { label: undoStack.past.length && histLabels.past.length ? `Undo ${esc(histLabels.past[histLabels.past.length - 1])}` : 'Undo', act: 'undo', kb: 'Ctrl+Z', disabled: !undoStack.past.length },
-      { label: undoStack.future.length && histLabels.future.length ? `Redo ${esc(histLabels.future[histLabels.future.length - 1])}` : 'Redo', act: 'redo', kb: 'Ctrl+Shift+Z', disabled: !undoStack.future.length },
+      { label: undoStack.past.length && histLabels.past.length ? `Undo ${histLabels.past[histLabels.past.length - 1]}` : 'Undo', text: true, act: 'undo', kb: 'Ctrl+Z', disabled: !undoStack.past.length },
+      { label: undoStack.future.length && histLabels.future.length ? `Redo ${histLabels.future[histLabels.future.length - 1]}` : 'Redo', text: true, act: 'redo', kb: 'Ctrl+Shift+Z', disabled: !undoStack.future.length },
     ];
     const b = activeBlock();
     // the shape commands only while shapes are selected, so the menu stays short
@@ -234,7 +234,7 @@ const CONTEXT_MENUS = [
     { label: 'Add to this quilt', act: 'useLibrary', arg: el.dataset.arg },
     { label: 'Add and place in the layout', act: 'useLibraryPlace', arg: el.dataset.arg },
   ]],
-  ['.zoom-pct', () => ['fabric', 'pattern'].includes(ui.view) ? [{ label: '100%', act: 'docZoomBy', arg: 'fit', kb: '0' }, '-', { label: 'Zoom in', act: 'docZoomBy', arg: 'in', kb: '+' }, { label: 'Zoom out', act: 'docZoomBy', arg: 'out', kb: '−' }] : zoomMenuItems()],
+  ['.zoom-pct', () => ['fabric', 'pattern'].includes(ui.view) ? [{ label: ui.view === 'pattern' ? 'Fit the page' : '100%', act: 'docZoomBy', arg: 'fit', kb: '0' }, '-', { label: 'Zoom in', act: 'docZoomBy', arg: 'in', kb: '+' }, { label: 'Zoom out', act: 'docZoomBy', arg: 'out', kb: '−' }] : zoomMenuItems()],
   ['[data-panel] .part-row.layer', el => {
     const i = doc.quilting.layers.findIndex(L => L.id === el.dataset.arg), L = doc.quilting.layers[i];
     if (!L) return null;

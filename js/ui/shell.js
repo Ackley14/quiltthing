@@ -232,12 +232,13 @@ function renderStatus() {
 function renderStatusChips() {
   const bar = $('#statusbar'); if (!bar.querySelector('.sb-r')) return renderStatus();
   const issues = typeof issueCount === 'function' ? issueCount() : 0;
-  bar.querySelector('.sb-r').innerHTML = `<span class="sb-pos" id="sb-pos" title="Pointer position, from the top left"></span>
+  const sbr = bar.querySelector('.sb-r'), sbh = `<span class="sb-pos" id="sb-pos" title="Pointer position, from the top left"></span>
     ${typeof dockSession !== 'undefined' && dockSession.hidden ? '<button class="sb-chip sb-hidden" data-act="toggleHidePanels" title="Show panels (Ctrl+.)">Panels hidden · show</button>' : ''}
     ${issues ? `<button class="sb-chip warn" data-act="openPanel" data-arg="issues" title="Things to check">${icon('warn', 13)} ${plural(issues, 'issue')}</button>` : ''}
     ${['fabric', 'pattern'].includes(ui.view) && typeof docZoom === 'function' ? `<span class="sb-zoom" role="group" aria-label="Zoom"><button class="sb-chip" data-act="docZoomBy" data-arg="out" aria-label="Zoom out" title="Zoom out (−)">−</button><button class="sb-chip zoom-pct" data-act="docZoomBy" data-arg="fit" title="${ui.view === 'pattern' ? 'Fit the page (0)' : 'Actual size (0)'}">${Math.round((ui.view === 'pattern' ? (parseFloat($('#pattern-preview')?.style.zoom) || 1) : docZoom()) * 100)}%</button><button class="sb-chip" data-act="docZoomBy" data-arg="in" aria-label="Zoom in" title="Zoom in (+)">+</button></span>` : ''}
     ${ui.view === 'block' ? `<button class="sb-chip" data-act="toggleSnap" aria-pressed="${!ui.snapOff}" title="Snap points to the grid">Snap ${ui.snapOff ? 'off' : 'on'}</button>` : ''}
     <button class="sb-chip" data-act="setUnits" data-arg="${ui.units === 'cm' ? 'in' : 'cm'}" title="Switch units">${ui.units === 'cm' ? 'cm' : 'inches'}</button>`;
+  preserveFocus(sbr, () => { sbr.innerHTML = sbh; });
 }
 
 /* ---------- event delegation ---------- */
@@ -271,7 +272,7 @@ function labelNextCommit(el) {
     else if (el.dataset.type === 'len' || el.dataset.type === 'int' || el.dataset.type === 'num' || el.type === 'number') {
       let n = el.dataset.type === 'len' ? parseLenExpr(el.value, el.dataset.bind ? getPath(doc, el.dataset.bind) : undefined) : parseFloat(el.value);
       const lo = el.dataset.min ?? (el.min || undefined), hi = el.dataset.max ?? (el.max || undefined);
-      if (Number.isFinite(n)) { n = clamp(n, lo !== undefined ? +lo : -Infinity, hi !== undefined ? +hi : Infinity); v = el.dataset.type === 'len' ? fmtLen(n) : String(el.dataset.type === 'int' || el.type === 'number' && el.step !== 'any' && !String(el.step).includes('.') ? Math.round(n) : n); }
+      if (Number.isFinite(n)) { n = clamp(n, lo !== undefined ? +lo : -Infinity, hi !== undefined ? +hi : Infinity); v = el.dataset.type === 'len' ? fmtLen(n) : String(el.dataset.type === 'int' ? Math.round(n) : round(n, 3)); }
     }
     else if (el.type !== 'color') v = `“${el.value.trim().slice(0, 20)}”`;
     if (v) t += ` ${v}`;
@@ -453,7 +454,7 @@ function openMenu(anchor, items, opts = {}) {
   m.setAttribute('role', 'menu');
   const ticks = items.some(it => it && it.checked !== undefined);
   m.innerHTML = items.filter(Boolean).map(it => it === '-' ? '<hr>' : it.header ? `<div class="menu-h">${it.header}</div>`
-    : `<button role="${it.checked !== undefined ? 'menuitemcheckbox' : 'menuitem'}" ${it.checked !== undefined ? `aria-checked="${!!it.checked}"` : ''} class="${it.danger ? 'danger' : ''}" data-act="${it.act}" ${it.arg !== undefined ? `data-arg="${esc(it.arg)}"` : ''} ${it.disabled ? 'disabled' : ''}>${ticks ? (it.checked ? icon('check', 14) : '<span class="ic-gap"></span>') : ''}${it.label}${it.kb ? `<span class="kb">${it.kb}</span>` : ''}</button>`).join('');
+    : `<button role="${it.checked !== undefined ? 'menuitemcheckbox' : 'menuitem'}" ${it.checked !== undefined ? `aria-checked="${!!it.checked}"` : ''} class="${it.danger ? 'danger' : ''}" data-act="${it.act}" ${it.arg !== undefined ? `data-arg="${esc(it.arg)}"` : ''} ${it.disabled ? 'disabled' : ''}>${ticks ? (it.checked ? icon('check', 14) : '<span class="ic-gap"></span>') : ''}${it.text ? esc(it.label) : it.label}${it.kb ? `<span class="kb">${it.kb}</span>` : ''}</button>`).join('');
   document.body.appendChild(m);
   const mw = m.offsetWidth, mh = m.offsetHeight;
   if (anchor.getBoundingClientRect) {

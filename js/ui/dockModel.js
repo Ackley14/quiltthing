@@ -208,10 +208,10 @@ function dockOpen(L, id, def) {
   }
   return L.right.length ? dockAddToColumn(L, id, 'right', L.right.length - 1) : dockMove(L, id, { zone: 'right', how: 'edge' });
 }
-// Add a panel to a column: a new group at the bottom while there's room, otherwise a tab in the last group.
+// Add a panel to a column: a new group under the tallest open group while there's room, otherwise a tab in it.
 function dockAddToColumn(L, id, zone, ci) {
-  const c = L[zone][ci];
-  const gi = c.groups.reduce((b, g, i) => (g.h > c.groups[b].h ? i : b), 0), big = c.groups[gi];
+  const c = L[zone][ci], open = c.groups.map((g, i) => i).filter(i => !c.groups[i].folded), pool = open.length ? open : c.groups.map((g, i) => i);
+  const gi = pool.reduce((b, i) => (c.groups[i].h > c.groups[b].h ? i : b), pool[0]), big = c.groups[gi];
   const crowded = c.groups.length >= 3 || (big && big.h < 0.3);
   return dockMove(L, id, { zone, col: ci, group: gi, how: crowded ? 'tab' : 'below' });
 }

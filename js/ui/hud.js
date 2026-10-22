@@ -9,7 +9,7 @@ const HUD_WIDGETS = {
   view: { label: 'View switches', corner: 'tr', ws: ['block', 'layout', 'quilting'], html: () => {
     const items = viewToggleItems(); if (!items.length) return '';
     // a row of switches; one View button only when the row would run into the other corner
-    if (hudSession.compact) return `<div class="hud-group"><button class="tool" data-act="viewMenu" aria-haspopup="menu">${icon('eye', 14)} View${items.some(t => t.on && t.arg !== 'grayscale') ? '<span class="on-dot" aria-label="(some on)"></span>' : ''} ${icon('down', 12)}</button></div>`;
+    if (hudSession.compact) return `<div class="hud-group"><button class="tool" data-act="viewMenu" aria-haspopup="menu">${icon('eye', 14)} View${items.some(t => t.on && t.arg !== 'grayscale') ? '<span class="on-dot" aria-hidden="true"></span><span class="sr-only">, some on</span>' : ''} ${icon('down', 12)}</button></div>`;
     return `<div class="hud-group" role="toolbar" aria-label="View">${viewToggles()}</div>`;
   } },
   zoom: { label: 'Zoom', corner: 'br', ws: ['block', 'layout', 'quilting'], html: hudZoom },
@@ -32,7 +32,6 @@ function hudInfo() {
   return '';
 }
 function hudZoom() {
-  if (ui.view === 'fabric' || ui.view === 'pattern') return `<div class="hud-group zoom-ctl" role="group" aria-label="Zoom"><button class="tool" data-act="docZoomBy" data-arg="out" title="Zoom out (−)" aria-label="Zoom out">${icon('minus', 14)}</button><button class="tool zoom-pct" data-act="docZoomBy" data-arg="fit" title="${ui.view === 'pattern' ? 'Fit the page (0)' : 'Click for 100% (0)'}">${Math.round((ui.view === 'pattern' ? (parseFloat($('#pattern-preview')?.style.zoom) || 1) : docZoom()) * 100)}%</button><button class="tool" data-act="docZoomBy" data-arg="in" title="Zoom in (+)" aria-label="Zoom in">${icon('plus', 14)}</button></div>`;
   const block = ui.view === 'block';
   if (block && activeBlock()?.kind !== 'drawn') return '';
   const z = block ? edZoom() : qzZoom(), act = block ? 'edZoomBy' : 'qZoomBy', id = block ? 'ed-zoom' : 'q-zoom';
@@ -56,14 +55,14 @@ function renderHud() {
   // the canvas fits between the HUD's top and bottom rows, so nothing covers the quilt's corners
   const dw = $('#docwrap'), D = dw?.getBoundingClientRect();
   // where the drawing sits when fitted with the plain margin (it's centred, so its sides are known)
-  const art = $('#main .canvas-wrap > svg'), vb = art?.viewBox?.baseVal, aw = D ? D.width - 56 : 0, ah = D ? D.height - 56 : 0;
+  const art = $('#main .canvas-wrap > svg'), side = innerWidth <= 900 ? 12 : 28, vb = art?.viewBox?.baseVal, aw = D ? D.width - 2 * side : 0, ah = D ? D.height - 2 * side : 0;
   const ratio = vb && vb.height ? vb.width / vb.height : 1, artW = Math.min(aw, ah * ratio), artL = D ? D.left + (D.width - artW) / 2 : 0;
   const band = cs => Math.max(0, ...cs.map(c => {
     const el = $(`#hud .hud-c.${c}`), r = el?.getBoundingClientRect();
     if (!r || !r.height || (art && (r.right < artL - 4 || r.left > artL + artW + 4))) return 0;   // beside the drawing: no room needed
     return Math.round((c[0] === 't' ? r.bottom - D.top : D.bottom - r.top) + 10);
   }));
-  if (dw) { const t = `${Math.max(28, band(['tl', 'tr']))}px`, b2 = `${Math.max(28, band(['bl', 'br']))}px`; if (dw.style.getPropertyValue('--hud-top') !== t) dw.style.setProperty('--hud-top', t); if (dw.style.getPropertyValue('--hud-bottom') !== b2) dw.style.setProperty('--hud-bottom', b2); }
+  if (dw) { const t = `${Math.max(side, band(['tl', 'tr']))}px`, b2 = `${Math.max(side, band(['bl', 'br']))}px`; if (dw.style.getPropertyValue('--hud-top') !== t) dw.style.setProperty('--hud-top', t); if (dw.style.getPropertyValue('--hud-bottom') !== b2) dw.style.setProperty('--hud-bottom', b2); }
   // measure: does the row of View switches fit beside what's in the top-left corner?
   const W = $('#docarea')?.clientWidth || 0;
   if (hudSession.compact && W > hudSession.at + 40) { hudSession.compact = false; return renderHud(); }
