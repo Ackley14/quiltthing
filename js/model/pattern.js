@@ -10,7 +10,8 @@ function autoSkill(Q, plan) {
   for (const b of blocks) {
     const an = analyzeBlock(b, blockFrameSize(b));
     if (an.setIn) score += 2;
-    if (an.units.some(u => u.unit.type === 'curved')) score += 2;
+    if (an.units.some(u => CURVED_UNITS.has(u.unit.type))) score += 2;
+    if (an.curveIssue) score += 3;
     if (an.applique.length) score += doc.cutting.appMethod === 'fusible' ? 1 : 2;   // needle-turn takes practice
   }
   if ((doc.layout.panels || []).length) score++;
@@ -189,7 +190,9 @@ function blockDiagramSvg(block, BS, paperIn, opts = {}) {
   return s + '</svg>';
 }
 
-const UNIT_NAMES = { hst: 'half-square triangle (HST) unit', qst: 'quarter-square triangle (QST) unit', goose: 'flying-geese unit', snowball: 'stitch-and-flip unit', curved: 'curved unit', hrt: 'half-rectangle triangle (HRT) unit', complex: 'set-in unit' };
+const UNIT_NAMES = { hst: 'half-square triangle (HST) unit', qst: 'quarter-square triangle (QST) unit', goose: 'flying-geese unit', snowball: 'stitch-and-flip unit', curved: 'curved unit', hrt: 'half-rectangle triangle (HRT) unit', complex: 'set-in unit',
+  peel: 'orange-peel unit', inset: 'inset circle unit', curveComplex: "curved part that can't be pieced" };
+const CURVE_WHY = { meet: 'curved seams meet inside it, away from its edges', cross: 'a curve crosses a straight seam', corner: 'a curved seam turns a corner', S: 'a set-in shape bends both ways', many: 'curved shapes overlap' };
 
 // How to make one kind of unit: what it is, then lettered sub-steps (one action each).
 // n = units per block, copies = blocks. Every size is a cut or unfinished size.
@@ -257,15 +260,44 @@ function unitMethodText(type, sample, n, sa, copies = 1) {
       ]);
     }
     case 'curved': {
-      const np = (sample.pieces || []).length, many = np > 2;
-      return make('curved unit', 'curved units', `Each joins a convex piece (it bulges out, like a pie slice) to a concave one (scooped in, like an L).${many ? ` This unit has ${np} curved pieces: start with the smallest and add one ring at a time, working outward.` : ''}`) + steps([
-        `Fold each piece in half along its curved edge and finger-press a small crease at the centre of the curve.`,
-        `Place the concave piece on top of the convex one, right sides together, matching the creases. Pin at the centre, then at both ends, then in between, easing the top edge to follow the curve.`,
-        `Sew slowly with a ${S} seam, concave piece on top. Every inch or so, stop with the needle down and straighten the fabric ahead.`,
-        `Press the seam toward the convex piece. If it pulls, clip the concave piece's seam allowance a few times, no deeper than ⅛".`,
+      const u = sample.unit, np = (sample.pieces || []).length, many = np > 2, wave = u.seams?.some(x => !x.convex);
+      const what = many ? `This unit has ${np} pieces and ${np - 1} curved seams: sew them one at a time in the numbered order, and press each seam before the next.`
+        : wave ? 'Each joins two pieces along one curved seam that bends both ways.' : 'Each joins a convex piece, which bulges out like a pie slice, to a concave one, scooped in like an L.';
+      return make('curved unit', 'curved units', what) + steps([
+        `Snip the matching marks on the curved edges, no deeper than ⅛", or fold each curved edge in half and finger-press a crease at its centre.${wave ? ' A curve that bends both ways has a mark at each bend and in the middle of each part.' : ''}`,
+        `${many ? 'Place the next piece in the numbered order on the part sewn so far' : wave ? 'Place one piece on the other' : 'Place the concave piece on top of the convex one'}, right sides together, matching the marks. Pin at the marks, then at both ends, then in between, easing the top edge to follow the curve.`,
+        `Sew slowly with a ${S} seam${wave ? '' : ', the concave edge on top'}. Every inch or so, stop with the needle down and straighten the fabric ahead.`,
+        `Press the seam toward the convex piece, or whichever way lies flatter. If it pulls, clip the concave piece's seam allowance a few times, no deeper than ⅛".${many ? ' Repeat with the next piece in the numbered order.' : ''}`,
         `Trim to ${unf}.`,
       ]);
     }
+    case 'peel': {
+      const u = sample.unit, cs = uniq(u.corners.map(c => resolveFab(c.fab))), sq = Math.abs(r.w - r.h) < 1e-3 * r.w;
+      const C = cs.length === 1 ? `two ${L(cs[0])} corner pieces` : `a ${L(cs[0])} and a ${L(cs[1])} corner piece`;
+      return make('orange-peel unit', 'orange-peel units', `Each is a ${sq ? 'square' : 'rectangle'} made of a ${L(u.petal.fab)} petal, a lens shape with its tips in two opposite corners, and ${C} with scooped edges. It has two curved seams, sewn one at a time.${u.cornerDeg < SHARP_DEG ? ' The corner pieces narrow to a very fine point at each tip. The last bit of the point disappears into the seam allowance, so don\'t worry if it looks lost.' : ''}`) + steps([
+        `Snip the matching marks on each piece's curved edge, no deeper than ⅛", or fold each curved edge in half and finger-press a crease at its centre. The petal has ${u.seams[0].notches.length > 1 ? 'marks' : 'a mark'} on each side.`,
+        `Lay a corner piece on the petal, right sides together, corner piece on top. Match the centre marks and pin there, then pin both ends with the cut edges level, then pin in between, easing the corner piece to follow the curve.`,
+        `Sew with a ${S} seam, corner piece on top. Go slowly, stopping every inch or so with the needle down to straighten the fabric ahead.`,
+        `Press the seam toward the petal, or whichever way lies flatter.`,
+        `Sew the second corner piece to the other side of the petal the same way, and press it the same way.`,
+        `Trim to ${unf}. The petal's tips should sit ${S} in from both edges at two opposite corners${sq ? ': line up the ruler\'s diagonal with both tips' : ''}.`,
+      ]);
+    }
+    case 'inset': {
+      const u = sample.unit, sq = Math.abs(r.w - r.h) < 1e-3 * r.w, shape = u.circle ? 'circle' : 'oval', bb = bounds(u.inner.pts);
+      const lt = bb.minX - r.x + sa, tp = bb.minY - r.y + sa, rt = r.x + r.w - bb.maxX + sa, bt = r.y + r.h - bb.maxY + sa, same = (a, b) => Math.abs(a - b) < 0.02;
+      const where = same(lt, rt) && same(tp, bt) && same(lt, tp) ? `the ${shape} centred, ${fmtLen(lt)} from each edge` : `the ${shape}'s edge ${fmtLen(lt)} from the left edge and ${fmtLen(tp)} from the top`;
+      return make('inset circle unit', 'inset circle units', `Each is a ${unf} ${L(u.outer.fab)} ${sq ? 'square' : 'rectangle'} with a ${L(u.inner.fab)} ${shape} set into ${u.circle ? 'a round' : 'an oval'} opening, joined by one continuous curved seam.`) + steps([
+        `Snip the four matching marks on the edge of the ${shape} and of the opening, no deeper than ⅛", or fold each in half both ways and finger-press creases at the quarter points.`,
+        `Clip the opening's seam allowance every ½", ⅛" deep, so it can spread around the ${shape}.`,
+        `Lay the ${L(u.outer.fab)} piece on the ${shape}, right sides together, ${L(u.outer.fab)} on top. Match and pin the four marks, then pin in between.`,
+        `Sew all the way round with a ${S} seam, ${L(u.outer.fab)} on top, stopping every inch or so with the needle down to straighten the fabric ahead. Overlap the first stitches by ½".`,
+        `Press the seam toward the ${shape}, or whichever way lies flatter.`,
+        `Trim to ${unf}, with ${where}.`,
+      ]) + `If you'd rather, turn the opening's allowance under over a card template and topstitch it onto the ${shape} from the front. The cutting is the same.`;
+    }
+    case 'curveComplex':
+      return `This part has curves that can't be sewn by machine as drawn: ${CURVE_WHY[sample.unit.why] || CURVE_WHY.many}. Appliqué the curved shapes on top of the block instead, the usual way to make shapes like these: in Blocks, select them and tick Appliqué. Or sew it by hand with English paper piecing.`;
     case 'hrt':
       return make('half-rectangle triangle (HRT)', 'half-rectangle triangles (HRTs)', `An HRT is a rectangle cut corner to corner into two long triangles, here ${byLight.map(L).join(' and ')}. The triangles aren't 45°, so their tips don't line up like an HST's.`) + steps([
         `Check the triangles were cut with the fabric right side up (see the cutting list): a mirror-image triangle won't fit.`,

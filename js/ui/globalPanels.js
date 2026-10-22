@@ -75,8 +75,11 @@ function computeIssues() {
   try {
     const Q = Qnow();
     for (const w of Q.warnings) list.push({ text: w, where: 'Layout', act: 'view', arg: 'layout' });
-    doc.blockOrder.map(id => doc.blocks[id]).filter(b => b?.kind === 'drawn' && blockUseCount(b.id) && pieceProblems(b, blockFrameSize(b)).some(p => p.kind !== 'tiny'))
-      .forEach(b => list.push({ text: `${b.name} needs set-in seams as drawn.`, where: 'Blocks', act: 'showSeamIssue', arg: b.id }));
+    for (const b of doc.blockOrder.map(id => doc.blocks[id]).filter(b => b?.kind === 'drawn' && blockUseCount(b.id))) {
+      const kinds = new Set(pieceProblems(b, blockFrameSize(b)).map(p => p.kind));
+      if (kinds.has('hole') || kinds.has('concave')) list.push({ text: `${b.name} needs set-in seams as drawn.`, where: 'Blocks', act: 'showSeamIssue', arg: b.id });
+      if (kinds.has('curve')) list.push({ text: `${b.name}: its curved shapes can't be sewn as drawn.`, where: 'Blocks', act: 'showSeamIssue', arg: b.id });
+    }
     for (const { b, n } of crumbBlocks(Q)) list.push({ text: crumbText(b, n), where: 'Blocks', act: b.kind === 'drawn' ? 'showSeamIssue' : 'blockOpen', arg: b.id });
     // grid squares that aren't whole eighths of an inch make cut sizes that are rounded, so the block can finish a little off
     for (const b of doc.blockOrder.map(id => doc.blocks[id]).filter(b => b?.kind === 'drawn' && !isHexBlock(b) && b.lattice !== 'tri' && blockUseCount(b.id))) {

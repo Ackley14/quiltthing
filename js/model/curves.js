@@ -106,3 +106,152 @@ function pointAlong(path, d) {
   }
   return { p: path[0], d: [1, 0] };
 }
+
+/* ---------- curved units ----------
+   A leaf of the sewing tree holding curved pieces sews by machine when each seam inside it is one
+   smooth curve from edge to edge, shared by two pieces, and the seams join the pieces in a chain or
+   tree: then it's sewn one seam at a time. A circle or oval set into an opening is the one closed
+   seam allowed (an inset unit). Otherwise the unit is curveComplex, and `why` says what's wrong:
+   'cross' a curve meets a straight seam inside it, 'meet' curved seams meet inside it, 'corner' a
+   curved seam turns a corner, 'S' a set-in shape bends both ways, 'many' anything else (pieces
+   joined in a loop; curvesAnalyse also uses it for curved shapes drawn overlapping). */
+const CURVED_UNITS = new Set(['curved', 'peel', 'inset']);
+const WHY_ORDER = ['cross', 'meet', 'corner', 'S', 'many'];
+function classifyCurvedUnit(node, fabs) {
+  const ps = node.pieces, r = node.rect, tol = 1e-4 * Math.max(r.w, r.h);
+  const onOut = q => ringDist(q, node.region) < tol;
+  const bbs = ps.map(p => p.bb || bounds(p.pts));
+  const near = (q, j) => { const b = bbs[j]; return q[0] > b.minX - tol && q[0] < b.maxX + tol && q[1] > b.minY - tol && q[1] < b.maxY + tol && [ps[j].pts, ...ps[j].holes].some(h => onRing(q, h, tol)); };
+  // every side of every piece: a stretch of its outline along the unit's edge (nb −1) or along one
+  // other piece (nb = its index; −2 = nothing there)
+  const sides = [];
+  ps.forEach((p, pi) => [p.pts, ...p.holes].forEach((ring, hi) => {
+    const n = ring.length, turns = ringTurns(ring).map(x => (hi ? -x : x));
+    let last = -1;
+    const nb = ring.map((a, i) => {
+      const b = ring[(i + 1) % n], m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      if (onOut(a) && onOut(b) && onOut(m)) return -1;
+      if (last >= 0 && near(m, last)) return last;
+      const j = ps.findIndex((_, k) => k !== pi && near(m, k));
+      return (last = j < 0 ? -2 : j);
+    });
+    const s0 = nb.findIndex((x, i) => x !== nb[(i - 1 + n) % n]);
+    if (s0 < 0) { sides.push({ pi, nb: nb[0], hole: hi > 0, ...ringStretch(ring, turns, ring.map((_, i) => i), true) }); return; }
+    for (let k = 0; k < n;) {
+      const i0 = (s0 + k) % n, idx = [i0];
+      do idx.push((i0 + idx.length) % n); while (k + idx.length - 1 < n && nb[(i0 + idx.length - 1) % n] === nb[i0]);
+      sides.push({ pi, nb: nb[i0], hole: hi > 0, ...ringStretch(ring, turns, idx, false) });
+      k += idx.length - 1;
+    }
+  }));
+  const why = new Set(), seams = sides.filter(s => s.nb >= 0 && s.pi < s.nb);
+  if (sides.some(s => s.nb === -2)) why.add('many');
+  const straightAt = e => sides.some(s => s.nb >= 0 && !s.curved && s.pts.some(q => dist(q, e) < tol));
+  for (const s of seams) {
+    if (!s.curved) { why.add('cross'); continue; }
+    if (s.corner) why.add('corner');
+    if (!s.closed) { for (const e of [s.pts[0], s.pts[s.pts.length - 1]]) if (!onOut(e)) why.add(straightAt(e) ? 'cross' : 'meet'); continue; }
+    // a closed seam: the outline of a smooth convex shape set into the other piece's hole
+    const other = sides.find(x => x.pi === s.nb && x.nb === s.pi);
+    if (!other?.closed || s.hole === other.hole || ps.length > 2) why.add('many');
+    else if ((s.hole ? other : s).sign !== 1) why.add('S');
+  }
+  // the pieces must make a tree: pieces − 1 seams, every piece reached
+  const adj = ps.map(() => []);
+  for (const s of seams) { adj[s.pi].push(s); adj[s.nb].push(s); }
+  const reach = [0];
+  for (let k = 0; k < reach.length; k++) for (const s of adj[reach[k]]) for (const j of [s.pi, s.nb]) if (!reach.includes(j)) reach.push(j);
+  if (!why.size && (seams.length !== ps.length - 1 || reach.length !== ps.length)) why.add('many');
+  if (why.size) return { type: 'curveComplex', why: WHY_ORDER.find(w => why.has(w)), fabs };
+  // each seam with its convex and concave piece (none for an S) and its matching marks
+  const S = seams.map(s => ({ s, run: s.pts, len: s.len, closed: s.closed, notches: seamNotches(s),
+    convex: s.sign ? ps[s.sign > 0 ? s.pi : s.nb] : null, concave: s.sign ? ps[s.sign > 0 ? s.nb : s.pi] : null }));
+  const out = x => ({ run: x.run, len: x.len, closed: x.closed, convex: x.convex, concave: x.concave, notches: x.notches });
+  const ends = x => [x.run[0], x.run[x.run.length - 1]];
+  if (ps.length === 2 && S[0].closed) {
+    const inner = S[0].convex, c = centroid(inner.pts), d = inner.pts.map(q => dist(q, c));
+    return { type: 'inset', inner, outer: S[0].concave, seam: out(S[0]), circle: Math.max(...d) - Math.min(...d) < 0.02 * sum(d) / d.length, fabs };
+  }
+  // an orange peel: a lens with its tips in opposite corners, a piece on each side
+  const at = (p, e) => Math.min(...tipAngles(p).filter(t => dist(t.p, e) < tol).map(t => t.deg));
+  const mi = ps.length === 3 ? adj.findIndex((a, i) => a.length === 2 && sides.every(s => s.pi !== i || s.nb >= 0)) : -1;
+  if (mi >= 0) {
+    const m = ps[mi], [s1, s2] = S.filter(x => x.s.pi === mi || x.s.nb === mi), [A, B] = ends(s1);
+    const corner = e => [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]].findIndex(c => dist(c, e) < tol);
+    if (s1.convex === m && s2.convex === m && ends(s2).every(e => dist(e, A) < tol || dist(e, B) < tol) && corner(A) >= 0 && Math.abs(corner(A) - corner(B)) === 2) {
+      const cs = [s1.concave, s2.concave];
+      return { type: 'peel', petal: m, corners: cs, seams: [out(s1), out(s2)], tips: [A, B], petalDeg: Math.min(at(m, A), at(m, B)),
+        cornerDeg: Math.min(...cs.flatMap(c => [at(c, A), at(c, B)])), fabs };
+    }
+  }
+  // sewing order: the piece with the most convex seams first (the smaller one on a tie), then each
+  // piece joined to the ones before it by one seam
+  const convexN = i => adj[i].filter(s => s.sign && (s.sign > 0) === (s.pi === i)).length;
+  const order = [ps.map((_, i) => i).sort((i, j) => convexN(j) - convexN(i) || ps[i].cls.area - ps[j].cls.area)[0]];
+  const joins = [];
+  for (let k = 0; k < order.length; k++) for (const s of adj[order[k]]) for (const j of [s.pi, s.nb]) if (!order.includes(j)) { order.push(j); joins.push(out(S.find(x => x.s === s))); }
+  const tips = ps.flatMap(p => tipAngles(p).filter(t => S.some(x => ends(x).some(e => dist(e, t.p) < tol))));
+  return { type: 'curved', form: ps.length === 2 ? 'pie' : adj.every(a => a.length <= 2) ? 'rings' : 'tree', order: order.map(i => ps[i]), seams: joins, tips, fabs };
+}
+// Matching marks along a seam, as { p, d } (the point and the seam's direction there): the middle,
+// with the quarters too past 6"; an S at each bend and the middle of each part; a closed seam at
+// its top, right, bottom and left.
+function seamNotches(s) {
+  if (s.closed) {
+    const P = s.pts.slice(0, -1), n = P.length;
+    return [q => q[1], q => -q[0], q => -q[1], q => q[0]].map(f => {
+      const i = P.reduce((a, q, k) => (f(q) < f(P[a]) ? k : a), 0), a = P[(i - 1 + n) % n], b = P[(i + 1) % n], L = dist(a, b) || 1;
+      return { p: P[i], d: [(b[0] - a[0]) / L, (b[1] - a[1]) / L] };
+    });
+  }
+  let marks = s.len > 6 ? [0.25, 0.5, 0.75].map(k => k * s.len) : [s.len / 2];
+  if (!s.sign) {
+    const bends = [];
+    for (let k = 1, along = 0, last = 0; k < s.pts.length - 1; k++) {
+      along += dist(s.pts[k - 1], s.pts[k]);
+      const t = s.t[k - 1];
+      if (Math.abs(t) > 0.3) { if (last && Math.sign(t) !== last) bends.push(along); last = Math.sign(t); }
+    }
+    const cuts = [0, ...bends, s.len];
+    marks = [...bends, ...cuts.slice(1).map((c, i) => (cuts[i] + c) / 2)].sort((a, b) => a - b);
+  }
+  return marks.map(m => pointAlong(s.pts, m));
+}
+
+// After the sewing tree (analyzeBlock): for each unit that can't be sewn as drawn, the drawn shapes
+// behind it (made appliqué, they'd fix it); and the matching marks of every curved seam, given to
+// each piece they lie on with that piece's outward direction, by piece index: an.notches[i].
+function curvesAnalyse(block, an, all) {
+  an.curveIssue = false; an.notches = {};
+  for (const u of an.units) {
+    const t = u.unit.type, tol = 1e-4 * Math.max(u.rect.w, u.rect.h);
+    if (t === 'curveComplex') {
+      an.curveIssue = true;
+      const regs = u.unit.regions = curveRegionsFor(block, u, an.size);
+      if (regs.some((i, k) => regs.slice(k + 1).some(j => curveOverlap(block, i, j)))) u.unit.why = 'many';
+    }
+    for (const s of t === 'inset' ? [u.unit.seam] : CURVED_UNITS.has(t) ? u.unit.seams : []) for (const m of s.notches) for (const p of u.pieces) {
+      if (![p.pts, ...p.holes].some(h => onRing(m.p, h, tol))) continue;
+      const e = 1e-3 * Math.max(p.bb.w, p.bb.h), q = [m.p[0] - m.d[1] * e, m.p[1] + m.d[0] * e];
+      const out = !pointInPoly(q, p.pts) || p.holes.some(h => pointInPoly(q, h));
+      (an.notches[all.indexOf(p)] ||= []).push({ p: m.p, n: out ? [-m.d[1], m.d[0]] : [m.d[1], -m.d[0]] });
+    }
+  }
+}
+// The drawn shapes behind a unit that can't be sewn: curved, pieced (not appliqué), and showing in it.
+function curveRegionsFor(block, leaf, size) {
+  if (block.kind !== 'drawn') return [];
+  const k = size / block.n, ring = i => toPC(regionRing(block.regions[i], k, k));
+  return block.regions.map((_, i) => i).filter(i => {
+    const r = block.regions[i];
+    if (r.app || r.pts.length < 2 || !r.b?.some(x => x)) return false;
+    const above = block.regions.map((_, j) => j).filter(j => j > i && !block.regions[j].app && block.regions[j].pts.length >= 2).map(ring);
+    let mp = pcSafe('intersection', ring(i), toPC(leaf.region));
+    if (mp?.length && above.length) mp = pcSafe('difference', mp, ...above);
+    return !!mp && sum(fromPC(mp), q => polyArea(q.outer) - sum(q.holes, polyArea)) > 1e-5 * size * size;
+  });
+}
+function curveOverlap(block, i, j) {
+  const mp = pcSafe('intersection', toPC(regionRing(block.regions[i], 1, 1)), toPC(regionRing(block.regions[j], 1, 1)));
+  return !!mp && sum(fromPC(mp), q => polyArea(q.outer)) > 1e-5 * block.n * block.n;
+}

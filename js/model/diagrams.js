@@ -222,7 +222,7 @@ function howtoDemoSample(type, a, b) {
     case 'curved': {
       const R = 4, arc = [...Array(13)].map((_, i) => { const t = i / 12 * Math.PI / 2; return [R * Math.cos(t), R * Math.sin(t)]; });
       const pie = { pts: [[0, 0], ...arc], fab: b, curved: true }, L = { pts: [[R, 0], [6, 0], [6, 6], [0, 6], ...arc.slice().reverse().slice(0, -1)], fab: a, curved: true };
-      return { rect: sq(6), pieces: [pie, L], unit: { type, fabs: [a, b] } };
+      return { rect: sq(6), pieces: [pie, L], unit: { type, fabs: [a, b], order: [pie, L] } };
     }
   }
   return null;
@@ -716,7 +716,7 @@ function howtoHrt(g) {
 // curved piecing: convex piece (pie) + concave piece (L), or rings added smallest first
 function howtoCurved(g) {
   const { sa, UW, UH } = g, cx = [UW / 2, UH / 2];
-  if (g.pieces.length < 2) return [];
+  if (g.pieces.length < 2 || !g.unit.order) return [];
   // the convex piece (pie) comes first, then the others outward from the corner it sits in
   const convex = p => { const q = howtoCorners(p.pts); let sg = 0; return q.every((a, i) => { const b = q[(i + 1) % q.length], c = q[(i + 2) % q.length], cr = Math.sign((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0])); sg = sg || cr; return !cr || cr === sg; }); };
   const byArea = g.pieces.slice().sort((p, q) => polyArea(p.pts) - polyArea(q.pts)), first = byArea.find(convex) || byArea[0];
