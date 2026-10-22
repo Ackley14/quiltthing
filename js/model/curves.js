@@ -200,8 +200,7 @@ function classifyCurvedUnit(node, fabs) {
   const order = [ps.map((_, i) => i).sort((i, j) => convexN(j) - convexN(i) || ps[i].cls.area - ps[j].cls.area)[0]];
   const joins = [];
   for (let k = 0; k < order.length; k++) for (const s of adj[order[k]]) for (const j of [s.pi, s.nb]) if (!order.includes(j)) { order.push(j); joins.push(out(S.find(x => x.s === s))); }
-  const tips = ps.flatMap(p => tipAngles(p).filter(t => S.some(x => ends(x).some(e => dist(e, t.p) < tol))));
-  return { type: 'curved', form: ps.length === 2 ? 'pie' : adj.every(a => a.length <= 2) ? 'rings' : 'tree', order: order.map(i => ps[i]), seams: joins, tips, fabs };
+  return { type: 'curved', form: ps.length === 2 ? 'pie' : adj.every(a => a.length <= 2) ? 'rings' : 'tree', order: order.map(i => ps[i]), seams: joins, fabs };
 }
 // Matching marks along a seam, as { p, d } (the point and the seam's direction there): the middle,
 // with the quarters too past 6"; an S at each bend and the middle of each part; a closed seam at
