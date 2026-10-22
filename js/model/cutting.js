@@ -86,12 +86,13 @@ function recipeFor(cls, sa, opts = {}) {
     }
     case 'trap': {
       // pieces alternate 180° along the strip so the angled ends share cuts
-      const inf = inflate(cls.pts, sa);
-      const A = ceilEighth(dist(inf[cls.ia], inf[(cls.ia + 1) % 4])), B = ceilEighth(dist(inf[cls.ib], inf[(cls.ib + 1) % 4]));
-      const w = ceilEighth(cls.height + 2 * sa);
-      const step = dir ? A : (A + B) / 2;
-      return { key: `trap:${w}:${A}:${B}:${cls.angles.join('/')}`, method: 'trap', w, a: A, b: B, step, trim: (A - B) / 2, angles: cls.angles,
-        yield: 1, makes: 'trapezoid', alternate: !dir };
+      const shape = trapShape(cls.pts, cls.ia, sa);
+      const A = ceilEighth(shape.b1 - shape.b0), B = ceilEighth(shape.t1 - shape.t0);
+      const w = ceilEighth(cls.height + 2 * sa), step = dir ? A : (A + B) / 2;
+      // which way the short edge sits along the long one; mirror images can't share a strip face up
+      const hand = shape.skew ? (shape.t0 < shape.b0 ? 'L' : 'R') : Math.abs(shape.t0 - shape.b0 - (shape.b1 - shape.t1)) < 0.02 ? '' : shape.t0 - shape.b0 > shape.b1 - shape.t1 ? 'R' : 'L';
+      return { key: `trap:${w}:${A}:${B}:${[...cls.angles].sort().join('/')}:${hand}`, method: 'trap', w, a: A, b: B, step, angles: cls.angles,
+        shape, hand, yield: 1, makes: 'trapezoid', alternate: !dir };
     }
     default: {
       // packing uses the tightest rotation; the printed template keeps the in-quilt
@@ -373,7 +374,7 @@ function computePlan(Q) {
       return { w, recipes: rs, units, strips: [], partials: [], count: 0, oversize: rs.some(r => r.recipe.oversize) };
     });
     const angled = recs.filter(r => r.recipe.method === 'angled' || r.recipe.method === 'trap').map(r => {
-      const per = Math.max(1, Math.floor((wof - r.recipe.trim) / r.recipe.step));
+      const per = r.recipe.method === 'trap' ? trapPerStrip(r.recipe, wof) : Math.max(1, Math.floor((wof - r.recipe.trim) / r.recipe.step));
       return { ...r, perStrip: per, count: Math.ceil(r.units / per) };
     });
     const tri60 = recs.filter(r => r.recipe.method === 'tri60').map(r => {
@@ -447,6 +448,58 @@ function computePlan(Q) {
    becomes free space that later steps use before any new fabric: narrower strips are cut as
    partial strips from it, and template pieces (hexagons nested honeycomb-style) are placed in
    it. Positions are in inches on the fabric. */
+/* ---------- trapezoids on a strip ----------
+   The cut outline turned so its parallel sides run along the strip, long edge at the bottom:
+   t0..t1 is the short (top) edge and b0..b1 the long (bottom) one, h the strip-direction height.
+   The short edge needn't sit over the long one: when both slanted ends lean the same way it sits
+   partly or wholly past it (skew). Turning every other piece end-for-end nests any trapezoid:
+   each shared cut is one slanted end of both neighbours. */
+function trapShape(pts, ia, sa) {
+  const a = pts[ia], b = pts[(ia + 1) % pts.length], ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+  const c = Math.cos(-ang), s = Math.sin(-ang);
+  let q = pts.map(([x, y]) => [(x - a[0]) * c - (y - a[1]) * s, (x - a[0]) * s + (y - a[1]) * c]);
+  // the long edge is now along y = 0; turn half round if the rest lies below it, keeping the hand
+  if (sum(q, p => p[1]) > 0) q = q.map(([x, y]) => [-x, -y]);
+  const top = Math.min(...q.map(p => p[1]));
+  q = q.map(([x, y]) => [x, y - top]);
+  const H = Math.max(...q.map(p => p[1])), T = q.filter(p => p[1] < H / 2).map(p => p[0]), B = q.filter(p => p[1] >= H / 2).map(p => p[0]);
+  let t0 = Math.min(...T), t1 = Math.max(...T), b0 = Math.min(...B), b1 = Math.max(...B);
+  // the cut outline: every edge moved out by the seam allowance, corners where the lines meet
+  const leg = (xt, xb, side) => {
+    const dx = xb - xt, len = Math.hypot(dx, H), nx = side * H / len, ny = -side * dx / len;
+    const at = y => xt + nx * sa + (y - ny * sa) * dx / H;
+    return [at(-sa), at(H + sa)];
+  };
+  [t0, b0] = leg(t0, b0, -1); [t1, b1] = leg(t1, b1, 1);
+  const x0 = Math.min(t0, b0), r4 = v => round(v, 4);
+  t0 -= x0; t1 -= x0; b0 -= x0; b1 -= x0;
+  return { t0: r4(t0), t1: r4(t1), b0: r4(b0), b1: r4(b1), h: r4(H + 2 * sa), skew: t0 < b0 - 1e-3 || t1 > b1 + 1e-3 };
+}
+// the pieces along one strip, in strip units (x along the strip from 0, y across it). Alternating
+// can start with the piece either way up; whichever needs less strip is used.
+function trapPieces(r, n) {
+  const { t0, t1, b0, b1, h } = r.shape, P0 = [[t0, 0], [t1, 0], [b1, h], [b0, h]], S = Math.max(t1 - t0, b1 - b0);
+  if (!r.alternate) return Array.from({ length: n }, (_, i) => P0.map(([x, y]) => [x + i * S, y]));
+  // corners in order top-left, top-right, bottom-right, bottom-left; turning end-for-end keeps that order
+  const turn = P => [P[2], P[3], P[0], P[1]].map(([x, y]) => [-x, h - y]), shift = (P, dx) => P.map(([x, y]) => [x + dx, y]);
+  const run = A => {
+    // the second piece is the first turned end-for-end, its left cut on the first one's right cut;
+    // the third is the first again, its left cut on the second one's right cut
+    const R = turn(A), B = shift(R, A[1][0] - R[0][0]), T = B[1][0] - A[0][0];
+    const list = Array.from({ length: n }, (_, i) => shift(i % 2 ? B : A, Math.floor(i / 2) * T));
+    const x0 = Math.min(...list.flat().map(p => p[0]));
+    return list.map(P => P.map(([x, y]) => [x - x0, y]));
+  };
+  const a = run(P0), b = run(turn(P0)), span = L => Math.max(...L.flat().map(p => p[0]));
+  return span(b) < span(a) - 1e-6 ? b : a;
+}
+const trapSpan = (r, n) => r.shape ? Math.max(...trapPieces(r, n).flat().map(p => p[0])) : n * Math.max(r.a, r.b);
+function trapPerStrip(r, len) {
+  let n = 1;
+  while (n < 400 && trapSpan(r, n + 1) <= len + 1e-6) n++;
+  return n;
+}
+
 const LEFTOVER_MIN = 1.5;   // smaller scraps aren't worth reusing
 
 // What a fabric needs cut, as lists the layout consumes (so a piece of stash can take some
@@ -509,14 +562,14 @@ function layoutBin(d, W, Hmax, directional) {
   // angled and 60° strips; the end of the last strip is left over
   for (const a of d.runs) {
     const r = a.recipe;
-    const per = r.method === 'tri60' ? Math.max(1, Math.floor((W - r.first + r.step) / r.step)) : Math.max(1, Math.floor((W - (r.trim || 0)) / r.step));
+    const per = r.method === 'tri60' ? Math.max(1, Math.floor((W - r.first + r.step) / r.step)) : r.method === 'trap' ? trapPerStrip(r, W) : Math.max(1, Math.floor((W - (r.trim || 0)) / r.step));
     let count = 0;
     while (a.left > 0 && room(r.w)) {
       const n = Math.min(a.left, per);
       a.left -= n; count++;
       bands.push({ y, h: r.w, kind: r.method, ref: a.ref, recipe: r, n });
       const used = r.method === 'tri60' ? Math.ceil(n / 2) * (r.w * 2 / Math.sqrt(3)) + r.w / Math.sqrt(3)
-        : r.method === 'trap' ? n * Math.max(r.a, r.b) : (r.trim || 0) + n * r.step + r.w;
+        : r.method === 'trap' ? trapSpan(r, n) : (r.trim || 0) + n * r.step + r.w;
       addFree({ x: Math.min(W, used), y, w: W - used, h: r.w, from: a.ref });
       y += r.w;
     }
@@ -796,8 +849,10 @@ function fabricInstructions(f) {
   for (const a of f.angled) {
     if (a.recipe.method === 'trap') {
       const r = a.recipe, rh = runHead(a, r.w, '');
+      const ends = r.shape?.skew ? `both ends slant the same way (${uniq(r.angles).join('° and ')}°), so the short edge sits off to one side of the long one`
+        : `ends at ${uniq(r.angles).join('° and ')}°`;
       rows.push({ kind: 'angled', head: rh.head,
-        parts: [...rh.lines, `Cut ${a.units} trapezoids: long edge ${fmtLen(r.a, 'up')}, short edge ${fmtLen(r.b, 'up')}, ends at ${uniq(r.angles).join('° and ')}°.${r.alternate ? ' Turn the ruler end-for-end after each cut so the angled ends nest' : ''} (${a.perStrip} per strip)`], a });
+        parts: [...rh.lines, `Cut ${a.units} trapezoids: long edge ${fmtLen(r.a, 'up')}, short edge ${fmtLen(r.b, 'up')}, ${ends}.${r.alternate ? ' Turn the ruler end-for-end after each cut so the angled ends nest' : ''} (${a.perStrip} per strip)${r.hand ? `. Cut them right side up, as in the map: ${r.shape?.skew ? 'the slant' : 'the shape'} isn't the same flipped over` : ''}.`], a });
       continue;
     }
     const lean = a.recipe.hand ? (a.recipe.hand === 'R' ? ', leaning right' : ', leaning left') : '';
