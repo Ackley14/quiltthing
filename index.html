@@ -1,34 +1,57 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Quilt Designer (redesign)</title>
+  <title>Quilt Designer</title>
   <meta name="description" content="Design quilt blocks, lay out a quilt, calculate fabric and cutting, plan quilting lines, and print a complete PDF pattern.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231f3a5f'/%3E%3Cpath d='M6 6h10L6 16z' fill='%23e0a930'/%3E%3Cpath d='M26 26H16l10-10z' fill='%23e0a930'/%3E%3Cpath d='M16 6h10v10z M6 16v10h10z' fill='%23f3ead8'/%3E%3C/svg%3E">
+  <script>/* theme before first paint, so a dark-theme user never sees a white flash */
+    try { const p = JSON.parse(localStorage.getItem('quiltthing.v4.prefs') || '{}'), r = document.documentElement;
+      r.dataset.theme = p.theme || 'dark'; r.dataset.density = p.density || 'standard'; } catch (e) {}</script>
   <link rel="stylesheet" href="css/app.css">
   <style id="page-size">@page { size: letter portrait; margin: 0.5in; }</style>
 </head>
 <body>
   <svg id="fabric-defs" width="0" height="0" aria-hidden="true" focusable="false"><defs></defs></svg>
+  <a class="skip-link" href="#main">Skip to the canvas</a>
 
   <div id="app">
-    <header id="topbar">
-      <button class="icon-btn drawer-btn" data-act="toggleDrawer" data-arg="sidebar" aria-label="Fabrics and blocks" title="Fabrics and blocks"><svg class="ic" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/></svg></button>
-      <div class="brand"><svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><rect width="32" height="32" rx="6" fill="#e0a930"/><path d="M6 6h10L6 16z" fill="#1f3a5f"/><path d="M26 26H16l10-10z" fill="#1f3a5f"/><path d="M16 6h10v10zM6 16v10h10z" fill="#f3ead8"/></svg></div><span style="font:600 11px/1 system-ui;background:#b5452f;color:#fff;padding:4px 7px;border-radius:4px;margin-left:8px">REDESIGN</span>
-      <span id="doc-title-slot"></span>
+    <header id="appbar">
+      <button class="bar-btn narrow-only" data-act="toggleDrawer" data-arg="left" aria-label="Left panels" title="Left panels"></button>
+      <div class="mark" aria-hidden="true"><svg viewBox="0 0 32 32" width="22" height="22"><rect width="32" height="32" rx="6" fill="#e0a930"/><path d="M6 6h10L6 16z" fill="#1f3a5f"/><path d="M26 26H16l10-10z" fill="#1f3a5f"/><path d="M16 6h10v10zM6 16v10h10z" fill="#f3ead8"/></svg></div>
       <nav id="menubar" aria-label="Menus"></nav>
-      <div class="top-actions" id="top-actions"></div>
-      <button class="icon-btn drawer-btn" data-act="toggleDrawer" data-arg="inspector" aria-label="Settings panel" title="Settings"><svg class="ic" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2.5 4.5h11M2.5 11.5h11"/><circle cx="5.5" cy="4.5" r="1.6" fill="#fff"/><circle cx="10.5" cy="11.5" r="1.6" fill="#fff"/></svg></button>
+      <div id="ws-tabs" role="tablist" aria-label="Workspaces"></div>
+      <div class="appbar-r">
+        <span id="doc-title-slot"></span>
+        <span id="save-state" class="save-state"></span>
+        <button class="bar-btn" data-act="commandPalette" aria-label="Search commands (Ctrl+K)" title="Search commands (Ctrl+K)"></button>
+      </div>
+      <button class="bar-btn narrow-only" data-act="toggleDrawer" data-arg="right" aria-label="Right panels" title="Right panels"></button>
     </header>
-    <div id="toolrow"><nav id="tabs" role="tablist" aria-label="Steps"></nav><div id="tooltools" class="toolbar" role="toolbar" aria-label="Tools"></div></div>
-    <aside id="sidebar" class="panel" aria-label="Fabrics and blocks"></aside>
-    <main id="main" tabindex="-1"></main>
-    <aside id="inspector" class="panel" aria-label="Settings"></aside>
+    <div id="ctxbar" role="toolbar" aria-label="Tool options"></div>
+    <div id="body">
+      <div id="toolstrip" role="toolbar" aria-orientation="vertical" aria-label="Tools"></div>
+      <div id="dock-left" class="dock-side" data-zone="left" role="region" aria-label="Left panels"></div>
+      <main id="docarea" aria-label="Canvas">
+        <div id="doctabs" role="tablist" aria-label="Documents"></div>
+        <div id="docwrap">
+          <div id="main" tabindex="-1"></div>
+          <div id="hud" aria-label="Canvas controls"></div>
+        </div>
+      </main>
+      <div id="dock-right" class="dock-side" data-zone="right" role="region" aria-label="Right panels"></div>
+    </div>
+    <div id="dock-bottom" data-zone="bottom" role="region" aria-label="Bottom panels"></div>
+    <footer id="statusbar"></footer>
   </div>
 
+  <div id="float-layer"></div>
+  <div id="flyout-layer"></div>
+  <div id="drop-layer" aria-hidden="true"></div>
   <div id="modal-root"></div>
-  <div id="toast-root" aria-live="polite"></div>
+  <div id="toast-root"></div>
+  <div id="sr-live" class="sr-only" aria-live="polite"></div>
   <div id="print-root"></div>
 
   <script src="vendor/polygon-clipping.js"></script>
@@ -49,6 +72,10 @@
   <script src="js/model/quilting.js"></script>
   <script src="js/model/pattern.js"></script>
   <script src="js/ui/shell.js"></script>
+  <script src="js/ui/prefs.js"></script>
+  <script src="js/ui/dockModel.js"></script>
+  <script src="js/ui/dock.js"></script>
+  <script src="js/ui/panels.js"></script>
   <script src="js/ui/canvasZoom.js"></script>
   <script src="js/ui/sidebar.js"></script>
   <script src="js/ui/palettes.js"></script>
@@ -60,6 +87,9 @@
   <script src="js/ui/patternView.js"></script>
   <script src="js/ui/projects.js"></script>
   <script src="js/ui/menus.js"></script>
+  <script src="js/ui/globalPanels.js"></script>
+  <script src="js/ui/hud.js"></script>
+  <script src="js/ui/commands.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

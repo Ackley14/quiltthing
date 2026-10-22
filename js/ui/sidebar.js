@@ -1,11 +1,8 @@
-/* Left column (Blocks and Layout only): the fabric swatches and the quilt's blocks. A fabric is edited in
-   a popover from its swatch; the block library opens as a picker. */
+/* The Fabrics and Blocks panels: the fabric swatches and the quilt's blocks. A fabric is edited in
+   a popover from its swatch (pinnable as the Fabric Properties panel); the block library opens as
+   a picker or as the Library panel. */
 
-function renderSidebar() {
-  if (SIDEBAR_VIEWS.includes(ui.view)) preserveFocus($('#sidebar'), () => { $('#sidebar').innerHTML = fabricsSection() + myBlocksSection(); });
-  else $('#sidebar').innerHTML = '';
-  renderFabricPopover();
-}
+function renderSidebar() { renderFabricPopover(); }
 
 /* ---------- fabrics ---------- */
 const PRINT_LABELS = { solid: 'Solid', dots: 'Polka dot', speckle: 'Speckle', stripes: 'Stripe', gingham: 'Gingham', mottled: 'Mottled or batik', floral: 'Small floral' };
@@ -20,7 +17,7 @@ function fabricsSection() {
   chips += `<button class="fab-chip add" data-act="addFabric" title="Add a fabric" aria-label="Add a fabric">${icon('plus', 18)}</button>`;
   // painting with "Background" lets pieces follow whatever the quilt background is
   if (ui.view === 'block') chips += `<button class="fab-chip bgpaint" aria-pressed="${ui.fabric === BG}" data-act="pickFabric" data-arg="${BG}" title="Background: pieces follow the quilt's background fabric">BG</button>`;
-  return section('Fabrics', `<div class="fabrics">${chips}</div>`, { key: 'fabrics', right: '<button class="btn small" data-act="palettes">Palettes</button>' });
+  return `<div class="panel-tools"><span class="pt-note">${plural(doc.fabrics.length, 'fabric')}</span><span class="grow"></span><button class="btn small" data-act="palettes">Palettes</button></div><div class="fabrics pad">${chips}</div>`;
 }
 
 // How this fabric comes (its own width, precuts, or pieces of a set size); default = the shared setting.
@@ -42,7 +39,7 @@ function fabricEditor(f) {
   const p = f.print || { kind: 'solid' };
   const isBg = f.id === doc.layout.background;
   const contrast = contrastRatio(f.color, fabricHex(BG));
-  return `<div class="pop-h"><b>Fabric ${letterFor(doc.fabrics.indexOf(f))}</b><button class="icon-btn sm" data-act="closeFabricPopover" aria-label="Close">${icon('x', 14)}</button></div>
+  return `<div class="pop-h"><b>Fabric ${letterFor(doc.fabrics.indexOf(f))}</b><span class="grow"></span><button class="icon-btn sm" data-act="pinFabricPanel" aria-label="Dock as a panel" title="Dock as a panel">${icon('panelRight', 14)}</button><button class="icon-btn sm" data-act="closeFabricPopover" aria-label="Close">${icon('x', 14)}</button></div>
     <div class="row"><input type="text" value="${esc(f.name)}" data-change="fabName" aria-label="Fabric name">
       <input type="color" value="${f.color}" data-input="fabColorLive" data-change="fabColor" aria-label="Colour"></div>
     <div class="f-row">
@@ -73,13 +70,18 @@ function renderFabricPopover() {
   if (!f) { pop?.remove(); ui.fabPop = null; return; }
   if (!pop) { pop = document.createElement('div'); pop.id = 'fab-pop'; pop.className = 'popover'; pop.setAttribute('role', 'dialog'); pop.setAttribute('aria-label', 'Edit fabric'); document.body.appendChild(pop); }
   preserveFocus(pop, () => { pop.innerHTML = fabricEditor(f); });
-  // beside its swatch when the swatches are showing, otherwise near the top left of the page
-  const chip = $(`#sidebar .fab-chip[data-arg="${CSS.escape(f.id)}"]`), side = $('#sidebar').getBoundingClientRect();
-  const top = chip ? chip.getBoundingClientRect().top - 8 : 70;
-  pop.style.left = `${chip ? side.right + 8 : 24}px`;
+  // beside its swatch's panel when the Fabrics panel is showing, otherwise near the top left of the canvas
+  const chip = $(`[data-panel="fabrics"] .fab-chip[data-arg="${CSS.escape(f.id)}"]`), host = chip?.closest('.dbody, .dfloat, .dflyout');
+  const r = host?.getBoundingClientRect(), dr = $('#docarea').getBoundingClientRect();
+  const top = chip ? chip.getBoundingClientRect().top - 8 : dr.top + 12;
+  const right = r && r.right + 8 + pop.offsetWidth < innerWidth;
+  pop.style.left = `${r ? (right ? r.right + 8 : Math.max(8, r.left - pop.offsetWidth - 8)) : dr.left + 12}px`;
   pop.style.top = `${clamp(top, 60, window.innerHeight - pop.offsetHeight - 12)}px`;
 }
-Actions.fabricPopover = id => { ui.fabPop = ui.fabPop === id ? null : id; if (ui.fabPop) ui.fabric = id; renderSidebar(); };
+Actions.fabricPopover = id => {
+  if (dockFind(wsLayout(), 'fabprops')) { ui.fabric = id; ui.fabPop = null; renderSidebar(); Actions.openPanel('fabprops'); render(); return; }
+  ui.fabPop = ui.fabPop === id ? null : id; if (ui.fabPop) ui.fabric = id; renderSidebar();
+};
 Actions.closeFabricPopover = () => { ui.fabPop = null; renderFabricPopover(); };
 document.addEventListener('pointerdown', e => {
   if (!ui?.fabPop || e.target.closest?.('#fab-pop, .fab-chip, .menu, #modal-root .modal, [data-act="fabricPopover"]')) return;
@@ -89,7 +91,7 @@ document.addEventListener('pointerdown', e => {
 const selFabric = () => doc.fabrics.find(x => x.id === ui.fabric);
 Actions.pickFabric = (id, el) => {
   // clicking the fabric that's already chosen opens its settings
-  if (id === ui.fabric && id !== BG && el?.closest?.('#sidebar')) { Actions.fabricPopover(id); return; }
+  if (id === ui.fabric && id !== BG && el?.closest?.('[data-panel="fabrics"]')) { Actions.fabricPopover(id); return; }
   ui.fabric = id; if (ui.fabPop && id !== BG) ui.fabPop = id; saveUi(); Views[ui.view]?.onFabricPick?.(id); render(); };
 Actions.addFabric = () => {
   const base = selFabric()?.color || '#1f3a5f';
@@ -205,8 +207,8 @@ function myBlocksSection() {
       ${blockThumb(b, 72)}<div class="nm">${esc(b.name)}</div></button>`;
   }
   const right = `<button class="btn small" data-act="addBlockMenu" aria-haspopup="menu">${icon('plus', 14)} Add ${icon('down', 12)}</button>`;
-  const hint = fillingSlot ? `<p class="hint">Pick a block for slot ${ui.activeSlot + 1}.</p>` : '';
-  return section('Quilt blocks', `${hint}${grid ? `<div class="blocks">${grid}</div>` : `<div class="empty-state"><p>No blocks yet.</p><button class="btn primary" data-act="libraryPicker">Browse classic blocks</button></div>`}`, { key: 'myblocks', right });
+  const hint = fillingSlot ? `<p class="hint">Pick a block for slot ${ui.activeSlot + 1}.</p>` : ui.view === 'layout' ? '<p class="hint">Click a block, then click the quilt to place it, or drag it on.</p>' : '';
+  return `<div class="panel-tools"><span class="pt-note">${plural(doc.blockOrder.length, 'block')}</span><span class="grow"></span>${right}</div><div class="pad">${hint}${grid ? `<div class="blocks">${grid}</div>` : `<div class="empty-state"><p>No blocks yet.</p><button class="btn primary" data-act="libraryPicker">Browse classic blocks</button></div>`}</div>`;
 }
 Actions.addBlockMenu = (a, el) => openMenu(el, [
   { label: 'From the library…', act: 'libraryPicker' },
@@ -398,8 +400,8 @@ Actions.useSavedBlock = arg => {
   toast(`${b.name} added`);
 };
 Actions.libraryPickerMine = () => { ui.libCat = 'mine'; Actions.libraryPicker(); };
-const refreshLibrary = () => { $('#lib-grid') && ($('#lib-grid').innerHTML = libraryGrid()); $('#lib-folders') && ($('#lib-folders').innerHTML = libraryFolders()); };
-Actions.libSearch = v => { ui.libSearch = v; const g = $('#lib-grid'); if (g) g.innerHTML = libraryGrid(); };
+const refreshLibrary = () => { $('#lib-grid') && ($('#lib-grid').innerHTML = libraryGrid()); $('#lib-folders') && ($('#lib-folders').innerHTML = libraryFolders()); renderInspector(); };
+Actions.libSearch = v => { ui.libSearch = v; const g = $('#lib-grid'); if (g) g.innerHTML = libraryGrid(); renderInspector(); };
 Actions.libCat = v => { ui.libCat = v; saveUi(); refreshLibrary(); };
 Actions.libFormat = v => { ui.libFormat = v; saveUi(); refreshLibrary(); };
 Actions.useLibrary = pid => {
@@ -419,3 +421,6 @@ Actions.useLibrary = pid => {
   commit();
   toast(`${p.name} added`);
 };
+
+registerPanel('fabrics', { title: 'Fabrics', short: 'Fabrics', icon: 'swatch', render: fabricsSection });
+registerPanel('blocks', { title: 'Blocks', short: 'Blocks', icon: 'blocks', ws: ['block', 'layout'], render: myBlocksSection });

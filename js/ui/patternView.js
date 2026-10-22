@@ -1,7 +1,8 @@
 /* Pattern view: live preview of the printable pattern + cover details. */
 
 Views.pattern = {
-  toolbar() {
+  docs() { return [{ label: `${doc.meta.title || 'Quilt'} · pattern`, on: true, icon: 'pages' }]; },
+  options() {
     const a4 = ui.patternPage === 'a4';
     // before printing: anything that would make a poor pattern
     const Q = Qnow(), warn = [...Q.warnings, ...seamWarnings(), ...(doc.meta.title === 'Untitled quilt' ? ['The quilt has no name yet (top left).'] : [])];
@@ -24,10 +25,12 @@ Views.pattern = {
     const z = Math.min(1, (el.clientWidth - 32) / pageW);
     pv.style.zoom = z < 1 ? String(round(z, 3)) : '';
   },
+  props() { return Views.pattern.inspector(); },
   inspector() {
     const m = doc.meta;
     let h = '';
     h += section('Cover', `
+      <label class="f">Quilt name<input type="text" data-bind="meta.title" value="${esc(m.title)}"></label>
       <label class="f">Designer<input type="text" data-bind="meta.designer" value="${esc(m.designer)}" placeholder="Your name"></label>`, { key: 'cover' });
     h += section('Description and skill level', `
       <label class="f">Description<textarea data-bind="meta.description">${esc(m.description)}</textarea></label>
@@ -95,3 +98,37 @@ function paginatePattern(root) {
     page.after(next);
   }
 }
+
+/* ---------- the Pages panel: the pattern's pages, by section ---------- */
+// A page without its own heading continues the section before it.
+function patternPages() {
+  let last = 'Cover';
+  return $$('#pattern-preview .page').map((pg, i) => {
+    const h = i === 0 ? 'Cover' : pg.querySelector('h1, h2')?.textContent.trim();
+    if (h) last = h;
+    return { i, title: last, cont: !h };
+  });
+}
+function pagesPanel() {
+  if (ui.view !== 'pattern') return panelNote('The pattern\'s pages show here in the Pattern workspace.', ['view', 'pattern'], 'Go to Pattern');
+  const pages = patternPages();
+  if (!pages.length) return panelNote('Building the pages…');
+  let h = '';
+  for (const p of pages) {
+    const cont = p.cont;
+    h += `<div class="page-row${cont ? ' cont' : ''}" role="option" tabindex="0" data-act="goPage" data-arg="${p.i}" data-page="${p.i}"><span class="pg-n">${p.i + 1}</span><span class="pg-t">${cont ? 'continued' : esc(p.title)}</span></div>`;
+  }
+  return `<div class="panel-tools"><span class="pt-note">${plural(pages.length, 'page')} · ${ui.patternPage === 'a4' ? 'A4' : 'US Letter'}</span></div><div class="page-list" role="listbox" aria-label="Pages">${h}</div>`;
+}
+Actions.goPage = i => { $$('#pattern-preview .page')[+i]?.scrollIntoView({ block: 'start' }); markCurrentPage(); };
+// highlight the page in view, and say "Page n of N" in the status bar
+function markCurrentPage() {
+  const pages = $$('#pattern-preview .page'), box = $('#main').getBoundingClientRect();
+  let cur = 0;
+  pages.forEach((pg, i) => { if (pg.getBoundingClientRect().top < box.top + box.height / 3) cur = i; });
+  $$('.page-row').forEach(r => r.setAttribute('aria-selected', +r.dataset.page === cur));
+  const st = $('#statusbar .sb-l');
+  if (st && ui.view === 'pattern') st.textContent = pages.length ? `Page ${cur + 1} of ${pages.length}` : '';
+}
+$('#main')?.addEventListener('scroll', debounce(() => { if (ui.view === 'pattern') markCurrentPage(); }, 60));
+registerPanel('pages', { title: 'Pages', short: 'Pages', icon: 'pages', ws: ['pattern'], render: pagesPanel, after: () => markCurrentPage() });

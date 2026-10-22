@@ -43,6 +43,7 @@ function renderPalettes() {
 // keep the scroll position when the window redraws after a change
 function refreshPalettes() {
   const body = $('#modal-root .pal-body'), top = body?.scrollTop || 0;
+  if (!body) { renderInspector(); return; }
   renderPalettes();
   const nb = $('#modal-root .pal-body'); if (nb) nb.scrollTop = top;
 }
@@ -86,9 +87,9 @@ Actions.swapFabricMenu = (id, el) => {
   setTimeout(() => openMenu(at, [{ header: `Swap ${esc(fabricLabel(id))} with` }, ...doc.fabrics.filter(f => f.id !== id).map(f => ({ label: `${swatchHtml(f.id, 14)} ${esc(f.name)}`, act: 'swapFabrics', arg: `${id}|${f.id}` }))]), 20);
 };
 // drop one swatch on another to swap them
-document.addEventListener('dragover', e => { if (dragFabricId && e.target.closest?.('#sidebar .fab-chip[data-act="pickFabric"]:not(.bgpaint)')) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } });
+document.addEventListener('dragover', e => { if (dragFabricId && e.target.closest?.('[data-panel="fabrics"] .fab-chip[data-act="pickFabric"]:not(.bgpaint)')) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } });
 document.addEventListener('drop', e => {
-  const el = e.target.closest?.('#sidebar .fab-chip[data-act="pickFabric"]:not(.bgpaint)');
+  const el = e.target.closest?.('[data-panel="fabrics"] .fab-chip[data-act="pickFabric"]:not(.bgpaint)');
   if (!dragFabricId || !el || el.dataset.arg === dragFabricId) return;
   e.preventDefault();
   Actions.swapFabrics(`${dragFabricId}|${el.dataset.arg}`);

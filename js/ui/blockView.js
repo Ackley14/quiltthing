@@ -19,10 +19,21 @@ const BLOCK_TOOLS = [
 const ed = { drag: null, hover: null, shift: false };
 
 Views.block = {
-  toolbar() {
+  // the tool strip (drawn blocks only)
+  tools() {
     const b = activeBlock();
-    if (!b || b.kind === 'compound') return '';
-    const tools = BLOCK_TOOLS.map(t => `<button class="tool icon-only" data-act="blockTool" data-arg="${t.key}" aria-pressed="${ui.tool === t.key}" title="${t.label} (${t.kb})" aria-label="${t.label}">${icon(t.icon)}${t.key === 'seam' ? seamBadge(b) : ''}</button>`).join('');
+    if (!b || b.kind === 'compound') return null;
+    return { act: 'blockTool', active: ui.tool, list: BLOCK_TOOLS.map(t => ({ ...t, badge: t.key === 'seam' ? seamBadge(b) : '' })) };
+  },
+  docs() { const b = activeBlock(); return [{ label: b ? b.name : 'No block open', on: true, icon: 'blocks' }]; },
+  // the context bar: a mode bar while drawing, otherwise the tool's options or the selection's commands
+  options() {
+    const b = activeBlock();
+    if (!b) return '<span class="tb-label">Add a block from the Blocks panel to start.</span>';
+    if (b.kind === 'compound') return `<span class="tb-label"><b>${esc(b.name)}</b> · combination block</span>`;
+    if (ui.tool === 'polygon' && ui.drawing.length) return `<span class="mode-tag">Drawing a shape</span><span class="tb-label">${plural(ui.drawing.length, 'point')} · click the first point or press Enter to finish</span><button class="btn small primary" data-act="polyDone" ${ui.drawing.length < 3 ? 'disabled' : ''}>Done</button><button class="btn small" data-act="polyCancel">Cancel</button>`;
+    if (ui.tool === 'seam' && ui.drawing.length) return `<span class="mode-tag">Seam line</span><span class="tb-label">Now click a point on another line</span><button class="btn small" data-act="polyCancel">Cancel</button>`;
+    if (ui.refAdjust && refImgs[b.id]) return `<span class="mode-tag">Moving the tracing picture</span><span class="tb-label">Drag to move it, scroll to resize it</span><button class="btn small primary" data-act="refAdjustToggle">Done</button>`;
     // options for the current tool, or for the selection
     const sel = selList(), fabBtn = (act, f, mixed) => `<button class="tool fab-drop" data-act="${act}" aria-haspopup="menu" title="Fabric">${f ? swatchHtml(f === BG ? doc.layout.background : f, 16) : '<span class="sw mixed"></span>'} ${mixed ? 'Mixed' : esc(f === BG ? 'Background' : fabricLabel(f))} ${icon('down', 12)}</button>`;
     let opts = '';
@@ -33,8 +44,8 @@ Views.block = {
         ${ib('selDup', '', 'dup', 'Duplicate (Ctrl+D)')}${ib('selRotate', 'cw', 'rotate', 'Rotate 90° (E)')}${ib('selMirror', 'h', 'mirror', 'Flip horizontal (X)')}${ib('selMirror', 'v', 'flipv', 'Flip vertical (Y)')}${ib('selOrder', 'front', 'front', 'Bring to front')}${ib('selOrder', 'back', 'back', 'Send to back')}${ib('selDelete', '', 'trash', 'Delete (Del)')}`;
     } else if (ui.tool === 'paint' || ui.tool === 'fill') opts = `<span class="tb-label">${ui.tool === 'fill' ? 'Fill with' : 'Paint with'}</span>${fabBtn('paintFabricMenu', ui.fabric)}`;
     else if (ui.tool !== 'select') opts = `<button class="tool toggle" data-act="toggleSnap" aria-pressed="${!ui.snapOff}" title="Snap points to the grid">Snap</button>`;
-    return `${tools}<span class="sep"></span>${opts}
-      ${refImgs[b.id] ? `<button class="tool toggle" data-act="refAdjustToggle" aria-pressed="${!!ui.refAdjust}" title="Drag to move the tracing picture, scroll to resize it">Move picture</button>` : ''}
+    return `${opts}
+      ${refImgs[b.id] ? `<span class="sep"></span><button class="tool toggle" data-act="refAdjustToggle" aria-pressed="${!!ui.refAdjust}" title="Drag to move the tracing picture, scroll to resize it">Move picture</button>` : ''}
       <span id="seam-tool-slot"></span>`;
   },
   main() {
@@ -70,6 +81,7 @@ Views.block = {
     scheduleSeamCheck();
     positionSelBar();
   },
+  props() { return blockInspector(); },
   inspector() { return blockInspector(); },
   key(e) { return blockViewKey(e); },
 };
@@ -851,7 +863,7 @@ function showSeamCard() {
   if (!card || !b) return;
   const sg = _seamState.s;
   const has = sg && (sg.required.length || sg.optional.length), seamTool = ui.tool === 'seam';
-  const tb = $('#tooltools .tool[data-arg="seam"]');
+  const tb = $('#toolstrip [data-arg="seam"]');
   if (tb) {
     tb.querySelector('.badge')?.remove();
     tb.insertAdjacentHTML('beforeend', seamBadge(b));
@@ -1349,29 +1361,38 @@ function blockInspector() {
   if (tsel) selh += textEditSection(b, tsel);
   if (sel.length > 1) {
     const fabs = uniq(sel.map(i => b.regions[i].fab));
-    selh += section(`${sel.length} shapes selected`, `<label class="f">Fabric</label>${fabricPicker(fabs.length === 1 ? fabs[0] : null, 'regionFab', { allowBg: true })}`, { key: 'shape' });
+    selh += section(`${sel.length} shapes selected`, `<label class="f">Fabric</label>${fabricPicker(fabs.length === 1 ? fabs[0] : null, 'regionFab', { allowBg: true })}`, { key: 'selshape' });
   }
   const r = sel.length === 1 ? b.regions[sel[0]] : null;
   if (r) {
     selh += section('Selected shape', `<label class="f">Fabric</label>${fabricPicker(r.fab, 'regionFab', { allowBg: true })}
       <label class="check" title="Sewn on top; doesn't cut the pieces underneath"><input type="checkbox" data-change="regionApp" ${r.app ? 'checked' : ''}> Appliqué</label>
       <label class="f">Add copies around the centre</label>
-      <div class="btn-row" style="margin-top:3px">${(hex ? [['rot2', '2'], ['rot3', '3'], ['rot6', '6']] : [['rot2', '2'], ['rot4', '4'], ['rot8', '8']]).map(([k, l]) => `<button class="btn small" data-act="regionCopies" data-arg="${k}">${l}</button>`).join('')}<button class="btn small" data-act="regionCopies" data-arg="h">Mirrored copy ↔</button><button class="btn small" data-act="regionCopies" data-arg="v">Mirrored copy ↕</button><button class="btn small" data-act="regionCopies" data-arg="4">4-way</button></div>`, { key: 'shape' });
+      <div class="btn-row" style="margin-top:3px">${(hex ? [['rot2', '2'], ['rot3', '3'], ['rot6', '6']] : [['rot2', '2'], ['rot4', '4'], ['rot8', '8']]).map(([k, l]) => `<button class="btn small" data-act="regionCopies" data-arg="${k}">${l}</button>`).join('')}<button class="btn small" data-act="regionCopies" data-arg="h">Mirrored copy ↔</button><button class="btn small" data-act="regionCopies" data-arg="v">Mirrored copy ↕</button><button class="btn small" data-act="regionCopies" data-arg="4">4-way</button></div>`, { key: 'selshape' });
   }
   h = selh + h;
 
-  // shapes list
-  let list = '';
-  for (let i = b.regions.length - 1; i >= 0; i--) {
-    const reg = b.regions[i];
-    list += `<div class="region-row" role="button" tabindex="0" aria-pressed="${sel.includes(i)}" data-act="selectRegion" data-arg="${i}">${reg.fab === BG ? '<span class="sw" style="background:repeating-linear-gradient(45deg,#fafafa,#fafafa 3px,#e6e6e3 3px,#e6e6e3 6px)"></span>' : swatchHtml(reg.fab, 16)}<span class="nm">${esc(regionName(b, reg))} <span class="muted">${esc(reg.fab === BG ? 'background' : fabricLabel(reg.fab))}${reg.app ? ' · appliqué' : ''}</span></span></div>`;
-  }
-  h += section(`Shapes <span class="muted">${b.regions.length}</span>`, list ? `${list}<p class="hint">Top of the list is in front.</p>` : '<p class="hint">Empty block. Draw with the tools above.</p>', { key: 'shapes', closed: true });
   h += refSection(b);
   h += section(`Seams${b.seams?.length ? ` <span class="muted">${b.seams.length}</span>` : ''}`, `<p class="hint">Seam lines split pieces so they sew with straight seams.</p>
     <div class="btn-row"><button class="btn small" data-act="autoSeams">Add suggested seams</button>${b.seams?.length ? '<button class="btn small quiet" data-act="clearSeams">Remove all</button>' : ''}</div>`, { key: 'seams', closed: true });
   h += constructionSection(b, S);
   return h;
+}
+// The Shapes panel: the block's shapes, front first, like a layers list.
+function shapesPanel() {
+  const b = activeBlock();
+  if (!b) return panelNote('Open a block to see its shapes.');
+  if (b.kind !== 'drawn') return panelNote('A combination block is made of other blocks. Its slots are in Properties.');
+  const sel = selList();
+  let list = '';
+  for (let i = b.regions.length - 1; i >= 0; i--) {
+    const reg = b.regions[i];
+    list += `<div class="region-row" role="button" tabindex="0" aria-pressed="${sel.includes(i)}" data-act="selectRegion" data-arg="${i}">${reg.fab === BG ? '<span class="sw bgsw" style="--sw:16px"></span>' : swatchHtml(reg.fab, 16)}<span class="nm">${esc(regionName(b, reg))} <span class="muted">${esc(reg.fab === BG ? 'background' : fabricLabel(reg.fab))}${reg.app ? ' · appliqué' : ''}</span></span></div>`;
+  }
+  return `<div class="panel-tools"><span class="pt-note">${plural(b.regions.length, 'shape')}${sel.length ? ` · ${sel.length} selected` : ''}</span><span class="grow"></span>
+    ${sel.length ? `<button class="btn small quiet" data-act="selOrder" data-arg="front" title="Bring to front">${icon('front', 14)}</button><button class="btn small quiet" data-act="selOrder" data-arg="back" title="Send to back">${icon('back', 14)}</button>` : ''}
+    <button class="btn small" data-act="selAll" title="Select all (Ctrl+A)">Select all</button></div>
+    <div class="pad">${list ? `${list}<p class="hint">Top of the list is in front.</p>` : '<p class="hint">Empty block. Draw with the tools on the left.</p>'}</div>`;
 }
 // A shape's name in the shapes list, in quilting words.
 function regionName(b, reg) {
@@ -1397,3 +1418,8 @@ function constructionSection(b, S) {
   for (const p of probs) body += `<p class="hint${p.kind === 'tiny' ? '' : ' warn'}">${esc(p.msg)}</p>`;
   return section('Construction', body, { key: 'construct', closed: true });
 }
+
+Actions.polyDone = () => finishPolygon();
+Actions.polyCancel = () => { ui.drawing = []; ed.triPreview = null; refreshEditor(); renderToolbar(); };
+
+registerPanel('shapes', { title: 'Shapes', short: 'Shapes', icon: 'shapes', ws: ['block'], render: shapesPanel });

@@ -157,8 +157,9 @@ function init() {
   }
   if (!ui.seenTour) welcome();
   // keep the "Saved" indicator fresh after debounced saves
-  setInterval(() => { const el = $('.save-dot'); if (el && saveStatus.at) el.textContent = saveStatus.ok ? '' : 'Not saved'; }, 1500);
-  window.addEventListener('resize', debounce(() => { if (ui.view === 'pattern') Views.pattern.afterMain($('#main')); }, 150));
+  setInterval(renderSaveState, 1500);
+  // the canvas area changes size when panels open, close or are resized, not only with the window
+  new ResizeObserver(debounce(refitCanvas, 120)).observe($('#docwrap'));
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

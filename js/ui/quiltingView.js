@@ -1,10 +1,9 @@
 /* Quilting view: stack of generated quilting-line layers previewed over the quilt. */
 
 Views.quilting = {
-  toolbar() {
-    const back = ui.qSide === 'back';
-    return `<button class="tool fab-drop" data-act="addLayerMenu" aria-haspopup="menu">${icon('plus', 14)} Add quilting ${icon('down', 12)}</button><span class="sep"></span>
-      <div class="seg" role="group" aria-label="Side"><button aria-pressed="${!back}" data-act="qSide" data-arg="front">Front</button><button aria-pressed="${back}" data-act="qSide" data-arg="back">Back</button></div>`;
+  docs() { const back = ui.qSide === 'back'; return [{ label: 'Front', on: !back, act: 'qSide', arg: 'front', icon: 'quilt' }, { label: 'Back', on: back, act: 'qSide', arg: 'back', icon: 'quilt' }]; },
+  options() {
+    return `<button class="tool fab-drop" data-act="addLayerMenu" aria-haspopup="menu">${icon('plus', 14)} Add quilting ${icon('down', 12)}</button>`;
   },
   main() {
     const Q = Qnow();
@@ -17,21 +16,30 @@ Views.quilting = {
         ? `About <b>${Math.round(stats.total / 36)} yd</b> of stitching · <b>${Math.ceil(stats.threadYds / 50) * 50} yd</b> of thread, top and bobbin`
         : 'Add a quilting pattern on the right.'}</div></div>`;
   },
-  inspector() {
-    const layers = doc.quilting.layers;
-    const Q = Qnow();
-    const stats = quiltingStats(Q);
-    const open = layers.find(L => L.id === ui.qOpen) ? ui.qOpen : null;
-    let h = `<section class="sec add-q"><div class="layers-h"><h3>Quilting layers</h3></div>${layers.length ? '' : '<p class="hint">Use Add quilting above to plan the stitching.</p>'}</section>`;
-    layers.forEach((L, i) => {
-      const t = quiltType(L.type);
-      const p = `quilting.layers.${i}`;
-      const len = stats.per[i]?.length || 0;
-      const where = (QUILT_AREAS.find(([k]) => k === L.area) || [null, ''])[1];
-      const head = `<div class="layer-row"><span class="layer-sw" style="background:${L.color}"></span><span class="nm"><b>${t.label}</b> <span class="muted">${esc(where.toLowerCase())}</span></span>
-        <button class="icon-btn sm" data-act="qToggleShow" data-arg="${i}" title="${L.visible ? 'Hide' : 'Show'}" aria-label="${L.visible ? 'Hide' : 'Show'} ${t.label}">${icon(L.visible ? 'eye' : 'eyeoff', 14)}</button></div>`;
-      if (L.id !== open) { h += `<section class="sec layer closed"><div class="sec-h" data-act="qOpen" data-arg="${L.id}" role="button" tabindex="0" aria-expanded="false">${head}</div></section>`; return; }
-      h += `<section class="sec layer"><div class="sec-h" data-act="qOpen" data-arg="${L.id}" role="button" tabindex="0" aria-expanded="true">${head}</div><div class="sec-b">
+  props() { return quiltLayerProps(); },
+  inspector() { return quiltLayersPanel() + quiltLayerProps(); },
+};
+// The Layers panel: the quilting layers, top first (stitched first). Click one to open it in Properties.
+function quiltLayersPanel() {
+  const layers = doc.quilting.layers, open = layers.find(L => L.id === ui.qOpen) ? ui.qOpen : layers[0]?.id;
+  const rows = layers.map((L, i) => {
+    const t = quiltType(L.type), where = (QUILT_AREAS.find(([k]) => k === L.area) || [null, ''])[1];
+    return `<div class="part-row layer${L.visible ? '' : ' hidden-layer'}" role="option" tabindex="0" aria-selected="${L.id === open}" data-act="qPick" data-arg="${L.id}">
+      <span class="part-ic"><span class="layer-sw" style="background:${L.color}"></span></span><span class="part-t"><b>${t.label}</b><span class="muted">${esc(where)}</span></span>
+      <button class="icon-btn sm eye" data-act="qToggleShow" data-arg="${i}" title="${L.visible ? 'Hide' : 'Show'}" aria-label="${L.visible ? 'Hide' : 'Show'} ${t.label}" aria-pressed="${!!L.visible}">${icon(L.visible ? 'eye' : 'eyeoff', 14)}</button></div>`;
+  }).join('');
+  return `<div class="panel-tools"><span class="pt-note">${plural(layers.length, 'layer')}</span><span class="grow"></span><button class="btn small" data-act="addLayerMenu" aria-haspopup="menu">${icon('plus', 14)} Add ${icon('down', 12)}</button></div>
+    ${layers.length ? `<div class="part-list" role="listbox" aria-label="Quilting layers">${rows}</div><p class="hint pad">Stitched from the top of the list down.</p>` : panelNote('No quilting planned yet.', ['addLayerMenu'], 'Add quilting')}`;
+}
+// Properties in Quilting: the layer picked in the Layers panel.
+function quiltLayerProps() {
+  const layers = doc.quilting.layers, Q = Qnow(), stats = quiltingStats(Q);
+  const i = Math.max(0, layers.findIndex(L => L.id === ui.qOpen)), L = layers[i];
+  if (!L) return panelNote('Add a quilting layer to plan the stitching.', ['addLayerMenu'], 'Add quilting');
+  const t = quiltType(L.type), p = `quilting.layers.${i}`, len = stats.per[i]?.length || 0;
+  return `<div class="props-head"><span class="layer-sw" style="background:${L.color}"></span><b>${t.label}</b><span class="grow"></span>
+      <button class="icon-btn sm" data-act="qToggleShow" data-arg="${i}" title="${L.visible ? 'Hide' : 'Show'}" aria-label="${L.visible ? 'Hide' : 'Show'} ${t.label}">${icon(L.visible ? 'eye' : 'eyeoff', 14)}</button></div>
+    <div class="pad">
         <div class="f-row"><label class="f">Pattern<select data-bind="${p}.type">${QUILT_TYPES.map(x => `<option value="${x.key}" ${x.key === L.type ? 'selected' : ''}>${x.label}</option>`).join('')}</select></label>
         <label class="f">Where<select data-bind="${p}.area">${QUILT_AREAS.filter(([k]) => L.area === k || areaAvail(Q, k)).map(([k, l]) => `<option value="${k}" ${L.area === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
         ${['panel', 'aroundPanel'].includes(L.area) && !Q.panels.length ? '<p class="hint warn">This quilt has no inset panel.</p>' : ''}
@@ -47,15 +55,12 @@ Views.quilting = {
         <p class="hint">${esc(t.help)} About ${Math.round(len / 36)} yd of stitching.</p>
         <div class="btn-row layer-actions"><label class="color-dot" title="Line colour on screen" style="background:${L.color}"><input type="color" value="${L.color}" data-change="qColor" data-arg="${i}" aria-label="Line colour"></label>
           <button class="icon-btn sm" data-act="qMove" data-arg="${i}|-1" ${i ? '' : 'disabled'} title="Move up" aria-label="Move up">${icon('up', 14)}</button><button class="icon-btn sm" data-act="qMove" data-arg="${i}|1" ${i < layers.length - 1 ? '' : 'disabled'} title="Move down" aria-label="Move down">${icon('down', 14)}</button>
-          <span class="spacer"></span><button class="btn small quiet" data-act="qDup" data-arg="${i}">Duplicate</button><button class="btn small quiet danger" data-act="qDel" data-arg="${i}">Remove</button></div></div></section>`;
-    });
-    if (layers.length > 1) h += `<p class="hint" style="padding:8px 16px 0">Stitch from the top of the list down.</p>`;
-    return h;
-  },
-};
+          <span class="spacer"></span><button class="btn small quiet" data-act="qDup" data-arg="${i}">Duplicate</button><button class="btn small quiet danger" data-act="qDel" data-arg="${i}">Remove</button></div></div>`;
+}
 Actions.addLayerMenu = (a, el) => openMenu(el, QUILT_TYPES.map(t => ({ label: t.label, act: 'addQuiltType', arg: t.key })), { align: 'left' });
 Actions.addQuiltType = type => Actions.addQuiltLayer(type, { value: '' });
 Actions.qOpen = id => { ui.qOpen = ui.qOpen === id ? null : id; renderInspector(); };
+Actions.qPick = id => { ui.qOpen = id; saveUi(); renderInspector(); renderHud(); };
 Actions.qToggleShow = i => { const L = doc.quilting.layers[+i]; if (L) { L.visible = !L.visible; commit(); } };
 // Only offer the "Where" choices this quilt has.
 function areaAvail(Q, k) {
@@ -125,7 +130,7 @@ Actions.addQuiltLayer = (type, el) => {
   el.value = '';
   ui.showQuilting = true; ui.qOpen = L.id;
   commit();
-  $(`#inspector [data-arg="${L.id}"]`)?.closest('.sec')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  $(`[data-panel] [data-arg="${L.id}"]`)?.closest('.sec')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 };
 Actions.qAngleLive = (v, el) => { const L = doc.quilting.layers[+el.dataset.arg]; if (L) { L.angle = +v; renderMainOnly(); } };
 Actions.qAngle = (v, el) => { const L = doc.quilting.layers[+el.dataset.arg]; if (L) { L.angle = +v; commit(); } };
@@ -137,3 +142,5 @@ Actions.qMove = arg => {
   const j = i + d; if (j < 0 || j >= A.length) return;
   [A[i], A[j]] = [A[j], A[i]]; commit();
 };
+
+registerPanel('layers', { title: 'Layers', short: 'Layers', icon: 'layers', ws: ['quilting'], render: quiltLayersPanel });

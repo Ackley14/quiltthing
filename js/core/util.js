@@ -106,6 +106,43 @@ function parseLen(str, fallbackUnits = displayUnits) {
   return v;
 }
 
+// A length with simple maths, for typing into length fields:
+//   quilters' mixed numbers  "2-1/2" = 2½ (as on patterns), "3 1/2", "3½"
+//   sums and differences     "3 1/2 + 1/4", "12 - 3cm" (a minus between terms needs spaces)
+//   changes to the current value  "+1/4", "+=1/4", "-=1", "*2", "x2", "/3", "150%"
+// A bare leading minus is not a change: lengths are never negative, so "-1" is rejected.
+// Each term may carry its own unit. Returns inches, or NaN if it can't be read.
+function parseLenExpr(str, current) {
+  let s = String(str ?? '').trim().toLowerCase().replace(/×/g, 'x').replace(/[−–—]/g, '-');
+  if (!s) return NaN;
+  const cur = Number.isFinite(current) ? current : NaN;
+  let m;
+  if ((m = s.match(/^(\d*\.?\d+)\s*%$/))) return cur * +m[1] / 100;
+  if ((m = s.match(/^(?:\*|x)=?\s*(\d*\.?\d+)$/))) return cur * +m[1];
+  if ((m = s.match(/^\/=?\s*(\d*\.?\d+)$/))) return +m[1] ? cur / +m[1] : NaN;
+  // "2-1/2" written the quilting way is a mixed number
+  s = s.replace(/(\d)\s*-\s*(\d+\/\d+)(?![\d/])/g, (all, a, f, off, whole) => /\s-\s/.test(all) ? all : `${a} ${f}`);
+  let base = 0;
+  if ((m = s.match(/^([+-])=\s*(.+)$/))) { if (!Number.isFinite(cur)) return NaN; base = cur; s = m[1] + m[2]; }
+  else if (s[0] === '+') { if (!Number.isFinite(cur)) return NaN; base = cur; }
+  else if (s[0] === '-') return NaN;
+  else s = '+' + s;
+  // terms: a minus only separates terms when it has spaces around it
+  const parts = [], re = /([+]|\s-\s)/g;
+  let last = 0, sign = 1, mm;
+  const body = s.slice(1), first = s[0] === '-' ? -1 : 1;
+  sign = first;
+  while ((mm = re.exec(body))) { parts.push([sign, body.slice(last, mm.index)]); sign = mm[0].trim() === '-' ? -1 : 1; last = mm.index + mm[0].length; }
+  parts.push([sign, body.slice(last)]);
+  let v = base;
+  for (const [sg, t] of parts) {
+    const x = parseLen(t.trim());
+    if (!Number.isFinite(x)) return NaN;
+    v += sg * x;
+  }
+  return v;
+}
+
 // Yardage: fabric is sold in 1/8-yard steps (imperial) — metric shows metres to 0.05 m.
 function fmtYards(inches) {
   if (displayUnits === 'cm') {

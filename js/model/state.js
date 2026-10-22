@@ -2,7 +2,9 @@
    `doc` is the undoable, saved, exportable project. `ui` holds view state (not undoable). */
 
 const STORE_DOC = 'quiltthing.v3.doc';
-const STORE_UI = 'quiltthing.v3.ui';
+// v4 keeps its view state in its own slot so the live v3 site never reads v4-only values
+// (tools, panels). The design, history, pictures, palettes and saved quilts are shared.
+const STORE_UI = 'quiltthing.v4.ui', STORE_UI_V3 = 'quiltthing.v3.ui';
 const BG = 'bg';   // pseudo-fabric id meaning "the quilt background fabric"
 
 let doc = null;
@@ -84,6 +86,7 @@ function defaultUi() {
     collapsed: {},
     tessPaintSet: null,     // fabric ids used by tile fill patterns
     patternPage: 'letter',
+    quiltPart: 'setting',   // the part of the quilt open in Layout's Properties
     seenTour: false,
   };
 }
@@ -100,19 +103,23 @@ function placeBlock() { return doc.blocks[ui.placeBlock] || activeBlock(); }
 
 /* ---------- history ---------- */
 const undoStack = { past: [], future: [], current: null, max: 200 };
+// What each undo step did, for the History panel: labels[i] names the change that led away from
+// past[i]. Kept beside the stack (v3 reads the same saved history and knows nothing of labels).
+const histLabels = { past: [], future: [] };
+let nextCommitLabel = null;   // set by the action dispatcher just before a command runs
 let onDocChanged = () => {};          // set by the app shell (re-render + caches)
 
 function snapshot() { return JSON.stringify(doc); }
 // Called whenever the project is replaced, so it also forgets pictures of blocks that are gone.
-function resetHistory() { undoStack.past = []; undoStack.future = []; undoStack.current = snapshot(); pruneRefs(); }
+function resetHistory() { undoStack.past = []; undoStack.future = []; histLabels.past = []; histLabels.future = []; undoStack.current = snapshot(); pruneRefs(); }
 
 // Record the current doc as a new history step (no-op if nothing changed).
-function commit() {
+function commit(label) {
   const s = snapshot();
   if (s === undoStack.current) { onDocChanged(false); return; }
-  if (undoStack.current !== null) undoStack.past.push(undoStack.current);
-  if (undoStack.past.length > undoStack.max) undoStack.past.shift();
-  undoStack.future = [];
+  if (undoStack.current !== null) { undoStack.past.push(undoStack.current); histLabels.past.push(label || nextCommitLabel || 'Change'); }
+  if (undoStack.past.length > undoStack.max) { undoStack.past.shift(); histLabels.past.shift(); }
+  undoStack.future = []; histLabels.future = [];
   undoStack.current = s;
   scheduleSave();
   saveUi();   // e.g. the block just added and opened, so a reload reopens it
@@ -120,7 +127,7 @@ function commit() {
 }
 function undo() {
   if (!undoStack.past.length) return false;
-  undoStack.future.push(undoStack.current);
+  undoStack.future.push(undoStack.current); histLabels.future.push(histLabels.past.pop() || 'Change');
   undoStack.current = undoStack.past.pop();
   doc = JSON.parse(undoStack.current);
   sanitizeUi();
@@ -130,7 +137,7 @@ function undo() {
 }
 function redo() {
   if (!undoStack.future.length) return false;
-  undoStack.past.push(undoStack.current);
+  undoStack.past.push(undoStack.current); histLabels.past.push(histLabels.future.pop() || 'Change');
   undoStack.current = undoStack.future.pop();
   doc = JSON.parse(undoStack.current);
   sanitizeUi();
@@ -170,6 +177,7 @@ function saveHistory() {
   for (let n = Math.min(20, undoStack.past.length); n >= 0; n = n ? Math.floor(n / 2) : -1) {
     try {
       localStorage.setItem(STORE_HIST, JSON.stringify({ current: undoStack.current, past: n ? undoStack.past.slice(-n) : [], future: n ? undoStack.future.slice(-5) : [] }));
+      try { localStorage.setItem('quiltthing.v4.hist', JSON.stringify({ past: n ? histLabels.past.slice(-n) : [], future: n ? histLabels.future.slice(-5) : [] })); } catch {}
       return;
     } catch { localStorage.removeItem(STORE_HIST); }
   }
@@ -178,7 +186,12 @@ function saveHistory() {
 function restoreHistory() {
   try {
     const h = JSON.parse(localStorage.getItem(STORE_HIST) || 'null');
-    if (h && h.current === undoStack.current) { undoStack.past = h.past || []; undoStack.future = h.future || []; }
+    if (h && h.current === undoStack.current) {
+      undoStack.past = h.past || []; undoStack.future = h.future || [];
+      const L = JSON.parse(localStorage.getItem('quiltthing.v4.hist') || 'null');
+      const fit = (a, n) => Array.from({ length: n }, (_, i) => (a || [])[(a || []).length - n + i] || 'Earlier change');
+      histLabels.past = fit(L?.past, undoStack.past.length); histLabels.future = fit(L?.future, undoStack.future.length);
+    }
   } catch {}
 }
 const saveUi = debounce(() => {
@@ -210,6 +223,7 @@ function loadStored() {
   let d = null, u = null;
   try { d = JSON.parse(localStorage.getItem(STORE_DOC) || 'null'); } catch {}
   try { u = JSON.parse(localStorage.getItem(STORE_UI) || 'null'); } catch {}
+  if (!u) try { u = JSON.parse(localStorage.getItem(STORE_UI_V3) || 'null'); } catch {}   // first run of v4: start from v3's view
   return { d: validDoc(d) ? d : null, u };
 }
 function validDoc(d) {

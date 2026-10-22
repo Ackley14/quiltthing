@@ -46,8 +46,26 @@ const ICON_PATHS = {
   centre: '<circle cx="8" cy="8" r="3.5"/><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3"/>',
   edit: '<path d="M10.5 2.5l3 3-8 8h-3v-3z"/>',
   menu: '<path d="M2.5 4h11M2.5 8h11M2.5 12h11"/>',
-  sliders: '<path d="M2.5 4.5h11M2.5 11.5h11"/><circle cx="5.5" cy="4.5" r="1.6" fill="#fff"/><circle cx="10.5" cy="11.5" r="1.6" fill="#fff"/>',
+  sliders: '<path d="M2.5 4.5h11M2.5 11.5h11"/><circle cx="5.5" cy="4.5" r="1.6" fill="var(--bg-panel, #fff)"/><circle cx="10.5" cy="11.5" r="1.6" fill="var(--bg-panel, #fff)"/>',
   check: '<path d="M3 8.5l3 3 7-7"/>',
+  left: '<path d="M10 4l-4 4 4 4"/>',
+  minus: '<path d="M3 8h10"/>',
+  search: '<circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2l3.3 3.3"/>',
+  panelLeft: '<rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M6 2.5v11"/>',
+  panelRight: '<rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M10 2.5v11"/>',
+  swatch: '<rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/>',
+  blocks: '<rect x="2.5" y="2.5" width="11" height="11" rx="1"/><path d="M2.5 8h11M8 2.5v11M2.5 2.5l5.5 5.5"/>',
+  quilt: '<rect x="2" y="2" width="12" height="12" rx="1"/><path d="M6 2v12M10 2v12M2 6h12M2 10h12"/>',
+  list: '<path d="M5.5 4h8M5.5 8h8M5.5 12h8"/><circle cx="2.8" cy="4" r=".6" fill="currentColor"/><circle cx="2.8" cy="8" r=".6" fill="currentColor"/><circle cx="2.8" cy="12" r=".6" fill="currentColor"/>',
+  cut: '<circle cx="4.5" cy="11.5" r="2"/><circle cx="11.5" cy="11.5" r="2"/><path d="M6 10L12 2.5M10 10L4 2.5"/>',
+  pages: '<path d="M4 2.5h6l2.5 2.5v8.5H4z"/><path d="M10 2.5V5h2.5M6 8h4.5M6 10.5h4.5"/>',
+  layers: '<path d="M8 2.5l6 3-6 3-6-3z"/><path d="M2 8.5l6 3 6-3M2 11l6 3 6-3"/>',
+  shapes: '<rect x="2.5" y="2.5" width="6" height="6" rx=".5"/><circle cx="10.5" cy="10.5" r="3"/>',
+  history: '<path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9"/><path d="M2.5 2.5v3h3M8 5v3.2l2 1.3"/>',
+  palette: '<path d="M8 2a6 6 0 1 0 0 12c1 0 1.3-.8.9-1.6-.5-.9.1-1.9 1.1-1.9H12a2 2 0 0 0 2-2A6 6 0 0 0 8 2z"/><circle cx="5" cy="7" r=".9" fill="currentColor"/><circle cx="7.5" cy="4.6" r=".9" fill="currentColor"/><circle cx="10.6" cy="5.6" r=".9" fill="currentColor"/>',
+  library: '<path d="M3 2.5v11M6 2.5v11M9.2 2.8l3.6 10.4"/>',
+  info: '<circle cx="8" cy="8" r="6.2"/><path d="M8 7.2v4M8 4.9v.1"/>',
+  stash: '<path d="M2.5 6.5h11v7h-11z"/><path d="M4 6.5l1.5-4h5l1.5 4"/>',
   fill: '<path d="M7 2.5l5.3 5.3-4.6 4.6a1.4 1.4 0 0 1-2 0L2.4 9.1a1.4 1.4 0 0 1 0-2z"/><path d="M2.6 8.1h9.4M13.4 10.4s1.1 1.5 1.1 2.3a1.1 1.1 0 0 1-2.2 0c0-.8 1.1-2.3 1.1-2.3z"/>',
   erase: '<path d="M9.4 2.9l3.7 3.7-6.5 6.5H3.9L2.3 11.5a1 1 0 0 1 0-1.4z"/><path d="M6.4 5.9l3.7 3.7M8.4 13.1h5.3"/>',
   warn: '<path d="M8 2.3l6.2 11H1.8z"/><path d="M8 6.6v3M8 11.6v.1"/>',
@@ -67,33 +85,38 @@ function render() {
   setDisplayUnits(ui.units);
   updateFabricDefs();
   renderTopbar();
-  renderSidebar();
   renderView();
+  renderSidebar();
   restorePendingFocus();
 }
+// Everything below the app bar: context bar, tool strip, document, panels, HUD and status bar.
 function renderView() {
   const V = Views[ui.view] || Views.block;
-  document.body.classList.toggle('no-side', !SIDEBAR_VIEWS.includes(ui.view));
-  // the second header row: the step's tools and view options
+  document.body.dataset.ws = curWs();
   renderToolbar();
-  const main = $('#main'), insp = $('#inspector');
-  preserveFocus(main, () => { main.innerHTML = viewBarHtml() + V.main(); });
+  renderDocTabs();
+  const main = $('#main');
+  preserveFocus(main, () => { main.innerHTML = V.main(); });
   V.afterMain?.(main);
   qzAttach(main);
-  preserveFocus(insp, () => { insp.innerHTML = V.inspector(); });
+  renderStatus();
+  dockRender();
+  renderHud();
   document.body.classList.toggle('grayscale', !!ui.grayscale);
 }
-// Main canvas only — for live previews while a control in a side panel is being dragged.
+// Main canvas only, for live previews while a control in a panel is being dragged.
 function renderMainOnly() {
   _Q = null;
   const V = Views[ui.view] || Views.block;
-  $('#main').innerHTML = viewBarHtml() + V.main();
+  $('#main').innerHTML = V.main();
   V.afterMain?.($('#main'));
   qzAttach($('#main'));
+  renderStatus();
+  renderHud();
 }
+// The panels (they only redraw what changed).
 function renderInspector() {
-  const V = Views[ui.view] || Views.block;
-  preserveFocus($('#inspector'), () => { $('#inspector').innerHTML = V.inspector(); });
+  dockRender();
   restorePendingFocus();
 }
 // A field commits when it loses focus — usually because the user clicked or tabbed into the next
@@ -157,15 +180,44 @@ function focusSig(el) {
 }
 
 function renderTopbar() {
-  $('#tabs').innerHTML = VIEW_LIST.map((v, i) =>
-    `<button role="tab" aria-selected="${tabOf(ui.view) === v.key}" data-act="view" data-arg="${v.key}" title="${v.label} (${i + 1})"><span class="n">${i + 1}</span><span class="lbl">${v.label}</span></button>`).join('');
-  $('#top-actions').innerHTML = `
-    <span class="save-dot hide-sm">${saveStatus.at && !saveStatus.ok ? 'Not saved' : ''}</span>
-    <button class="icon-btn mobile-only" data-act="fileMenu" aria-haspopup="menu">File</button>`;
+  $('#ws-tabs').innerHTML = VIEW_LIST.map((v, i) => {
+    const on = tabOf(ui.view) === v.key;
+    return `<button role="tab" id="ws-${v.key}" aria-selected="${on}" tabindex="${on ? 0 : -1}" data-act="view" data-arg="${v.key}" title="${v.label} (${i + 1})"><span class="lbl">${v.label}</span><span class="lbl-short">${v.short || v.label}</span></button>`;
+  }).join('');
   // the quilt's name, editable in place (it names saved files and the pattern)
   const slot = $('#doc-title-slot');
   if (document.activeElement?.id !== 'doc-title') slot.innerHTML = `<input id="doc-title" class="doc-title" type="text" data-bind="meta.title" value="${esc(doc.meta.title)}" aria-label="Quilt name" title="Quilt name" spellcheck="false">`;
+  renderSaveState();
   $('#menubar').innerHTML = menubarHtml();
+  for (const b of $$('#appbar [data-act="commandPalette"]')) b.innerHTML = `${icon('search')}<span class="bar-kbd">Ctrl K</span>`;
+  for (const b of $$('#appbar [data-act="toggleDrawer"]')) b.innerHTML = icon(b.dataset.arg === 'left' ? 'panelLeft' : 'panelRight');
+}
+function renderSaveState() {
+  const el = $('#save-state'); if (!el) return;
+  const bad = saveStatus.at && !saveStatus.ok;
+  el.className = `save-state${bad ? ' bad' : ''}`;
+  el.innerHTML = bad ? `${icon('warn', 14)}<span>Not saved</span>` : saveStatus.at ? `${icon('check', 14)}<span>Saved</span>` : '';
+  el.title = bad ? "This browser couldn't save the design. Download a project file to keep it." : 'Your design is saved in this browser';
+}
+// Document tabs above the canvas: the documents of this workspace.
+function renderDocTabs() {
+  const V = Views[ui.view] || Views.block, docs = V.docs?.() || [];
+  const el = $('#doctabs');
+  el.innerHTML = docs.map(d => `<button role="tab" class="doctab" aria-selected="${!!d.on}" ${d.act ? `data-act="${d.act}" data-arg="${esc(d.arg ?? '')}"` : 'tabindex="-1"'}>${d.icon ? icon(d.icon, 14) : ''}<span>${esc(d.label)}</span></button>`).join('') + `<span class="grow"></span>${V.docTools?.() || ''}`;
+  el.hidden = !docs.length;
+}
+// The status bar: the view's hint (moved in, so live updates keep working), then chips.
+function renderStatus() {
+  const bar = $('#statusbar');
+  if (!bar.querySelector('.sb-l')) bar.innerHTML = '<div class="sb-l"></div><div class="sb-r"></div>';
+  const left = bar.querySelector('.sb-l'), src = $('#main .status-bar');
+  left.innerHTML = '';
+  if (src) { src.classList.add('moved'); left.appendChild(src); }
+  const issues = typeof issueCount === 'function' ? issueCount() : 0;
+  bar.querySelector('.sb-r').innerHTML = `
+    ${issues ? `<button class="sb-chip warn" data-act="openPanel" data-arg="issues" title="Things to check">${icon('warn', 13)} ${plural(issues, 'issue')}</button>` : ''}
+    ${ui.view === 'block' ? `<button class="sb-chip" data-act="toggleSnap" aria-pressed="${!ui.snapOff}" title="Snap points to the grid">Snap ${ui.snapOff ? 'off' : 'on'}</button>` : ''}
+    <button class="sb-chip" data-act="setUnits" data-arg="${ui.units === 'cm' ? 'in' : 'cm'}" title="Switch units">${ui.units === 'cm' ? 'cm' : 'inches'}</button>`;
 }
 
 /* ---------- event delegation ---------- */
@@ -179,10 +231,20 @@ document.addEventListener('click', e => {
   const fn = Actions[el.dataset.act];
   if (!fn) { console.warn('no action', el.dataset.act); return; }
   if (el.tagName === 'A' || el.tagName === 'BUTTON') e.preventDefault();
+  labelNextCommit(el);
   fn(el.dataset.arg, el, e);
 });
+// A name for the undo step a control makes (History panel): its label, title or text.
+function labelNextCommit(el) {
+  const lab = el.closest?.('label, .f');
+  let t = el.getAttribute?.('aria-label') || (el.tagName === 'BUTTON' && el.textContent.trim()) || el.title || (lab && (lab.firstChild?.textContent || lab.textContent)) || '';
+  t = String(t).replace(/\s+/g, ' ').replace(/[…:]$/, '').trim().slice(0, 48);
+  nextCommitLabel = t || null;
+  setTimeout(() => { nextCommitLabel = null; }, 0);
+}
 document.addEventListener('change', e => {
   const el = e.target;
+  labelNextCommit(el);
   if (el.dataset.bind) return applyBinding(el);
   const name = el.dataset.change;
   if (name && Actions[name]) Actions[name](fieldValue(el), el, e);
@@ -208,7 +270,7 @@ function setPath(root, path, v) {
 function applyBinding(el) {
   const path = el.dataset.bind, type = el.dataset.type || 'text';
   let v = fieldValue(el);
-  if (type === 'len') v = parseLen(v);
+  if (type === 'len') v = parseLenExpr(v, getPath(path.startsWith('ui.') ? ui : doc, path.replace(/^ui\./, '')));
   else if (type === 'num' || type === 'int') v = parseFloat(v);
   if (type === 'len' || type === 'num' || type === 'int') {
     if (!Number.isFinite(v)) { toast('Please enter a number'); renderView(); return; }
@@ -225,7 +287,7 @@ function applyBinding(el) {
 // A length box. opts.step adds − and + buttons that change it by that much.
 function lenField(label, path, opts = {}) {
   const v = getPath(doc, path);
-  const input = `<input type="text" inputmode="decimal" data-bind="${path}" data-type="len" value="${esc(inputLen(v))}"${opts.min !== undefined ? ` data-min="${opts.min}"` : ''}${opts.max !== undefined ? ` data-max="${opts.max}"` : ''} title="Accepts 4.5, 4 1/2, 4½ or 11.4cm">`;
+  const input = `<input type="text" inputmode="decimal" data-bind="${path}" data-type="len" value="${esc(inputLen(v))}"${opts.min !== undefined ? ` data-min="${opts.min}"` : ''}${opts.max !== undefined ? ` data-max="${opts.max}"` : ''} title="Accepts 4.5, 4 1/2, 4½, 11.4cm, sums like 3 + 1/4, or +1/4, *2, 50%">`;
   if (!opts.step) return `<label class="f">${label}${opts.suffix ? ` <span class="muted">${opts.suffix}</span>` : ''}${input}</label>`;
   const arg = d => `${path}|${d}|${opts.min ?? 0}|${opts.max ?? 1e9}`;
   return `<div class="f">${label}<span class="stepper"><button class="btn small" data-act="lenStep" data-arg="${arg(-opts.step)}" aria-label="Less">−</button>${input}<button class="btn small" data-act="lenStep" data-arg="${arg(opts.step)}" aria-label="More">+</button></span></div>`;
@@ -252,33 +314,32 @@ function fabricPicker(current, act, opts = {}) {
   return h + '</div>';
 }
 // A panel section; click its heading to fold it. opts.closed: starts folded (rarely used settings).
+let _sectionsOpen = false;   // set while drawing a part on its own (it's always shown open)
 function section(title, body, opts = {}) {
   const key = opts.key || title;
-  const collapsed = key in ui.collapsed ? ui.collapsed[key] : !!opts.closed;
+  const collapsed = _sectionsOpen ? false : key in ui.collapsed ? ui.collapsed[key] : !!opts.closed;
   return `<section class="sec${collapsed ? ' closed' : ''}"><div class="sec-h" data-act="toggleSec" data-arg="${esc(key)}" data-def="${opts.closed ? 1 : 0}" role="button" tabindex="0" aria-expanded="${!collapsed}"><span class="tog">${icon(collapsed ? 'right' : 'down', 14)}</span><h3>${title}</h3>${opts.right ? `<span class="sec-r">${opts.right}</span>` : ''}</div>${collapsed ? '' : `<div class="sec-b">${body}</div>`}</section>`;
 }
-// The tool row: undo and redo, the step's tools and the options for the current tool or
-// selection, then the view switches and the next step.
+// The context bar (undo/redo, then the tool's options, the selection's commands and the step's
+// actions) and the tool strip.
 function renderToolbar() {
   const V = Views[ui.view] || Views.block;
-  const undoRedo = `<button class="tool icon-only" data-act="undo" ${undoStack.past.length ? '' : 'disabled'} aria-label="Undo" title="Undo (Ctrl+Z)">${icon('undo')}</button><button class="tool icon-only" data-act="redo" ${undoStack.future.length ? '' : 'disabled'} aria-label="Redo" title="Redo (Ctrl+Shift+Z)">${icon('redo')}</button><span class="sep"></span>`;
-  preserveFocus($('#tooltools'), () => {
-    $('#tooltools').innerHTML = undoRedo + (V.toolbar?.() || '');
+  const undoRedo = `<div class="cz cz-hist"><button class="tool icon-only" data-act="undo" ${undoStack.past.length ? '' : 'disabled'} aria-label="Undo" title="Undo (Ctrl+Z)">${icon('undo')}</button><button class="tool icon-only" data-act="redo" ${undoStack.future.length ? '' : 'disabled'} aria-label="Redo" title="Redo (Ctrl+Shift+Z)">${icon('redo')}</button></div>`;
+  preserveFocus($('#ctxbar'), () => { $('#ctxbar').innerHTML = undoRedo + `<div class="cz cz-opts">${V.options?.() || ''}</div>`; });
+  const T = V.tools?.();
+  const strip = $('#toolstrip');
+  strip.hidden = !T;
+  if (T) preserveFocus(strip, () => {
+    strip.innerHTML = T.list.map(t => `<button class="stool" data-act="${T.act}" data-arg="${t.key}" aria-pressed="${T.active === t.key}" title="${t.label} (${t.kb})" aria-label="${t.label}" aria-keyshortcuts="${t.kb}">${icon(t.icon, 20)}<span class="stool-l">${t.label}</span>${t.badge || ''}</button>`).join('');
   });
-}
-// The view bar along the top of the work area: how the canvas is shown, and zoom.
-function viewBarHtml() {
-  const html = viewToggles();
-  return html ? `<div class="viewbar" role="toolbar" aria-label="View">${html}</div>` : '';
 }
 // View switches shared by the canvas steps, at the right end of the tool row.
 function viewToggles() {
   const v = ui.view, t = (act, arg, label, on, title = '') => `<button class="tool toggle" data-act="${act}" ${arg ? `data-arg="${arg}"` : ''} aria-pressed="${!!on}"${title ? ` title="${title}"` : ''}>${label}</button>`;
   const value = t('toggleUi', 'grayscale', 'Value', ui.grayscale, 'Value view: greys only (G)');
-  if (v === 'block' && activeBlock()?.kind === 'drawn') return t('toggleSeamLines', '', 'Seam lines', ui.showSeamLines !== false) + t('toggleUi', 'showPieces', 'Cut pieces', ui.showPieces) + t('toggleUi', 'showCentre', 'Centre lines', ui.showCentre) + value
-    + `<span class="zoom-ctl"><button class="tool" data-act="edZoomBy" data-arg="out" title="Zoom out (−)" aria-label="Zoom out">−</button><button class="tool" id="ed-zoom" data-act="edZoomBy" data-arg="fit" title="Fit (0)">${Math.round(edZoom() * 100)}%</button><button class="tool" data-act="edZoomBy" data-arg="in" title="Zoom in (+)" aria-label="Zoom in">+</button></span>`;
+  if (v === 'block' && activeBlock()?.kind === 'drawn') return t('toggleSeamLines', '', 'Seam lines', ui.showSeamLines !== false) + t('toggleUi', 'showPieces', 'Cut pieces', ui.showPieces) + t('toggleUi', 'showCentre', 'Centre lines', ui.showCentre) + value;
   if (v === 'block') return t('toggleUi', 'showPieces', 'Cut pieces', ui.showPieces) + value;
-  const qz = `<span class="zoom-ctl"><button class="tool" data-act="qZoomBy" data-arg="out" title="Zoom out (−)" aria-label="Zoom out">−</button><button class="tool" id="q-zoom" data-act="qZoomBy" data-arg="fit" title="Fit (0)">${Math.round(qzZoom() * 100)}%</button><button class="tool" data-act="qZoomBy" data-arg="in" title="Zoom in (+)" aria-label="Zoom in">+</button></span>`;
+  const qz = '';   // zoom is its own HUD widget
   if (v === 'layout') return t('toggleUi', 'seamLines', 'Piece outlines', ui.seamLines) + value + t('toggleUi', 'showQuilting', 'Quilting', ui.showQuilting && doc.quilting.layers.length).replace('<button', `<button ${doc.quilting.layers.length ? '' : 'disabled'}`) + qz;
   if (v === 'quilting') return (ui.qSide === 'back' ? '' : t('toggleUi', 'qFade', 'Fade quilt', ui.qFade)) + value + qz;
   return '';
@@ -358,9 +419,11 @@ document.addEventListener('click', e => { if (_menuEl && _menuEl.contains(e.targ
 function toast(msg, ms = 2600) {
   const t = document.createElement('div');
   t.className = 'toast';
-  t.textContent = msg;
+  t.setAttribute('role', 'status');
+  const span = document.createElement('span'); span.textContent = msg; t.appendChild(span);
   $('#toast-root').appendChild(t);
   setTimeout(() => t.remove(), ms);
+  return t;
 }
 
 /* ---------- global actions ---------- */
@@ -487,39 +550,7 @@ Actions.help = () => openModal(`<h2>How it works</h2>
   </ol>
   <p class="hint">Your work autosaves in this browser. File, Save keeps named copies here; File, Download project file makes a file you can move to another computer.</p>
   <div class="actions"><button class="btn" data-act="shortcuts">Keyboard shortcuts</button><button class="btn primary" data-act="closeModal">Close</button></div>`);
-Actions.shortcuts = () => openModal(`<h2>Keyboard shortcuts</h2>
-  <div class="shortcuts">
-    <h4>Everywhere</h4>
-    <div><kbd>1</kbd>–<kbd>5</kbd> go to a step</div>
-    <div><kbd>Ctrl Z</kbd> undo · <kbd>Ctrl Shift Z</kbd> redo</div>
-    <div><kbd>Ctrl S</kbd> save · <kbd>Ctrl Shift S</kbd> save as</div>
-    <div><kbd>Ctrl O</kbd> open a saved quilt</div>
-    <div><kbd>Ctrl P</kbd> print pattern</div>
-    <div><kbd>G</kbd> value view</div>
-    <h4>Blocks</h4>
-    <div><kbd>V</kbd> paint · <kbd>S</kbd> select</div>
-    <div><kbd>P</kbd> shape · <kbd>R</kbd> rectangle</div>
-    <div><kbd>T</kbd> triangle · <kbd>C</kbd> quarter circle</div>
-    <div><kbd>K</kbd> seam · <kbd>L</kbd> text</div>
-    <div><kbd>Enter</kbd> finish a shape · <kbd>Backspace</kbd> remove last point</div>
-    <div><kbd>Esc</kbd> cancel · <kbd>Delete</kbd> delete selected</div>
-    <div>Arrow keys nudge the selection</div>
-    <div><kbd>Shift</kbd>-click or <kbd>Ctrl</kbd>-drag to select several</div>
-    <div><kbd>Ctrl D</kbd> duplicate · <kbd>Ctrl C</kbd> <kbd>Ctrl V</kbd> copy, paste</div>
-    <div><kbd>Q</kbd> <kbd>E</kbd> rotate · <kbd>X</kbd> <kbd>Y</kbd> mirror</div>
-    <div>Right-click a shape for more</div>
-    <div>Double-click a corner to remove it</div>
-    <div><kbd>Alt</kbd>-click an edge handle to add a corner</div>
-    <div><kbd>Shift</kbd> half-grid steps · <kbd>Alt</kbd>-click picks up a fabric</div>
-    <h4>Layout</h4>
-    <div><kbd>B</kbd> place · <kbd>V</kbd> paint · <kbd>S</kbd> select</div>
-    <div><kbd>R</kbd> turn · <kbd>F</kbd> mirror the selected block</div>
-    <div>Click or drag to place · right-click to clear</div>
-    <div>Click a placed block again to turn it</div>
-    <div><kbd>Shift</kbd> places it mirrored</div>
-    <div>Drag a block from Quilt blocks onto the quilt</div>
-  </div>
-  <div class="actions"><button class="btn primary" data-act="closeModal">Close</button></div>`);
+// The keyboard shortcut sheet lives in commands.js (one list for every binding).
 Actions.about = () => openModal(`<h2>Quilt Designer ${APP_VERSION}</h2>
   <p>Design blocks, lay out a quilt, work out fabric and cutting, plan the quilting and print the pattern. Free.</p>
   <p>Your project saves in this browser. To keep a copy or move it to another computer, use File, Save project file.</p>
@@ -563,3 +594,14 @@ function svgPoint(svg, e) {
   const pt = new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM().inverse());
   return [pt.x, pt.y];
 }
+
+// Split the HTML of a run of section() blocks into { key: html }, so one part can be shown alone.
+function sectionsByKey(html) {
+  const out = {};
+  for (const part of html.split(/(?=<section class="sec)/)) {
+    const m = part.match(/data-act="toggleSec" data-arg="([^"]+)"/);
+    if (m) out[m[1]] = (out[m[1]] || '') + part;
+  }
+  return out;
+}
+function openSections(fn) { _sectionsOpen = true; try { return fn(); } finally { _sectionsOpen = false; } }

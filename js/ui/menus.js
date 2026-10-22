@@ -1,12 +1,12 @@
-/* Menu bar and right-click menus. The bar has File, Edit, View, Insert and Help. Edit is
-   in sections: history, the step you're on, the quilt's defaults, and your preferences; once one is open, pointing at
-   another opens it, like a desktop app. Right-click menus give the same actions on things in the
-   panels (blocks, fabrics, quilting layers, fabric rows). */
+/* Menu bar and right-click menus. The bar has File, Edit, View, Select, Insert, Window and Help.
+   Edit is in sections: history, the workspace you're in, the quilt's defaults, and your
+   preferences. Window lists every panel. Once one menu is open, pointing at another opens it, like
+   a desktop app. Right-click menus give the same actions on things in the panels. */
 
 let _barMenu = null;            // which menu-bar menu is open
 
 // The menus never change name or position; Edit, View and Insert offer what applies to the step you're on.
-const BAR_MENUS = [['file', 'File'], ['edit', 'Edit'], ['view', 'View'], ['insert', 'Insert'], ['help', 'Help']];
+const BAR_MENUS = [['file', 'File'], ['edit', 'Edit'], ['view', 'View'], ['select', 'Select'], ['insert', 'Insert'], ['window', 'Window'], ['help', 'Help']];
 function menubarHtml() {
   return BAR_MENUS.map(([k, l]) => `<button data-act="menubar" data-arg="${k}" aria-haspopup="menu" aria-expanded="${_barMenu === k}">${l}</button>`).join('');
 }
@@ -102,7 +102,43 @@ const MENUS = {
     if (v === 'quilting') items.push('-', tick('Front', 'qSide', 'front', ui.qSide !== 'back'), tick('Back', 'qSide', 'back', ui.qSide === 'back'), tick('Fade quilt', 'toggleUi', 'qFade', ui.qFade));
     if (v === 'layout' || v === 'quilting') items.push(...qzItems);
     if (v === 'fabric' || v === 'cutting') items.push('-', tick('Shopping list', 'fabPane', 'shop', ui.fabPane !== 'cut'), tick('Cutting plan', 'fabPane', 'cut', ui.fabPane === 'cut'), tick('Cutting maps', 'toggleCutMaps', undefined, ui.cutDiagrams !== false));
+    // how the app looks (yours, not the quilt's)
+    items.push('-', { header: 'Theme' }, tick('Dark', 'setTheme', 'dark', prefs.theme !== 'light'), tick('Light', 'setTheme', 'light', prefs.theme === 'light'),
+      '-', { header: 'Around the quilt' }, ...Object.entries(SURROUNDS).map(([k, [l]]) => tick(l, 'setSurround', k, prefs.surround === k)),
+      '-', { header: 'Text size' }, tick('Standard', 'setDensity', 'standard', prefs.density !== 'large'), tick('Large', 'setDensity', 'large', prefs.density === 'large'),
+      '-', tick('Tool names in the tool strip', 'toggleToolLabels', undefined, prefs.toolLabels),
+      { label: 'Customise the canvas HUD…', act: 'hudCustomise' },
+      tick('Hide panels', 'toggleHidePanels', undefined, dockSession.hidden, 'Ctrl+.'));
     return items;
+  },
+  select: () => {
+    const b = activeBlock(), drawn = ui.view === 'block' && b?.kind === 'drawn', n = drawn ? selList().length : 0;
+    if (!drawn) return [{ label: 'Selecting shapes works in the Blocks workspace on a drawn block.', act: 'view', arg: 'block', disabled: ui.view === 'block' }];
+    return [
+      { label: 'All shapes', act: 'selAll', kb: 'Ctrl+A' },
+      { label: 'None', act: 'selNone', kb: 'Esc', disabled: !n },
+      { label: 'Invert', act: 'selInvert' },
+      '-',
+      { label: 'Same fabric as the selection', act: 'selSameFabric', disabled: !n },
+      { header: 'By fabric' },
+      ...uniq(b.regions.map(r => r.fab)).map(f => ({ label: `${swatchHtml(f === BG ? doc.layout.background : f, 14)} ${esc(f === BG ? 'Background' : fabricLabel(f))}`, act: 'selByFabric', arg: f })),
+    ];
+  },
+  window: () => {
+    const ws = curWs(), open = new Set(dockOpenIds(wsLayout()));
+    const ids = Object.keys(Panels).sort((a, b) => Panels[a].title.localeCompare(Panels[b].title));
+    const mine = ids.filter(id => panelBelongs(id, ws)), other = ids.filter(id => !panelBelongs(id, ws));
+    return [
+      { header: `Panels for ${wsLabel(ws)}` },
+      ...mine.map(id => tick(esc(Panels[id].title), 'togglePanel', id, open.has(id))),
+      ...(other.length ? [{ header: 'From other workspaces' }, ...other.map(id => tick(esc(Panels[id].title), 'togglePanel', id, open.has(id)))] : []),
+      '-',
+      tick('Hide panels', 'toggleHidePanels', undefined, dockSession.hidden, 'Ctrl+.'),
+      tick('Lock layout', 'toggleLockLayout', undefined, prefs.lockLayout),
+      '-',
+      { label: `Reset ${wsLabel(ws)} layout`, act: 'resetLayout', arg: 'ws' },
+      { label: 'Reset all layouts', act: 'resetLayout', arg: 'all' },
+    ];
   },
   insert: () => [
     { header: 'Blocks' },
@@ -133,7 +169,7 @@ Actions.toggleCutMaps = () => Actions.cutDiagrams(ui.cutDiagrams === false);
 // Insert commands land you where the new thing is
 Actions.insertBorder = () => { Actions.addBorder(); if (ui.view !== 'layout') Actions.view('layout'); };
 Actions.insertPanel = () => { Actions.addPanel(); if (ui.view !== 'layout') Actions.view('layout'); };
-Actions.insertQuilting = () => { if (ui.view !== 'quilting') Actions.view('quilting'); setTimeout(() => { const b = $('[data-act="addLayerMenu"]'); if (b) Actions.addLayerMenu(null, b); }, 30); };
+Actions.insertQuilting = () => { if (ui.view !== 'quilting') Actions.view('quilting'); setTimeout(() => { const b = $('#ctxbar [data-act="addLayerMenu"]'); if (b) Actions.addLayerMenu(null, b); }, 30); };
 Actions.qShowAll = on => { for (const L of doc.quilting.layers) L.visible = !!on; commit(); };
 // A stash piece for any fabric, from the menu bar: pick the fabric first.
 Actions.stashPicker = () => openModal(`<h2>Add a stash piece</h2>
@@ -150,7 +186,8 @@ Actions.seamSettings = () => openModal(`<h2>Seams and appliqué</h2>${seamSettin
 Actions.blockRename = id => {
   if (!doc.blocks[id]) return;
   Actions.blockOpen(id);
-  setTimeout(() => { const f = $('#inspector [data-change="blockName"]'); f?.focus(); f?.select(); }, 30);
+  Actions.openPanel('props');
+  setTimeout(() => { const f = $('[data-panel="props"] [data-change="blockName"]'); f?.focus(); f?.select(); }, 30);
 };
 
 /* ---------- right-click menus ---------- */
@@ -160,7 +197,7 @@ Actions.ctxBlock = arg => { const [id, act] = arg.split('|'); onBlock(id, act); 
 Actions.blockOpen = id => { ui.view = 'block'; Actions.pickBlock(id); };
 Actions.blockPlace = id => { ui.placeBlock = id; ui.layoutTool = 'place'; Actions.view('layout'); };
 const CONTEXT_MENUS = [
-  ['#sidebar .blk[data-act="pickBlock"]', el => {
+  ['[data-panel="blocks"] .blk[data-act="pickBlock"]', el => {
     const id = el.dataset.arg, b = doc.blocks[id];
     return [
       { header: esc(b.name) },
@@ -174,7 +211,7 @@ const CONTEXT_MENUS = [
       { label: 'Delete…', act: 'ctxBlock', arg: `${id}|blockDelete`, danger: true },
     ];
   }],
-  ['#sidebar .fab-chip[data-act="pickFabric"]:not(.bgpaint)', el => {
+  ['[data-panel="fabrics"] .fab-chip[data-act="pickFabric"]:not(.bgpaint)', el => {
     const id = el.dataset.arg, isBg = id === doc.layout.background;
     return [
       { header: esc(fabricLabel(id)) },
@@ -191,7 +228,7 @@ const CONTEXT_MENUS = [
     { label: 'Add to this quilt', act: 'useLibrary', arg: el.dataset.arg },
     { label: 'Add and place in the layout', act: 'useLibraryPlace', arg: el.dataset.arg },
   ]],
-  ['#inspector .sec.layer .sec-h', el => {
+  ['[data-panel] .part-row.layer', el => {
     const i = doc.quilting.layers.findIndex(L => L.id === el.dataset.arg), L = doc.quilting.layers[i];
     if (!L) return null;
     return [
@@ -252,3 +289,9 @@ document.addEventListener('keydown', e => {
     Actions.menubar(next.dataset.arg, next);
   }
 }, true);
+
+// Select menu (Blocks)
+Actions.selNone = () => { setSel([]); refreshEditor(); renderView(); };
+Actions.selInvert = () => { const b = activeBlock(), s = new Set(selList()); if (ui.tool !== 'select') ui.tool = 'select'; setSel(b.regions.map((_, i) => i).filter(i => !s.has(i))); renderView(); };
+Actions.selSameFabric = () => { const b = activeBlock(), fabs = new Set(selList().map(i => resolveFab(b.regions[i].fab))); setSel(b.regions.map((r, i) => fabs.has(resolveFab(r.fab)) ? i : -1).filter(i => i >= 0)); renderView(); };
+Actions.selByFabric = f => { const b = activeBlock(); if (ui.tool !== 'select') ui.tool = 'select'; setSel(b.regions.map((r, i) => r.fab === f ? i : -1).filter(i => i >= 0)); renderView(); };

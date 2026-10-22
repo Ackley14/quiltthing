@@ -18,10 +18,13 @@ function layoutTool() {
 }
 
 Views.layout = {
-  toolbar() {
-    const tool = layoutTool(), L = doc.layout, hexMode = L.mode === 'tess';
-    const tools = LAYOUT_TOOLS.filter(t => !(hexMode && t.key === 'place' && !tessCanPlace()))
-      .map(t => `<button class="tool" data-act="layoutTool" data-arg="${t.key}" aria-pressed="${tool === t.key}" title="${t.label} (${t.kb})">${icon(t.icon)} ${t.label}</button>`).join('');
+  tools() {
+    const hexMode = doc.layout.mode === 'tess';
+    return { act: 'layoutTool', active: layoutTool(), list: LAYOUT_TOOLS.filter(t => !(hexMode && t.key === 'place' && !tessCanPlace())) };
+  },
+  docs() { return [{ label: `${doc.meta.title || 'Quilt'} · layout`, on: true, icon: 'quilt' }]; },
+  options() {
+    const tool = layoutTool(), L = doc.layout;
     let opts = '';
     if (tool === 'place') {
       const b = placeBlock(), hexB = b && isHexBlock(b), steps = hexB ? 6 : 4;
@@ -40,7 +43,7 @@ Views.layout = {
           ${pb && pb.id !== c.b ? `<button class="tool" data-act="cellReplace">Replace with ${esc(pb.name)}</button>` : ''}<button class="tool danger" data-act="cellClear">Clear</button>`
         : `<span class="tb-label">${c?.fab ? `Plain ${esc(fabricLabel(c.fab))}` : 'Empty position'}</span>${pb && cellOk ? `<button class="tool" data-act="cellReplace">Put ${esc(pb.name)} here</button>` : ''}${c?.fab ? '<button class="tool danger" data-act="cellClear">Clear</button>' : ''}`;
     } else opts = '<span class="tb-label">Click a position to change it</span>';
-    return `${tools}<span class="sep"></span>${opts}`;
+    return opts;
   },
   main() {
     const Q = Qnow(), tool = layoutTool();
@@ -75,6 +78,7 @@ Views.layout = {
       commit();
     });
   },
+  props() { return layoutProps(); },
   inspector() { return layoutInspector(); },
   key(e) {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -574,4 +578,64 @@ function layoutInspector() {
 
   h += section('Background', `${fabricPicker(L.background, 'bgFab')}<p class="hint">Block pieces painted BG use this fabric.</p>`, { key: 'bgfab', closed: true });
   return h;
+}
+
+/* ---------- the Quilt panel: the parts of the quilt; the selected part opens in Properties ---------- */
+function quiltParts() {
+  const L = doc.layout, Q = Qnow(), t = L.tess;
+  const mode = { grid: 'Straight set', onpoint: 'On point', tess: 'Tessellation' }[L.mode];
+  const size = L.mode === 'grid' ? `${L.grid.rows} × ${L.grid.cols} blocks of ${fmtLen(L.blockSize)}` : L.mode === 'onpoint' ? `${L.onpoint.rows} × ${L.onpoint.cols} on point, ${fmtLen(L.blockSize)}` : `${tessShape(t.shape).label}, ${fmtLen(t.size)}`;
+  const parts = [{ key: 'setting', label: 'Setting & size', note: `${mode} · ${size}`, icon: 'quilt', keys: ['setting', 'size'] }];
+  if (L.mode === 'tess') {
+    parts.push({ key: 'shape', label: 'Tessellation', note: `${fmtSize(...tessSize(t))} centre · ${t.edge === 'trim' ? 'trimmed edges' : 'filled edges'}`, icon: 'blocks', keys: ['shape', 'cubes'] });
+    parts.push({ key: 'tessfill', label: 'Fill patterns', note: `${paintSet().length} fabrics`, icon: 'palette', keys: ['tessfill'] });
+  }
+  if (L.mode === 'grid') { const s = L.grid.sashing; parts.push({ key: 'sashing', label: 'Sashing', note: s.width > 0 ? `${fmtLen(s.width)} wide${s.cornerstones ? ', cornerstones' : ''}` : 'none', icon: 'quilt', keys: ['sashing'], fab: s.width > 0 ? s.fabric : null }); }
+  const pn = (L.panels || []).length;
+  parts.push({ key: 'panels', label: 'Inset panels', note: pn ? plural(pn, 'panel') : 'none', icon: 'centre', keys: ['panels'] });
+  parts.push({ key: 'borders', label: 'Borders', note: L.borders.length ? L.borders.map(b => fmtLen(b.width)).join(' + ') : 'none', icon: 'panelLeft', keys: ['borders'], fab: L.borders[0]?.fabric });
+  parts.push({ key: 'binding', label: 'Binding', note: L.binding.fabric ? `${fmtLen(L.binding.width)} strips` : 'none', icon: 'quilt', keys: ['binding'], fab: L.binding.fabric });
+  parts.push({ key: 'bgfab', label: 'Background', note: fabricLabel(L.background), icon: 'swatch', keys: ['bgfab'], fab: L.background });
+  return parts;
+}
+function quiltPanel() {
+  const parts = quiltParts(), cur = parts.some(p => p.key === ui.quiltPart) ? ui.quiltPart : 'setting', Q = Qnow();
+  return `<div class="panel-tools"><span class="pt-note"><b>${fmtSize(Q.W, Q.H)}</b> finished</span><span class="grow"></span><button class="btn small" data-act="quiltAddMenu" aria-haspopup="menu">${icon('plus', 14)} Add ${icon('down', 12)}</button></div>
+    <div class="part-list" role="listbox" aria-label="Parts of the quilt">${parts.map(p => `<div class="part-row" role="option" tabindex="0" aria-selected="${p.key === cur}" data-act="quiltPart" data-arg="${p.key}">
+      <span class="part-ic">${p.fab ? swatchHtml(p.fab, 18) : icon(p.icon, 16)}</span><span class="part-t"><b>${esc(p.label)}</b><span class="muted">${esc(p.note)}</span></span></div>`).join('')}</div>`;
+}
+Actions.quiltPart = k => { ui.quiltPart = k; ui.selCell = null; saveUi(); renderToolbar(); renderInspector(); };
+Actions.quiltAddMenu = (a, el) => openMenu(el, [
+  { label: 'Border', act: 'addBorder' },
+  { label: 'Inset panel', act: 'addPanel' },
+  ...(doc.layout.mode === 'grid' && !(doc.layout.grid.sashing.width > 0) ? [{ label: 'Sashing', act: 'addSashing' }] : []),
+  ...(doc.layout.binding.fabric ? [] : [{ label: 'Binding', act: 'bindingFab', arg: doc.fabrics[1]?.id || doc.fabrics[0].id }]),
+]);
+Actions.addSashing = () => { doc.layout.grid.sashing.width = 1.5; ui.quiltPart = 'sashing'; commit(); };
+// Properties in Layout: the selected position first, then the part chosen in the Quilt panel.
+function layoutProps() {
+  const parts = quiltParts(), cur = parts.find(p => p.key === ui.quiltPart) || parts[0];
+  const all = openSections(() => sectionsByKey(layoutInspector()));
+  let h = '';
+  if (ui.selCell && layoutTool() === 'select') h += positionSection();
+  h += `<div class="props-head">${icon(cur.icon, 14)}<b>${esc(cur.label)}</b><span class="grow"></span>${!dockFind(wsLayout(), 'quilt') ? '<button class="btn small quiet" data-act="openPanel" data-arg="quilt">All parts…</button>' : ''}</div>`;
+  h += cur.keys.map(k => all[k] || '').join('');
+  // the extra Layout settings (partial blocks) sit with the panels part today; show them with setting too
+  return h;
+}
+// The position selected with the Select tool: which block, its turn, and its commands.
+function positionSection() {
+  const key = ui.selCell, c = cellContent(key), pb = placeBlock(), hexStep = key[0] === 't';
+  const body = c?.b ? `<div class="pos-row">${blockThumb(doc.blocks[c.b], 48)}<div><b>${esc(doc.blocks[c.b].name)}</b><br><span class="muted">${(c.r || 0) * (hexStep ? 60 : 90)}°${c.f ? ' · mirrored' : ''}</span></div></div>
+      <div class="btn-row"><button class="btn small" data-act="cellRotate">Rotate ${hexStep ? 60 : 90}°</button><button class="btn small" data-act="cellFlip">Flip</button><button class="btn small" data-act="cellEdit">Edit block</button>
+      ${pb && pb.id !== c.b ? `<button class="btn small" data-act="cellReplace">Replace with ${esc(pb.name)}</button>` : ''}<button class="btn small danger" data-act="cellClear">Clear</button></div>`
+    : `<p class="hint">${c?.fab ? `Plain ${esc(fabricLabel(c.fab))}` : 'Empty position'}</p><div class="btn-row">${pb ? `<button class="btn small" data-act="cellReplace">Put ${esc(pb.name)} here</button>` : ''}${c?.fab ? '<button class="btn small danger" data-act="cellClear">Clear</button>' : ''}</div>`;
+  return section('Selected position', body, { key: 'position' });
+}
+registerPanel('quilt', { title: 'Quilt', short: 'Quilt', icon: 'quilt', ws: ['layout'], render: quiltPanel });
+
+// adding a part opens it in Properties
+for (const [act, part] of [['addBorder', 'borders'], ['addPanel', 'panels']]) {
+  const run = Actions[act];
+  Actions[act] = (...a) => { ui.quiltPart = part; return run(...a); };
 }

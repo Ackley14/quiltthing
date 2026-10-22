@@ -26,13 +26,12 @@ function seamSettingsHtml() {
 }
 
 Views.fabric = {
-  toolbar() {
-    const cut = ui.fabPane === 'cut';
+  docs() { const cut = ui.fabPane === 'cut'; return [{ label: 'Shopping list', on: !cut, act: 'fabPane', arg: 'shop', icon: 'list' }, { label: 'Cutting plan', on: cut, act: 'fabPane', arg: 'cut', icon: 'cut' }]; },
+  docTools() { return ui.fabPane === 'cut' ? `<button class="tool toggle small" data-act="toggleCutMaps" aria-pressed="${ui.cutDiagrams !== false}">Cutting maps</button>` : ''; },
+  options() {
     const Q = Qnow(), plan = cuttingPlan(Q), pre = precutSummary(plan.fabrics);
-    return `<div class="seg" role="group" aria-label="Show"><button aria-pressed="${!cut}" data-act="fabPane" data-arg="shop">Shopping list</button><button aria-pressed="${cut}" data-act="fabPane" data-arg="cut">Cutting plan</button></div>
-      ${cut ? `<button class="tool toggle" data-act="toggleCutMaps" aria-pressed="${ui.cutDiagrams !== false}">Cutting maps</button>` : ''}
-      <button class="tool" data-act="fabricDefaults">Default fabric…</button><button class="tool" data-act="seamSettings">Seams &amp; appliqué…</button>
-      <span class="sep"></span><span class="tb-label">${fmtSize(Q.W, Q.H)} · buy <b>${fmtYards(sum(plan.fabrics, f => f.buyIn) + plan.backing.buyIn)}</b>${pre ? ` + ${esc(pre)}` : ''} · ${plural(plan.totalPieces, 'piece')}</span>`;
+    return `<span class="tb-label">${fmtSize(Q.W, Q.H)} · buy <b>${fmtYards(sum(plan.fabrics, f => f.buyIn) + plan.backing.buyIn)}</b>${pre ? ` + ${esc(pre)}` : ''} · ${plural(plan.totalPieces, 'piece')}</span>
+`;
   },
   main() {
     const Q = Qnow(), plan = cuttingPlan(Q);
@@ -46,23 +45,27 @@ Views.fabric = {
     return h + (cut ? cuttingPlanHtml(plan) : shoppingListHtml(plan)) + '</div>';
   },
   afterMain(el) { if (ui.fabPane === 'cut') cuttingAfterMain(el); },
-  inspector() {
-    let h = section('Backing', backingPanelHtml(), { key: 'backing' });
-    let rows = doc.stash.filter(s => !s.backing).map(s => `<div class="list-item"><div class="stash-row">
-        <input type="text" value="${esc(s.label)}" data-change="stashLabel" data-arg="${s.id}" aria-label="Name">
-        <input type="text" inputmode="decimal" value="${esc(inputLen(s.w))}" data-change="stashW" data-arg="${s.id}" aria-label="Width" title="Width">
-        <input type="text" inputmode="decimal" value="${esc(inputLen(s.h))}" data-change="stashH" data-arg="${s.id}" aria-label="Length" title="Length">
-        <button class="icon-btn sm" data-act="stashDel" data-arg="${s.id}" aria-label="Remove" title="Remove">${icon('x', 14)}</button>
-        <div class="sel-fab">${swatchHtml(s.fabric, 18)}<select data-change="stashFab" data-arg="${s.id}" style="flex:1">${doc.fabrics.map(f => `<option value="${f.id}" ${f.id === s.fabric ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select></div></div></div>`).join('');
-    const n = doc.stash.filter(s => !s.backing).length;
-    h += section(`Stash${n ? ` <span class="muted">${n}</span>` : ''}`, `<p class="hint">Fabric you already have. It's cut first, so you only buy the rest.</p>
-      ${rows ? `<div class="stash-row hdr"><span>Name</span><span>Width</span><span>Length</span><span></span></div>${rows}` : ''}
-      <div class="btn-row"><button class="btn small" data-act="stashMenu" data-arg="${stashFabric()}">${icon('plus', 14)} Add a piece</button></div>`, { key: 'stash', closed: !n });
-    const c = doc.cutting;
-
-    return h;
+  // Properties in Fabric & cutting: how fabric is bought and how pieces are sewn (the two
+  // settings dialogs, always at hand here); Stash and Backing are panels of their own.
+  props() {
+    return `${section('Default fabric', fabricDefaultsHtml(), { key: 'fabdefaults' })}${section('Seams and appliqué', seamSettingsHtml(), { key: 'sewing' })}`;
   },
+  inspector() { return Views.fabric.props(); },
 };
+function stashPanel() {
+  const rows = doc.stash.filter(s => !s.backing).map(s => `<div class="list-item"><div class="stash-row">
+      <input type="text" value="${esc(s.label)}" data-change="stashLabel" data-arg="${s.id}" aria-label="Name">
+      <input type="text" inputmode="decimal" value="${esc(inputLen(s.w))}" data-change="stashW" data-arg="${s.id}" aria-label="Width" title="Width">
+      <input type="text" inputmode="decimal" value="${esc(inputLen(s.h))}" data-change="stashH" data-arg="${s.id}" aria-label="Length" title="Length">
+      <button class="icon-btn sm" data-act="stashDel" data-arg="${s.id}" aria-label="Remove" title="Remove">${icon('x', 14)}</button>
+      <div class="sel-fab">${swatchHtml(s.fabric, 18)}<select data-change="stashFab" data-arg="${s.id}" style="flex:1" aria-label="Fabric">${doc.fabrics.map(f => `<option value="${f.id}" ${f.id === s.fabric ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select></div></div></div>`).join('');
+  const n = doc.stash.filter(s => !s.backing).length;
+  return `<div class="panel-tools"><span class="pt-note">${n ? plural(n, 'piece') : 'Nothing yet'}</span><span class="grow"></span><button class="btn small" data-act="stashMenu" data-arg="${stashFabric()}">${icon('plus', 14)} Add a piece</button></div>
+    <div class="pad"><p class="hint">Fabric you already have. It's cut first, so you only buy the rest.</p>
+    ${rows ? `<div class="stash-row hdr"><span>Name</span><span>Width</span><span>Length</span><span></span></div>${rows}` : ''}</div>`;
+}
+registerPanel('stash', { title: 'Stash', short: 'Stash', icon: 'stash', ws: ['fabric'], render: stashPanel });
+registerPanel('backing', { title: 'Backing', short: 'Backing', icon: 'layers', ws: ['fabric'], render: () => `<div class="pad">${backingPanelHtml()}</div>` });
 Actions.fabPane = v => { ui.fabPane = v === 'cut' ? 'cut' : 'shop'; saveUi(); render(); };
 
 function shoppingListHtml(plan) {
