@@ -18,7 +18,22 @@ Everything runs in the browser and nothing is uploaded. The design you're workin
 
 Two sample quilts are built in (File menu): **Midnight Bullseye**, a straight set with a curved-pieced bullseye ringed by stars, and **Hexie Bloom**, a hexagon tessellation with hexie star and cube blocks around a framed lettering panel.
 
-The window works like a desktop design app: a menu bar (File, Edit, View, Insert, Help; Edit is split into history, the current step, quilt defaults such as the default fabric and seam allowance, and preferences such as units and snap) with the quilt's name; a tool row with the five steps, undo, the step's tools and the options for the current tool or selection; and view controls along the top of the work area. Right-click menus on blocks, fabrics, quilting layers and fabric rows give quick access, and fabrics can be dragged onto block pieces and plain squares. Tessellations can be nudged across and down on the sheet.
+### The interface (version 4)
+
+The window works like a desktop design program such as Photoshop or GIMP, with a dark theme by default (light is one click away):
+
+- **App bar:** menus (File, Edit, View, Select, Insert, Window, Help), the five **workspaces** (Blocks, Layout, Quilting, Fabric & cutting, Pattern; keys 1–5), the quilt's name and command search (**Ctrl+K** finds any command, panel, block or fabric).
+- **Tool strip** down the left, with tool names, plus **Hand** and **Zoom** on every canvas. The **context bar** above the canvas shows the current tool's options, the selection's commands, or the workspace's main actions.
+- **Dockable panels** around the canvas. Each workspace has its own arrangement: Fabrics, Blocks, Shapes, a **Properties** panel that shows whatever is selected, the **Quilt** list of the quilt's parts (setting, sashing, inset panels, borders, binding, background), quilting **Layers**, Stash, Backing, pattern **Pages**, and History, Issues, Library, Palettes, Fabric Properties and Navigator from the Window menu. Panels are tabbed in groups, and can be resized, folded, collapsed to icon strips, dragged to another dock or into their own floating window, or closed. Every move is also in each panel's ⋯ menu. **Window** reopens any panel, resets a workspace's layout, locks the layout or hides all panels (**Ctrl+.**).
+- **Canvas HUD:** an info line, the view switches, zoom, the Value-view reminder, the selection's size and the seam warning, each placed in any corner or hidden, per workspace (View ▸ Customise the canvas HUD). Optional rulers measure from the block's or the quilt's corner.
+- **Status bar:** tool hints, the pointer position, Snap and Units switches, and an Issues count that opens the Issues panel.
+- **Length boxes** accept quilting notation (`2-1/2`, `3 1/2`, `3½`), centimetres, sums (`3 1/2 + 1/4`) and changes to the current value (`+1/4`, `*2`, `50%`). Arrow keys step them.
+- **History** lists the undo steps by name; click one to go back to it.
+- **Text size** Standard or Large, a choice of colour around the quilt (mid grey by default, so fabric colours are judged fairly), keyboard access throughout (F6 moves between regions), and layouts for small screens.
+
+The design, its history, tracing pictures, palettes and saved quilts are stored as in version 3, so both versions open the same work. Version 4's own settings (layouts and preferences) live in separate `quiltthing.v4.*` storage.
+
+Right-click menus on blocks, fabrics, quilting layers, panel tabs and fabric rows give quick access, and fabrics can be dragged onto block pieces and plain squares. Tessellations can be nudged across and down on the sheet.
 
 ## Running it
 
@@ -36,7 +51,13 @@ fonts/                lettering fonts (SIL Open Font License), base64-wrapped so
 js/core/              units & formatting, colour maths, geometry
 js/model/             project state & undo, fabrics, blocks, block library,
                       layout engine, cutting & yardage, backing, quilting lines, printable pattern
-js/ui/                one file per view, plus the shell and sidebar
+js/ui/                one file per workspace (blockView, layoutView, quiltingView,
+                      fabricView/cuttingView, patternView), the shell (render loop,
+                      events, menus, dialogs), the dock (dockModel.js: layout data,
+                      Node-tested; dock.js: drawing and dragging), panels.js and
+                      globalPanels.js (the panel registry), hud.js, rulers.js,
+                      commands.js (Ctrl+K and the shortcut sheet), prefs.js (theme,
+                      text size) and extras.js (welcome, tour, keyboard helpers)
 js/app.js             start-up and the sample quilt
 ```
 
