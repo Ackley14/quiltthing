@@ -67,7 +67,7 @@ function recipeFor(cls, sa, opts = {}) {
       return { key: `qst:${q}`, method: 'strip', w: q, sub: q, yield: 4, cut: 'cross', unitName: 'square', unitLabel: `${fmtLen(q, 'up')} square`, makes: 'quarter-square triangle' };
     }
     case 'rtri': {
-      const t = inflate([[0, 0], [cls.a, 0], [0, cls.b]], sa), bb = bounds(t);
+      const t = seamOutline([[0, 0], [cls.a, 0], [0, cls.b]], sa, Infinity), bb = bounds(t);
       const a = ceilEighth(bb.w), b = ceilEighth(bb.h);
       return { key: `rtri:${a}x${b}:${cls.hand}`, method: 'strip', w: Math.min(a, b), sub: Math.max(a, b), yield: 2, cut: cls.hand === 'R' ? 'diagR' : 'diagL',
         unitName: 'rectangle', unitLabel: `${fmtSize(a, b, 'up')} rectangle`, makes: 'right triangle' };
@@ -97,7 +97,7 @@ function recipeFor(cls, sa, opts = {}) {
     default: {
       // packing uses the tightest rotation; the printed template keeps the in-quilt
       // orientation so its grain arrow (horizontal) matches the block's straight grain
-      const cutOutline = inflate(cls.pts, sa);
+      const cutOutline = seamOutline(cls.pts, sa);
       const mar = minAreaRect(cutOutline);
       const bb = bounds(cls.pts);
       const app = opts.applique;
@@ -117,7 +117,7 @@ function templateGeom(recipe) {
   const sa = recipe.applique ? (fusible ? 0 : 0.1875) : doc.cutting.seam;
   let pts = recipe.outline, holes = recipe.holes || [];
   if (fusible) { const bb = bounds(pts), ax = bb.x + bb.w / 2; pts = mirrorPolyX(pts, ax); holes = holes.map(h => mirrorPolyX(h, ax)); }
-  return { sa, fusible, pts, holes, cut: inflate(pts, sa), cutHoles: holes.map(h => inflate(h, -sa)) };
+  return { sa, fusible, pts, holes, cut: seamOutline(pts, sa), cutHoles: holes.map(h => inflate(h, -sa)) };
 }
 function recipeStitchMain(rect, sa) {
   return recipeFor({ shape: 'rect', w: rect.w, h: rect.h }, sa);
@@ -471,9 +471,9 @@ function trapShape(pts, ia, sa) {
     return [at(-sa), at(H + sa)];
   };
   [t0, b0] = leg(t0, b0, -1); [t1, b1] = leg(t1, b1, 1);
-  const x0 = Math.min(t0, b0), r4 = v => round(v, 4);
+  const x0 = Math.min(t0, b0);
   t0 -= x0; t1 -= x0; b0 -= x0; b1 -= x0;
-  return { t0: r4(t0), t1: r4(t1), b0: r4(b0), b1: r4(b1), h: r4(H + 2 * sa), skew: t0 < b0 - 1e-3 || t1 > b1 + 1e-3 };
+  return { t0, t1, b0, b1, h: H + 2 * sa, skew: t0 < b0 - 1e-3 || t1 > b1 + 1e-3 };
 }
 // the pieces along one strip, in strip units (x along the strip from 0, y across it). Alternating
 // can start with the piece either way up; whichever needs less strip is used.

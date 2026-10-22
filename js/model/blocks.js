@@ -176,7 +176,7 @@ function blockPieces(block, w, h, depth = 0) {
   return pieces;
 }
 function makePiece(pts, holes, fab, app, curved) {
-  const cls = classifyPiece(pts, { curved });
+  const cls = classifyPiece(curved ? pts : dropSpikes(pts), { curved });
   if (holes.length) cls.shape = 'holed';
   return { pts: cls.pts, holes, fab, app: !!app, curved: !!curved, cls, bb: bounds(cls.pts) };
 }
