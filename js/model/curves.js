@@ -88,7 +88,7 @@ function tipAngles(p) {
   return out;
 }
 function segDist(p, a, b) {
-  const dx = b[0] - a[0], dy = b[1] - a[1], q = dx * dx + dy * dy, t = q ? clamp(((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / q, 0, 1) : 0;
+  const dx = b[0] - a[0], dy = b[1] - a[1], q = dx * dx + dy * dy, t = q ? Math.min(1, Math.max(0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / q)) : 0;
   return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
 }
 function ringDist(p, ring, closed = true) {
@@ -122,15 +122,25 @@ function classifyCurvedUnit(node, fabs) {
   const onOut = q => ringDist(q, node.region) < tol;
   const bbs = ps.map(p => p.bb || bounds(p.pts));
   const near = (q, j) => { const b = bbs[j]; return q[0] > b.minX - tol && q[0] < b.maxX + tol && q[1] > b.minY - tol && q[1] < b.maxY + tol && [ps[j].pts, ...ps[j].holes].some(h => onRing(q, h, tol)); };
+  // pieces sharing a boundary mostly share its points: find the neighbour by edge first
+  const vk = q => Math.round(q[0] / tol) * 1e6 + Math.round(q[1] / tol), edges = new Map();
+  const edge = (a, b) => { const x = vk(a), y = vk(b); return [Math.min(x, y), Math.max(x, y)]; };
+  ps.forEach((p, pi) => [p.pts, ...p.holes].forEach(ring => ring.forEach((a, i) => {
+    const [x, y] = edge(a, ring[(i + 1) % ring.length]);
+    if (!edges.has(x)) edges.set(x, new Map());
+    const m = edges.get(x); m.set(y, [...(m.get(y) || []), pi]);
+  })));
   // every side of every piece: a stretch of its outline along the unit's edge (nb −1) or along one
   // other piece (nb = its index; −2 = nothing there)
   const sides = [];
   ps.forEach((p, pi) => [p.pts, ...p.holes].forEach((ring, hi) => {
-    const n = ring.length, turns = ringTurns(ring).map(x => (hi ? -x : x));
+    const n = ring.length, turns = ringTurns(ring).map(x => (hi ? -x : x)), out = ring.map(onOut);
     let last = -1;
     const nb = ring.map((a, i) => {
       const b = ring[(i + 1) % n], m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-      if (onOut(a) && onOut(b) && onOut(m)) return -1;
+      if (out[i] && out[(i + 1) % n] && onOut(m)) return -1;
+      const [x, y] = edge(a, b), shared = edges.get(x).get(y).find(j => j !== pi);
+      if (shared !== undefined) return (last = shared);
       if (last >= 0 && near(m, last)) return last;
       const j = ps.findIndex((_, k) => k !== pi && near(m, k));
       return (last = j < 0 ? -2 : j);
@@ -241,18 +251,21 @@ function curvesAnalyse(block, an, all) {
 // The drawn shapes behind a unit that can't be sewn: curved, pieced (not appliqué), and showing in it.
 function curveRegionsFor(block, leaf, size) {
   if (block.kind !== 'drawn') return [];
-  const k = size / block.n, ring = i => toPC(regionRing(block.regions[i], k, k));
+  const k = size / block.n, rings = block.regions.map(r => (r.pts.length < 2 ? null : regionRing(r, k, k))), bbs = rings.map(r => r && bounds(r));
+  const meet = (a, b) => a.minX < b.maxX && b.minX < a.maxX && a.minY < b.maxY && b.minY < a.maxY;
   return block.regions.map((_, i) => i).filter(i => {
     const r = block.regions[i];
-    if (r.app || r.pts.length < 2 || !r.b?.some(x => x)) return false;
-    const above = block.regions.map((_, j) => j).filter(j => j > i && !block.regions[j].app && block.regions[j].pts.length >= 2).map(ring);
-    let mp = pcSafe('intersection', ring(i), toPC(leaf.region));
+    if (r.app || !rings[i] || !r.b?.some(x => x) || !meet(bbs[i], leaf.rect)) return false;
+    const above = block.regions.map((_, j) => j).filter(j => j > i && !block.regions[j].app && rings[j] && meet(bbs[i], bbs[j])).map(j => toPC(rings[j]));
+    let mp = pcSafe('intersection', toPC(rings[i]), toPC(leaf.region));
     if (mp?.length && above.length) mp = pcSafe('difference', mp, ...above);
     return !!mp && sum(fromPC(mp), q => polyArea(q.outer) - sum(q.holes, polyArea)) > 1e-5 * size * size;
   });
 }
 function regionsOverlap(block, i, j) {
-  const mp = pcSafe('intersection', toPC(regionRing(block.regions[i], 1, 1)), toPC(regionRing(block.regions[j], 1, 1)));
+  const a = regionRing(block.regions[i], 1, 1), b = regionRing(block.regions[j], 1, 1), p = bounds(a), q = bounds(b);
+  if (p.maxX <= q.minX || q.maxX <= p.minX || p.maxY <= q.minY || q.maxY <= p.minY) return false;
+  const mp = pcSafe('intersection', toPC(a), toPC(b));
   return !!mp && sum(fromPC(mp), q => polyArea(q.outer)) > 1e-5 * block.n * block.n;
 }
 
@@ -271,12 +284,81 @@ function ringSelfCrosses(ring) {
 
 /* ---------- fixes for curves that can't be sewn ----------
    What the Seam tool offers for the curved parts that can't be sewn as drawn: the reason, the parts
-   (leaves, block grid units) and the drawn shapes that, made appliqué, clear all of them (regions;
-   empty when that wouldn't). null when every curved part can be sewn. */
+   (leaves, in block grid units), the drawn shapes that, made appliqué, clear all of them (regions;
+   empty when that wouldn't), and straight seams that make the parts sewable (seams, with the units
+   they make and how many curved shapes they cut through). null when every curved part can be sewn. */
 function curvedSeamSuggestions(block) {
-  const n = block.n, bad = analyzeBlock(block, n).units.filter(u => u.unit.type === 'curveComplex');
+  const n = block.n, an = analyzeBlock(block, n), bad = an.units.filter(u => u.unit.type === 'curveComplex');
   if (!bad.length) return null;
   const regs = uniq(bad.flatMap(u => u.unit.regions || []));
-  const trial = { ...block, regions: block.regions.map((r, i) => (regs.includes(i) ? { ...r, app: true } : r)) };
-  return { why: bad[0].unit.why, leaves: bad.map(u => u.rect), seams: [], units: {}, cuts: 0, regions: regs.length && !analyzeBlock(trial, n).curveIssue ? regs : [] };
+  const appTrial = { ...block, regions: block.regions.map((r, i) => (regs.includes(i) ? { ...r, app: true } : r)) };
+  const res = { why: bad[0].unit.why, leaves: bad.map(u => u.rect), seams: [], units: {}, cuts: 0, regions: regs.length && !analyzeBlock(appTrial, n).curveIssue ? regs : [] };
+  const found = bad.map(u => curveSeamSearch(u, n)).filter(Boolean);
+  const k2 = ([a, b]) => [ptKey(a), ptKey(b)].sort().join('|'), seen = new Set((block.seams || []).map(k2));
+  const seams = found.flatMap(f => f.seams).map(sm => sm.map(q => [round(q[0], 6), round(q[1], 6)])).filter(sm => !seen.has(k2(sm)) && seen.add(k2(sm)));
+  if (!seams.length) return res;
+  // the seams must keep their promise in the whole block: every part sewable, no new set-in seams
+  const after = analyzeBlock({ ...block, seams: [...(block.seams || []), ...seams] }, n);
+  if (after.curveIssue || (after.setIn && !an.setIn)) return res;
+  const inLeaf = u => res.leaves.some(r => u.rect.x > r.x - 1e-6 && u.rect.y > r.y - 1e-6 && u.rect.x + u.rect.w < r.x + r.w + 1e-6 && u.rect.y + u.rect.h < r.y + r.h + 1e-6);
+  for (const u of after.units) if (CURVED_UNITS.has(u.unit.type) && inLeaf(u)) res.units[u.unit.type] = (res.units[u.unit.type] || 0) + 1;
+  return { ...res, seams, cuts: sum(found, f => f.cuts) };
+}
+// Straight seams across one part that can't be sewn as drawn, cheapest first: grid and half-grid
+// lines, lines through the ends of its curves, its centre lines and diagonals. A seam may touch a
+// curve only at the curve's ends (seams through curves are a later, relaxed pass). Cost: 1 a seam,
+// ½ a new piece, 0.3 a new point under 10°, 0.2 a slanted seam, ½ a curved shape cut through, and
+// 1½ a curved unit that isn't a simple pie, peel or inset. → { seams, cuts } or null.
+function curveSeamSearch(leaf, n) {
+  const R = leaf.region, bb = leaf.rect, e = 1e-4 * Math.max(bb.w, bb.h), ps = leaf.pieces;
+  const runs = ps.flatMap(p => [p.pts, ...p.holes].flatMap(r => curveRuns(r)));
+  const inside = (v, lo, hi) => v > lo + 10 * e && v < hi - 10 * e;
+  const xs = new Set([bb.x + bb.w / 2]), ys = new Set([bb.y + bb.h / 2]);
+  for (let k = 1; k < 2 * n; k++) { xs.add(k / 2); ys.add(k / 2); }
+  for (const r of runs) if (!r.closed) for (const q of [r.pts[0], r.pts[r.pts.length - 1]]) if (ringDist(q, R) > e) { xs.add(q[0]); ys.add(q[1]); }
+  const lines = [...[...xs].filter(x => inside(x, bb.minX, bb.maxX)).map(x => [[x, bb.minY - 1], [x, bb.maxY + 1]]),
+    ...[...ys].filter(y => inside(y, bb.minY, bb.maxY)).map(y => [[bb.minX - 1, y], [bb.maxX + 1, y]])];
+  if (Math.abs(bb.w - bb.h) < e) lines.push([[bb.minX, bb.minY], [bb.maxX, bb.maxY]], [[bb.maxX, bb.minY], [bb.minX, bb.maxY]]);
+  // each line across the part, kept when it meets curves only at their ends
+  const cross = (a, b, c, d) => { const r = [b[0] - a[0], b[1] - a[1]], s = [d[0] - c[0], d[1] - c[1]], den = r[0] * s[1] - r[1] * s[0]; if (Math.abs(den) < 1e-12) return null; const t = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den, u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den; return t > -1e-9 && t < 1 + 1e-9 && u > -1e-9 && u < 1 + 1e-9 ? [a[0] + r[0] * t, a[1] + r[1] * t] : null; };
+  const chords = [];
+  for (const [A, B] of lines) {
+    const hits = R.map((a, i) => cross(A, B, a, R[(i + 1) % R.length])).filter(Boolean);
+    if (hits.length < 2) continue;
+    const d = [B[0] - A[0], B[1] - A[1]], t = q => (q[0] - A[0]) * d[0] + (q[1] - A[1]) * d[1];
+    hits.sort((p, q) => t(p) - t(q));
+    const P = hits[0], Q = hits[hits.length - 1];
+    if (dist(P, Q) < 10 * e) continue;
+    if (runs.some(r => r.pts.some((a, i) => i + 1 < r.pts.length && (x => x && (r.closed || (dist(x, r.pts[0]) > 10 * e && dist(x, r.pts[r.pts.length - 1]) > 10 * e)))(cross(P, Q, a, r.pts[i + 1]))))) continue;
+    if (!chords.some(([p, q]) => (dist(p, P) < e && dist(q, Q) < e) || (dist(p, Q) < e && dist(q, P) < e))) chords.push([P, Q]);
+  }
+  const sharpN = list => sum(list, p => (p.curved ? tipAngles(p).filter(t => t.deg < SHARP_DEG).length : 0)), sharp0 = sharpN(ps);
+  // a work budget (trials × pieces) keeps a big tangle of curves quick
+  let work = 0;
+  const tryCuts = cs => {
+    if ((work += ps.length) > 480) return null;
+    const parts = splitBySeams(ps.map(p => ({ pts: p.pts, holes: p.holes, fab: p.fab, src: p })), cs);
+    if (parts.length === ps.length) return null;
+    const got = parts.map(q => (q.pts === q.src.pts ? q.src : makePiece(q.pts, q.holes, q.fab, false, [q.pts, ...q.holes].some(r => curveRuns(r).length))));
+    const cut = uniq(parts.filter(q => q.pts !== q.src.pts).map(q => q.src)).filter(p => p.curved && !p.holes.length && curveConvex(p.pts)).length;
+    let left = 0, odd = 0;
+    walkTree(splitNode(got, R, n * 1e-5), nd => {
+      if (nd.children.length) return;
+      const u = nd.unit || classifyUnit(nd);
+      if (u.type === 'complex' || u.type === 'curveComplex') left += nd.pieces.length; else if (u.type === 'curved' && u.form !== 'pie') odd++;
+    });
+    const cost = cs.length + 0.5 * (got.length - ps.length) + 0.3 * Math.max(0, sharpN(got) - sharp0) + 0.2 * cs.filter(([a, b]) => !isAxisDir(a, b)).length + 0.5 * cut + 1.5 * odd;
+    return { seams: cs, left, cost, cuts: cut };
+  };
+  const singles = chords.slice(0, 30).map(c => tryCuts([c])).filter(Boolean).sort((a, b) => a.left - b.left || a.cost - b.cost);
+  let best = null;
+  const keep = r => { if (r && !r.left && (!best || r.cost < best.cost - 1e-9)) best = r; };
+  singles.forEach(keep);
+  // pairs of the best 15 when one seam alone helps; triples of the best 10 when a pair helps more,
+  // in a part of up to 12 pieces (a bigger tangle of curves is appliqué work)
+  const top = k => singles.slice(0, k).map(r => r.seams[0]), t15 = top(15), t10 = top(10), one = singles.length ? singles[0].left : ps.length;
+  let two = one;
+  if (one < ps.length) for (let i = 0; i < t15.length; i++) for (let j = i + 1; j < t15.length; j++) if (!best || best.cost > 2) { const r = tryCuts([t15[i], t15[j]]); keep(r); if (r) two = Math.min(two, r.left); }
+  if (two < one && ps.length <= 12) for (let i = 0; i < t10.length; i++) for (let j = i + 1; j < t10.length; j++) for (let k = j + 1; k < t10.length; k++) if (!best || best.cost > 3) keep(tryCuts([t10[i], t10[j], t10[k]]));
+  return best;
 }
