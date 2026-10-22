@@ -881,3 +881,6 @@ body[data-doctool="zoom"] #main { cursor: zoom-in; }
 #toolstrip.tight { gap: 0; padding-top: 3px; padding-bottom: 3px; }
 #toolstrip.tight .stool { min-height: 32px; height: 32px; }
 #toolstrip.tight .stool-sep { margin: 2px 6px; }
+
+.dflyout .dtab-strip { padding-left: 4px; }
+.dflyout .dtab .dtab-l { padding: 0 10px; display: inline-flex; align-items: center; height: 100%; font-weight: 600; }

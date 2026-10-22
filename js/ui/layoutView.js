@@ -88,6 +88,9 @@ Views.layout = {
     const t = [...LAYOUT_TOOLS, ...NAV_TOOLS].find(x => x.kb.toLowerCase() === k);
     if (t && !(k === 'b' && doc.layout.mode === 'tess' && !tessCanPlace())) { Actions.layoutTool(t.key); return; }
     if (e.key === 'Escape') { ui.selCell = null; renderView(); return; }
+    // the keyboard way round the quilt: arrows move between positions, Enter puts the chosen block there
+    if (/^Arrow/.test(e.key) && e.target.closest?.('#main')) { e.preventDefault(); moveSelCell(e.key); return; }
+    if (e.key === 'Enter' && ui.selCell && e.target.closest?.('#main')) { e.preventDefault(); nextCommitLabel = `Place ${placeBlock()?.name || 'block'}`; Actions.cellReplace(); nextCommitLabel = null; return; }
     const key = ui.selCell || lay.hoverKey;
     if (!key) return;
     if (k === 'r') { e.preventDefault(); rotateCell(key, e.shiftKey ? 3 : 1); commit(); }
@@ -96,6 +99,27 @@ Views.layout = {
   },
 };
 
+// Move the selected position one step in an arrow's direction: the nearest position that way.
+function moveSelCell(arrow) {
+  const cells = Qnow().cells.filter(c => c.size), cur = cells.find(c => c.key === ui.selCell);
+  let next = null;
+  if (!cur) next = cells.slice().sort((a, b) => a.cy - b.cy || a.cx - b.cx)[0];
+  else {
+    const [dx, dy] = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1] }[arrow];
+    let best = Infinity;
+    for (const c of cells) {
+      const ax = c.cx - cur.cx, ay = c.cy - cur.cy, along = ax * dx + ay * dy, across = Math.abs(ax * dy - ay * dx);
+      if (along < cur.size * 0.2) continue;
+      const score = along + across * 2.5;   // straight ahead beats diagonal
+      if (score < best) { best = score; next = c; }
+    }
+  }
+  if (!next) return;
+  ui.selCell = next.key; saveUi(); renderView();
+  const c = cellContent(next.key);
+  announce(`${next.row != null && next.col != null && next.key[0] === 'g' ? `Row ${next.row + 1}, column ${next.col + 1}` : 'Position'}: ${c?.b ? doc.blocks[c.b].name : c?.fab ? `plain ${fabricLabel(c.fab)}` : 'empty'}`);
+  $('#main').focus({ preventScroll: true });
+}
 function layoutCanvasSvg(Q) {
   const q = ui.showQuilting && doc.quilting.layers.length ? quiltingSvg(Q) : '';
   return quiltSvg(Q, { interactive: true, seams: ui.seamLines, sel: ui.selCell, quilting: q });

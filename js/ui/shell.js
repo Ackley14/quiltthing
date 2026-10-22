@@ -371,7 +371,7 @@ function renderToolbar() {
   strip.hidden = !T;
   if (T) preserveFocus(strip, () => {
     strip.classList.remove('compact', 'tight');
-    strip.innerHTML = T.list.map(t => t.sep ? '<span class="stool-sep" role="separator"></span>' : `<button class="stool" data-act="${T.act}" data-arg="${t.key}" aria-pressed="${T.active === t.key}" title="${t.label} (${t.kb})" aria-label="${t.label}" aria-keyshortcuts="${t.kb}">${icon(t.icon, 20)}<span class="stool-l">${t.label}</span>${t.badge || ''}</button>`).join('');
+    strip.innerHTML = T.list.map(t => t.sep ? '<span class="stool-sep" role="separator"></span>' : `<button class="stool" data-act="${T.act}" data-arg="${t.key}" aria-pressed="${T.active === t.key}" tabindex="${T.active === t.key ? 0 : -1}" title="${t.label} (${t.kb})" aria-label="${t.label}" aria-keyshortcuts="${t.kb}">${icon(t.icon, 20)}<span class="stool-l">${t.label}</span>${t.badge || ''}</button>`).join('');
   });
 }
 // View switches shared by the canvas steps, at the right end of the tool row.
@@ -646,7 +646,7 @@ document.addEventListener('keydown', e => {
   // Ctrl+A belongs to the workspace: shapes in Blocks, the document's text in Fabric and Pattern, nothing elsewhere
   if (ctrl && (e.key === 'a' || e.key === 'A') && (ui.view === 'layout' || ui.view === 'quilting')) { e.preventDefault(); return; }
   // tabs, splitters and menus use the arrow keys themselves; buttons and links use Enter and Space
-  if (/^(Arrow|Home$|End$|PageUp$|PageDown$)/.test(e.key) && t?.closest?.('[role="tab"], [data-split], [role="separator"], [role^="menuitem"], [role="option"], [role="slider"], [role="radio"]')) return;
+  if (/^(Arrow|Home$|End$|PageUp$|PageDown$)/.test(e.key) && t?.closest?.('[role="tab"], [data-split], [role="separator"], [role^="menuitem"], [role="option"], [role="slider"], [role="radio"], #toolstrip')) return;
   if ((e.key === 'Enter' || e.key === ' ') && t?.closest?.('button, a[href], [role="button"], [role="tab"]') && !t.closest('#main')) return;
   Views[ui.view]?.key?.(e);
 });
@@ -667,3 +667,11 @@ function sectionsByKey(html) {
   return out;
 }
 function openSections(fn) { _sectionsOpen = true; try { return fn(); } finally { _sectionsOpen = false; } }
+
+document.addEventListener('keydown', e => {
+  const t = e.target.closest?.('#toolstrip .stool');
+  if (!t || !/^(ArrowUp|ArrowDown|ArrowLeft|ArrowRight|Home|End)$/.test(e.key)) return;
+  const all = $$('#toolstrip .stool'), i = all.indexOf(t);
+  const j = e.key === 'Home' ? 0 : e.key === 'End' ? all.length - 1 : (i + (/Down|Right/.test(e.key) ? 1 : -1) + all.length) % all.length;
+  e.preventDefault(); all.forEach((b, k) => b.tabIndex = k === j ? 0 : -1); all[j].focus();
+});

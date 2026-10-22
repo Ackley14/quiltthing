@@ -195,8 +195,12 @@ Actions.dockMoveTo = arg => {
   announce(`${panelTitle(id)} moved`);
 };
 // new windows cascade instead of landing exactly on top of each other
-function nextFloatSpot(L) {
-  let x = Math.round(innerWidth / 2 - 170), y = 140;
+function nextFloatSpot(L, w = 300, h = 340) {
+  const d = $('#docarea')?.getBoundingClientRect() || { left: 200, top: 120, right: innerWidth - 200, bottom: innerHeight - 40 };
+  const clash = (x, y) => L.floating.some(f => x < f.x + f.w + 8 && x + w + 8 > f.x && y < f.y + f.h + 8 && y + h + 8 > f.y);
+  // across the canvas from the right, then down; otherwise cascade from the centre
+  for (let y = d.top + 16; y + h <= d.bottom; y += 60) for (let x = d.right - w - 16; x >= d.left + 8; x -= w + 16) if (!clash(x, y)) return { x: Math.round(x), y: Math.round(y) };
+  let x = Math.round(innerWidth / 2 - w / 2), y = 140;
   while (L.floating.some(f => Math.abs(f.x - x) < 30 && Math.abs(f.y - y) < 30)) { x += 48; y += 40; }
   return { x, y };
 }
