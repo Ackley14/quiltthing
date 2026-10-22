@@ -10,13 +10,16 @@ const SHARP_DEG = 10;    // a curved piece narrowing to less than this is worth 
 // running the ring's own way are pieces; loops running the other way are holes, each given to the
 // piece around it. tol: how close two points are to count as one. → [{ outer, holes }]
 function splitPinches(outer, holes, tol) {
-  const key = p => `${Math.round(p[0] / tol)},${Math.round(p[1] / tol)}`;
+  // points within tol of each other, found through a grid of tol-sized cells (a cell and its neighbours)
   const loops = ring => {
-    const seen = new Map();
+    const grid = new Map();
     for (let j = 0; j < ring.length; j++) {
-      const k = key(ring[j]), i = seen.get(k);
-      if (i !== undefined) return [...loops(ring.slice(i, j)), ...loops([...ring.slice(j), ...ring.slice(0, i)])];
-      seen.set(k, j);
+      const q = ring[j], cx = Math.floor(q[0] / tol), cy = Math.floor(q[1] / tol);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const i of grid.get(`${cx + dx},${cy + dy}`) || []) {
+        if (dist(ring[i], q) < tol) return [...loops(ring.slice(i, j)), ...loops([...ring.slice(j), ...ring.slice(0, i)])];
+      }
+      const k = `${cx},${cy}`;
+      grid.set(k, [...(grid.get(k) || []), j]);
     }
     return [ring];
   };

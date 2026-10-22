@@ -681,24 +681,24 @@ function howtoQst3(g) {
   const at = (x, y) => tris.find(p => { const d = dirOf(p); return d[0] * x + d[1] * y > 0.7; });
   const top = at(0, -1), left = at(-1, 0), bottom = at(0, 1), right = at(1, 0);
   if (!top || !left || !bottom || !right) return [];
-  const gap = 0.12 * U + sa, sp = howtoSpread(g, tris.map(p => ({ pts: p.pts, cut: howtoGrow(p.pts, sa) })));
-  const halves = [[top, left], [bottom, right]];
+  const sp = howtoSpread(g, tris.map(p => ({ pts: p.pts, cut: howtoGrow(p.pts, sa) })));
   const near = (a, b) => dist(a, b) < 1e-6 * U;
-  const halfAt = ([p, q]) => {
+  // each half sewn: its two triangles at cut size, with the dog ears of the one pressed away
+  const halves = [[top, left], [bottom, right]].map(([p, q]) => {
     const shared = p.pts.filter(a => q.pts.some(b => near(a, b))), outer = [...p.pts, ...q.pts].filter(a => !shared.some(b => near(a, b)));
-    const corner = shared.find(a => !near(a, c)) || shared[0], m = centroid([corner, ...outer]), v = [m[0] - c[0], m[1] - c[1]], l = Math.hypot(...v);
-    return { shared, half: howtoGrow([corner, ...outer], sa), off: [v[0] / l * gap / 2, v[1] / l * gap / 2] };
-  };
+    const corner = shared.find(a => !near(a, c)) || shared[0], half = howtoGrow([corner, ...outer], sa), away = g.lum(p.fab) >= g.lum(q.fab) ? p : q;
+    const ears = howtoEars(away.pts, shared[0], shared[1], half, sa), u = polyUnion([half, ...ears]);
+    return { p, q, shared, half, away, ears, pts: [corner, ...outer], cut: u.length === 1 ? u[0].outer : half };
+  });
+  const hs = howtoSpread(g, halves);
   return [
     { cap: 'Lay out the triangles', sep: sp, draw: t => { tris.forEach((p, i) => t.poly(sp[i].outer, p.fab)); } },
-    { cap: 'Sew pairs into halves', sep: halves.map(h => { const x = halfAt(h); return { outer: howtoMove(x.half, x.off), holes: [] }; }), draw: t => {
-      for (const [p, q] of halves) {
-        const { shared, half, off } = halfAt([p, q]);
-        const away = g.lum(p.fab) >= g.lum(q.fab) ? p : q;
-        const mv = ps => howtoMove(ps, off);
-        for (const ear of howtoEars(away.pts, shared[0], shared[1], half, sa)) t.poly(mv(ear), away.fab);
-        for (const x of [p, q]) t.poly(mv(howtoClip(half, shared[0], shared[1], centroid(x.pts))), x.fab);
-      }
+    { cap: 'Sew pairs into halves', sep: hs, draw: t => {
+      halves.forEach((h, i) => {
+        const mv = ps => howtoMove(ps, hs[i].off);
+        for (const ear of h.ears) t.poly(mv(ear), h.away.fab);
+        for (const x of [h.p, h.q]) t.poly(mv(howtoClip(h.half, h.shared[0], h.shared[1], centroid(x.pts))), x.fab);
+      });
     } },
     { cap: 'Join the halves, trim ears', size: fmtSize(U, U), draw: t => { for (const f of howtoFaces(g, tris)) t.poly(f.pts, f.fab); t.fin(g); } },
   ];
