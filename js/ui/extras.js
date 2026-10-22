@@ -107,7 +107,7 @@ document.addEventListener('pointermove', e => {
 
 /* ---------- HUD: size of the selected shape ---------- */
 HUD_WIDGETS.selsize = {
-  label: 'Selected shape size', corner: 'bl', ws: ['block'],
+  label: 'Selected shape size', corner: 'bl', ws: ['block'], transient: true,
   html: () => {
     const b = activeBlock(); if (!b || b.kind !== 'drawn' || ui.tool !== 'select') return '';
     const sel = selList(); if (!sel.length) return '';
@@ -143,7 +143,7 @@ document.addEventListener('keydown', e => {
 
 /* ---------- HUD: seam help (the warning triangle) ---------- */
 HUD_WIDGETS.seam = {
-  label: 'Seam warning', corner: 'bl', ws: ['block'],
+  label: 'Seam warning', corner: 'bl', ws: ['block'], transient: true,
   html: () => {
     const b = activeBlock(); if (!b || b.kind !== 'drawn' || ui.tool === 'seam') return '';
     const sg = _seamState.block === b.id && _seamState.key === blockKey(b) ? _seamState.s : null;

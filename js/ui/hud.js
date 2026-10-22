@@ -5,7 +5,7 @@
 const hudSession = { compact: false, at: 0 };
 const HUD_WIDGETS = {
   info: { label: 'Info line', corner: 'tl', ws: ['block', 'layout', 'quilting'], html: hudInfo },
-  value: { label: 'Value view reminder', corner: 'tl', ws: [], html: () => ui.grayscale ? `<button class="hud-badge" data-act="toggleUi" data-arg="grayscale" title="Turn Value view off (G)">${icon('eye', 14)} Value view · G to turn off</button>` : '' },
+  value: { label: 'Value view reminder', corner: 'tl', ws: [], transient: true, html: () => ui.grayscale ? `<button class="hud-badge" data-act="toggleUi" data-arg="grayscale" title="Turn Value view off (G)">${icon('eye', 14)} Value view · G to turn off</button>` : '' },
   view: { label: 'View switches', corner: 'tr', ws: ['block', 'layout', 'quilting'], html: () => {
     const items = viewToggleItems(); if (!items.length) return '';
     // a row of switches; one View button only when the row would run into the other corner
@@ -57,7 +57,18 @@ function renderHud() {
   // where the drawing sits when fitted with the plain margin (it's centred, so its sides are known)
   const art = $('#main .canvas-wrap > svg'), side = innerWidth <= 900 ? 12 : 28, vb = art?.viewBox?.baseVal, aw = D ? D.width - 2 * side : 0, ah = D ? D.height - 2 * side : 0;
   const ratio = vb && vb.height ? vb.width / vb.height : 1, artW = Math.min(aw, ah * ratio), artL = D ? D.left + (D.width - artW) / 2 : 0;
-  const band = cs => Math.max(0, ...cs.map(c => {
+  // widgets that come and go (the seam warning, the selected shape's size) keep their room all the time,
+  // so the drawing never resizes when one appears
+  const slot = c => {
+    const n = D ? hudFor().filter(id => hudPref(id).show && hudPref(id).corner === c && (HUD_WIDGETS[id].transient || $(`#hud .hud-c.${c} [data-hud="${id}"]`))).length : 0;
+    if (!n || !hudFor().some(id => HUD_WIDGETS[id].transient && hudPref(id).show && hudPref(id).corner === c)) return 0;
+    const left = c[1] === 'l' ? D.left + 10 : D.right - 24 - 220, right = left + 220;
+    if (art && (right < artL - 4 || left > artL + artW + 4)) return 0;
+    // top corners stack their widgets; bottom corners keep them in one row
+    const h = c[0] === 't' ? n * 34 + (n - 1) * 6 : 34;
+    return c[0] === 't' ? 10 + h + 10 : 14 + 10 + h + 10;
+  };
+  const band = cs => Math.max(0, ...cs.map(slot), ...cs.map(c => {
     const el = $(`#hud .hud-c.${c}`), r = el?.getBoundingClientRect();
     if (!r || !r.height) return 0;
     // text widgets change width as their wording changes (e.g. "0 showing"): judge them at their widest,

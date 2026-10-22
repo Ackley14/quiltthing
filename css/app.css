@@ -926,3 +926,7 @@ div.f > .seg { margin-top: 4px; }
 .pick-row svg, .pick-row .sw { flex: none; }
 
 .hud-c [data-hud="info"] .hud-info { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* bottom corners: widgets side by side, so the canvas only keeps one row of room for them */
+.hud-c.bl, .hud-c.br { flex-direction: row; align-items: flex-end; }
+.hud-c.br { flex-direction: row-reverse; }
