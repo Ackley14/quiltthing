@@ -294,8 +294,8 @@ function drawOverlay() {
     const e2 = h || ed.cursor;
     s += `<line x1="${dr[0][0] * k}" y1="${dr[0][1] * k}" x2="${e2[0] * k}" y2="${e2[1] * k}" stroke="${h ? '#b5482f' : '#8a94a0'}" stroke-width="${hair * 2}" stroke-dasharray="${hair * 4} ${hair * 2}"/>`;
   }
-  if (ui.tool === 'tri' && ed.triPreview) s += `<path d="${polyToPath(ed.triPreview.map(([x, y]) => [x * k, y * k]))}" fill="${fabricFill(ui.fabric)}" fill-opacity=".75" stroke="#c98a1f" stroke-width="${hair * 2}"/>`;
-  if (ui.tool === 'arc' && ed.triPreview?.pts) s += `<path d="${regionPathD(ed.triPreview, k)}" fill="${fabricFill(ui.fabric)}" fill-opacity=".75" stroke="#c98a1f" stroke-width="${hair * 2}"/>`;
+  if (ui.tool === 'tri' && Array.isArray(ed.triPreview)) s += `<path d="${polyToPath(ed.triPreview.map(([x, y]) => [x * k, y * k]))}" fill="${fabricFill(ui.fabric)}" fill-opacity=".75" stroke="#c98a1f" stroke-width="${hair * 2}"/>`;
+  if (ui.tool === 'arc' && Array.isArray(ed.triPreview?.pts)) s += `<path d="${regionPathD(ed.triPreview, k)}" fill="${fabricFill(ui.fabric)}" fill-opacity=".75" stroke="#c98a1f" stroke-width="${hair * 2}"/>`;
   if (ui.tool === 'text' && h) {
     const t = textAtOrigin(b);
     if (t) for (const r of t.regions) s += `<path d="${polyToPath(r.pts.map(([x, y]) => [(x + h[0]) * k, (y + h[1]) * k]), 4)}" fill="${fabricFill(textFabric())}" fill-opacity=".75" stroke="#c98a1f" stroke-width="${hair}"/>`;
