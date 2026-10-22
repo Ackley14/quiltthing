@@ -4,7 +4,7 @@ Views.quilting = {
   tools() { return { act: 'qTool', active: ui.qTool || 'hand', list: NAV_TOOLS }; },
   docs() { const back = ui.qSide === 'back'; return [{ label: 'Front', on: !back, act: 'qSide', arg: 'front', icon: 'quilt' }, { label: 'Back', on: back, act: 'qSide', arg: 'back', icon: 'quilt' }]; },
   options() {
-    const tl = NAV_TOOLS.find(t => t.key === (ui.qTool || 'hand'));
+    const tl = NAV_TOOLS.find(t => t.key === ui.qTool) || NAV_TOOLS[0];
     return `<span class="tool-chip">${icon(tl.icon, 16)}${tl.label}</span><button class="tool small" data-act="qZoomBy" data-arg="fit" title="Fit (0)">Fit</button><button class="tool small" data-act="zoomActual" title="Actual size (Shift+0)">100%</button><span class="sep"></span><button class="tool fab-drop" data-act="addLayerMenu" aria-haspopup="menu">${icon('plus', 14)} Add quilting ${icon('down', 12)}</button>`;
   },
   main() {

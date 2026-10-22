@@ -36,7 +36,7 @@ function commandList() {
     }
   }
   VIEW_LIST.forEach((v, i) => add({ label: `Go to ${v.label}`, path: 'Workspace', act: 'view', arg: v.key, kb: String(i + 1) }));
-  for (const c of CMD_PLACES()) add(c);
+  for (const c of CMD_PLACES()) if (!out.some(x => x.label === c.label)) add(c);
   for (const [id, P] of Object.entries(Panels)) add({ label: `${dockFind(wsLayout(), id) ? 'Show' : 'Open'} the ${P.title} panel`, path: 'Window', act: 'openPanel', arg: id });
   for (const p of (typeof quiltParts === 'function' ? quiltParts() : [])) add({ label: `${p.label} (quilt)`, path: 'Layout › Quilt panel', act: 'goQuiltPart', arg: p.key });
   if (ui.view === 'layout' && ui.selCell && cellContent(ui.selCell)?.b) for (const [l, a] of [['Rotate the selected block', 'cellRotate'], ['Flip the selected block', 'cellFlip'], ['Clear the selected position', 'cellClear']]) add({ label: l, path: 'Layout › selected position', act: a });
@@ -90,7 +90,7 @@ function paletteDraw() {
   const el = $('#pal-list'); if (!el) return;
   el.innerHTML = _pal.list.length ? _pal.list.map((c, i) => `<div class="pal-item${i === _pal.i ? ' on' : ''}${c.disabled ? ' off' : ''}" role="option" id="pal-o${i}" aria-selected="${i === _pal.i}" aria-disabled="${!!c.disabled}" data-act="palRun" data-arg="${i}" title="${c.disabled ? 'Not available right now' : ''}"><span class="pal-l">${c.checked ? `${icon('check', 13)} ` : ''}${esc(c.label)}</span><span class="pal-p">${c.recent ? 'Recent · ' : ''}${esc(c.path)}</span>${c.kb ? `<kbd>${esc(c.kb)}</kbd>` : ''}</div>`).join('')
     : '<p class="hint pad">Nothing matches. Try other words, like "border", "print" or "yardage".</p>';
-  $('#pal-q')?.setAttribute('aria-activedescendant', `pal-o${_pal.i}`);
+  if (_pal.i >= 0) $('#pal-q')?.setAttribute('aria-activedescendant', `pal-o${_pal.i}`); else $('#pal-q')?.removeAttribute('aria-activedescendant');
   el.querySelector('.pal-item.on')?.scrollIntoView({ block: 'nearest' });
 }
 function paletteRun(i) {
@@ -111,7 +111,7 @@ document.addEventListener('keydown', e => {
 const SHORTCUTS = [
   ['Everywhere', [
     ['Ctrl K', 'Search commands, panels, blocks and fabrics'], ['1 – 5', 'Go to a workspace'], ['Ctrl Z', 'Undo'], ['Ctrl Shift Z  or  Ctrl Y', 'Redo'],
-    ['Ctrl S', 'Save in this browser'], ['Ctrl Shift S', 'Save as'], ['Ctrl O', 'Open a saved quilt'], ['Ctrl P', 'Print the pattern'],
+    ['Ctrl S', 'Save a copy (File, Open lists it)'], ['Ctrl Shift S', 'Save as'], ['Ctrl O', 'Open a saved quilt'], ['Ctrl P', 'Print the pattern'],
     ['G', 'Value view (greys only)'], ['Ctrl .', 'Hide or show panels'], ['F6  /  Shift F6', 'Move between the menus, tool options, tools, panels, canvas and status bar'], ['?', 'Help'], ['Alt + letter', 'Open a menu (Alt F = File…)'], ['Esc', 'Close a menu or dialog, cancel'],
   ]],
   ['Canvas (Blocks, Layout, Quilting)', [

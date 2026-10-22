@@ -44,7 +44,7 @@ Views.block = {
         ${ib('selDup', '', 'dup', 'Duplicate (Ctrl+D)')}${ib('selRotate', 'cw', 'rotate', 'Rotate 90° (E)')}${ib('selMirror', 'h', 'mirror', 'Flip horizontal (X)')}${ib('selMirror', 'v', 'flipv', 'Flip vertical (Y)')}${ib('selOrder', 'front', 'front', 'Bring to front')}${ib('selOrder', 'back', 'back', 'Send to back')}${ib('selDelete', '', 'trash', 'Delete (Del)')}`;
     } else if (ui.tool === 'select') opts = `<button class="tool small" data-act="selAll" title="Select all (Ctrl+A)">Select all</button>`;
     // controls only; the status bar says how to use the tool
-    else if (ui.tool === 'text') { const o = textOpts(); opts = `${fabBtn('paintFabricMenu', ui.fabric)}<input class="tb-in wide" type="text" data-input="textStr" value="${esc(o.str)}" aria-label="Words" title="Words" spellcheck="false"><select class="tb-in" data-change="textFont" aria-label="Font" title="Font">${fontOptions(o.font)}</select><label class="tb-label">Height<input class="tb-in narrow" type="text" inputmode="decimal" value="${esc(inputLen(o.h))}" data-change="textH" aria-label="Capital height"></label>`; }
+    else if (ui.tool === 'text') { const o = textOpts(); opts = `${fabBtn('paintFabricMenu', ui.fabric)}<select class="tb-in" data-change="textFont" aria-label="Font" title="Font">${fontOptions(o.font)}</select><label class="tb-label">Height<input class="tb-in narrow" type="text" inputmode="decimal" value="${esc(inputLen(o.h))}" data-change="textH" aria-label="Capital height"></label>`; }
     else if (ui.tool === 'hand' || ui.tool === 'zoom') opts = `<button class="tool small" data-act="edZoomBy" data-arg="fit" title="Fit (0)">Fit</button><button class="tool small" data-act="zoomActual" title="Actual size (Shift+0)">100%</button>`;
     else if (ui.tool === 'erase') opts = '';
     else if (ui.tool === 'paint' || ui.tool === 'fill') opts = `<span class="tb-label">${ui.tool === 'fill' ? 'Fill with' : 'Paint with'}</span>${fabBtn('paintFabricMenu', ui.fabric)}`;
@@ -1153,8 +1153,6 @@ Actions.textH = (v, el) => { const h = parseLen(v); if (h > 0) { ui.textH = clam
 function textToolSection() {
   const o = textOpts();
   return section('Text', `<label class="f">Words<textarea rows="2" data-input="textStr" spellcheck="false">${esc(o.str)}</textarea></label>
-    <div class="f-row"><label class="f">Font<select data-change="textFont">${fontOptions(o.font)}</select></label>
-      <label class="f">Capital height<input type="text" inputmode="decimal" value="${esc(inputLen(o.h))}" data-change="textH"></label></div>
     <p class="hint">${loadedFont(o.font) ? '' : 'Loading the font… '}Each letter becomes an appliqué shape in the selected fabric. For turned-edge appliqué, keep letters 1½" tall or more.</p>`, { key: 'text' });
 }
 

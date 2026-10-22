@@ -342,12 +342,16 @@ document.addEventListener('pointerdown', e => {
     $('#drop-layer').innerHTML = `<div class="drop-ghost"></div><div class="drop-hl" hidden></div>`;
     const mv = ev => {
       f.x = clamp(ev.clientX - x0, -f.w + 80, innerWidth - 80); f.y = clamp(ev.clientY - y0, minY, innerHeight - 40); win.style.left = f.x + 'px'; win.style.top = f.y + 'px';
-      const t = dockDropTarget(ev.clientX, ev.clientY);
+      const t = dockLocked() ? null : dockDropTarget(ev.clientX, ev.clientY);
       target = t && t.zone !== 'float' && !(t.zone === 'float-join' && t.fi === fi) ? t : null;   // over the canvas it's just moving
       win.classList.toggle('docking', !!target);
       if (target) showDropTarget(target, ids.map(panelTitle).join(', '), ev); else { const hl = $('#drop-layer .drop-hl'), gh = $('#drop-layer .drop-ghost'); if (hl) hl.hidden = true; if (gh) gh.textContent = ''; }
     };
+    const esc = ke => { if (ke.key !== 'Escape') return; ke.stopPropagation(); target = null; up({ type: 'pointercancel' }); };
+    document.addEventListener('keydown', esc, true);
     const up = e2 => {
+      document.removeEventListener('keydown', esc, true);
+      if (e2.type === 'pointercancel') { Object.assign(f, before.floating[fi]); win.style.left = f.x + 'px'; win.style.top = f.y + 'px'; win.classList.remove('docking'); }
       bar.removeEventListener('pointermove', mv); bar.removeEventListener('pointerup', up); bar.removeEventListener('pointercancel', up);
       win.style.pointerEvents = ''; $('#drop-layer').innerHTML = '';
       if (target && e2.type !== 'pointercancel') { setLayout(dockMoveMany(before, ids, target, f.active)); announce(`${ids.map(panelTitle).join(', ')} docked`); }
@@ -489,9 +493,15 @@ Actions.dockFloatClose = fi => {
   const ws = curWs(), before = dockClone(wsLayout()), f = before.floating[+fi]; if (!f) return;
   const ids = [...f.tabs], names = ids.map(panelTitle).join(', ');
   let M = dockClone(before); for (const id of ids) M = dockRemove(M, id);
-  setLayout(M);
+  setLayout(M); M = dockClone(wsLayout());
   _closeToast?.remove();
-  _closeToast = toastAction(`${names} closed`, 'Undo', () => { before.__ok = true; dockState.ws[ws] = before; saveDock(); dockSession.sig = ''; if (curWs() !== ws) Actions.view(ws); else render(); });
+  const afterSig = JSON.stringify(M);
+  _closeToast = toastAction(`${names} closed`, 'Undo', () => {
+    const cur = dockClone(dockState.ws[ws] || wsLayout(ws)), same = JSON.stringify(cur) === afterSig;
+    const L = same ? before : dockMoveMany(cur, ids.filter(id => !dockFind(cur, id)), { zone: 'float', x: f.x, y: f.y, w: f.w, h: f.h }, f.active);
+    L.__ok = true; dockState.ws[ws] = L; saveDock(); dockSession.sig = '';
+    if (curWs() !== ws) Actions.view(ws); else render();
+  });
 };
 // N15: a group whose tabs don't all fit shows a » button listing them
 function markTabOverflow() {

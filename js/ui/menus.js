@@ -51,8 +51,8 @@ const MENUS = {
     // History, then what the current step works on, then the quilt's defaults and your preferences
     const items = [
       { header: 'History' },
-      { label: 'Undo', act: 'undo', kb: 'Ctrl+Z', disabled: !undoStack.past.length },
-      { label: 'Redo', act: 'redo', kb: 'Ctrl+Shift+Z', disabled: !undoStack.future.length },
+      { label: undoStack.past.length && histLabels.past.length ? `Undo ${esc(histLabels.past[histLabels.past.length - 1])}` : 'Undo', act: 'undo', kb: 'Ctrl+Z', disabled: !undoStack.past.length },
+      { label: undoStack.future.length && histLabels.future.length ? `Redo ${esc(histLabels.future[histLabels.future.length - 1])}` : 'Redo', act: 'redo', kb: 'Ctrl+Shift+Z', disabled: !undoStack.future.length },
     ];
     const b = activeBlock();
     // the shape commands only while shapes are selected, so the menu stays short
@@ -105,7 +105,7 @@ const MENUS = {
     if (v === 'fabric' || v === 'cutting') items.push('-', tick('Shopping list', 'fabPane', 'shop', ui.fabPane !== 'cut'), tick('Cutting plan', 'fabPane', 'cut', ui.fabPane === 'cut'), tick('Cutting maps', 'toggleCutMaps', undefined, ui.cutDiagrams !== false));
     // how the app looks (yours, not the quilt's)
     items.push('-', { header: 'Theme' }, tick('Dark', 'setTheme', 'dark', prefs.theme !== 'light'), tick('Light', 'setTheme', 'light', prefs.theme === 'light'),
-      '-', { header: 'Around the quilt' }, ...Object.entries(SURROUNDS).map(([k, [l]]) => tick(l, 'setSurround', k, prefs.surround === k)),
+      '-', { header: 'Canvas colour' }, ...Object.entries(SURROUNDS).map(([k, [l]]) => tick(l, 'setSurround', k, prefs.surround === k)),
       '-', { header: 'Text size' }, tick('Standard', 'setDensity', 'standard', prefs.density !== 'large'), tick('Large', 'setDensity', 'large', prefs.density === 'large'),
       '-', tick('Rulers', 'toggleRulers', undefined, prefs.rulers),
       tick('Tool names in the tool strip', 'toggleToolLabels', undefined, prefs.toolLabels),

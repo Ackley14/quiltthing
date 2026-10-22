@@ -186,19 +186,21 @@ function focusSig(el) {
   return null;
 }
 
+// set an element's HTML only when it differs (replacing it would drop a click that's under way)
+function setHtml(el, html) { if (el && el._html !== html) { el.innerHTML = html; el._html = html; } }
 function renderTopbar() {
-  $('#ws-tabs').innerHTML = VIEW_LIST.map((v, i) => {
+  setHtml($('#ws-tabs'), VIEW_LIST.map((v, i) => {
     const on = tabOf(ui.view) === v.key;
     return `<button role="tab" id="ws-${v.key}" aria-selected="${on}" tabindex="${on ? 0 : -1}" data-act="view" data-arg="${v.key}" title="${v.label} (${i + 1})"><span class="lbl">${v.label}</span><span class="lbl-short">${v.short || v.label}</span></button>`;
-  }).join('');
+  }).join(''));
   // the quilt's name, editable in place (it names saved files and the pattern)
   const slot = $('#doc-title-slot');
   if (document.activeElement?.id !== 'doc-title') slot.innerHTML = `<input id="doc-title" class="doc-title" type="text" data-bind="meta.title" value="${esc(doc.meta.title)}" aria-label="Quilt name" title="Quilt name" spellcheck="false">`;
   renderSaveState();
-  $('#menubar').innerHTML = menubarHtml();
-  for (const b of $$('#appbar [data-act="commandPalette"]')) b.innerHTML = `${icon('search')}<span class="bar-l">Search</span><span class="bar-kbd">Ctrl K</span>`;
-  for (const b of $$('#appbar [data-act="toggleDrawer"]')) b.innerHTML = icon(b.dataset.arg === 'left' ? 'panelLeft' : 'panelRight');
-  for (const b of $$('#appbar [data-act="allMenus"]')) b.innerHTML = icon('menu');
+  setHtml($('#menubar'), menubarHtml());
+  for (const b of $$('#appbar [data-act="commandPalette"]')) setHtml(b, `${icon('search')}<span class="bar-l">Search</span><span class="bar-kbd">Ctrl K</span>`);
+  for (const b of $$('#appbar [data-act="toggleDrawer"]')) setHtml(b, icon(b.dataset.arg === 'left' ? 'panelLeft' : 'panelRight'));
+  for (const b of $$('#appbar [data-act="allMenus"]')) setHtml(b, icon('menu'));
 }
 function renderSaveState() {
   const el = $('#save-state'); if (!el) return;
@@ -208,7 +210,7 @@ function renderSaveState() {
   el.dataset.k = key;
   el.className = `save-state${bad ? ' bad' : ''}`;
   el.innerHTML = saveStatus.paused ? `${icon('warn', 14)}<span>Saving paused</span>` : bad ? `${icon('warn', 14)}<span>Not saved</span>` : saveStatus.at ? `${icon('check', 14)}<span>Saved</span>` : '';
-  el.title = bad ? "This browser couldn't save the design. Download a project file to keep it." : 'Your design is saved in this browser';
+  el.title = bad ? "This browser couldn't save the design. Download a project file to keep it." : 'Your work is kept as you go, in this browser';
 }
 // Document tabs above the canvas: the documents of this workspace.
 function renderDocTabs() {
@@ -258,14 +260,18 @@ function labelNextCommit(el) {
   let t = el.getAttribute?.('aria-label') || (field && labText) || (el.tagName === 'BUTTON' && el.textContent.trim()) || el.title || labText || '';
   t = String(t).replace(/\s+/g, ' ').replace(/[…:]$/, '').trim();
   // say where (the button group or section) and, for fields, the new value: "Sashing: Width 2″"
-  let ctx = (el.closest?.('[role="group"][aria-label], [role="radiogroup"][aria-label]')?.getAttribute('aria-label') || el.closest?.('.sec')?.querySelector('.sec-h h3')?.textContent || '').trim();
+  let ctx = (el.closest?.('[role="group"][aria-label]:not(.dgroup), [role="radiogroup"][aria-label]')?.getAttribute('aria-label') || el.closest?.('.sec')?.querySelector('.sec-h h3')?.textContent || '').trim();
   if (Object.values(Panels).some(P => P.title === ctx)) ctx = '';   // a panel's name says nothing about the change
   if (t && ctx && t.split(' ').length <= 3 && !t.toLowerCase().includes(ctx.toLowerCase().slice(0, 5))) t = `${ctx}: ${t}`;
   if (field && t) {
     let v = '';
     if (el.type === 'checkbox') v = el.checked ? 'on' : 'off';
     else if (el.tagName === 'SELECT') v = el.selectedOptions?.[0]?.textContent || '';
-    else if (el.dataset.type === 'len') { const n = parseLenExpr(el.value, el.dataset.bind ? getPath(doc, el.dataset.bind) : undefined); v = Number.isFinite(n) ? fmtLen(n) : ''; }
+    else if (el.dataset.type === 'len' || el.dataset.type === 'int' || el.dataset.type === 'num' || el.type === 'number') {
+      let n = el.dataset.type === 'len' ? parseLenExpr(el.value, el.dataset.bind ? getPath(doc, el.dataset.bind) : undefined) : parseFloat(el.value);
+      const lo = el.dataset.min ?? (el.min || undefined), hi = el.dataset.max ?? (el.max || undefined);
+      if (Number.isFinite(n)) { n = clamp(n, lo !== undefined ? +lo : -Infinity, hi !== undefined ? +hi : Infinity); v = el.dataset.type === 'len' ? fmtLen(n) : String(el.dataset.type === 'int' || el.type === 'number' && el.step !== 'any' && !String(el.step).includes('.') ? Math.round(n) : n); }
+    }
     else if (el.type !== 'color') v = `“${el.value.trim().slice(0, 20)}”`;
     if (v) t += ` ${v}`;
   }
@@ -277,6 +283,11 @@ document.addEventListener('change', e => {
   labelNextCommit(el);
   if (el.dataset.bind) return applyBinding(el);
   const name = el.dataset.change;
+  // a number box outside its range is kept in range by its action; say so
+  if (name && el.type === 'number' && el.value !== '') {
+    const n = parseFloat(el.value), lo = el.min !== '' ? +el.min : -Infinity, hi = el.max !== '' ? +el.max : Infinity;
+    if (n > hi || n < lo) toast(`Kept to ${n > hi ? hi : lo}, the ${n > hi ? 'most' : 'least'} allowed here`, 3000);
+  }
   if (name && Actions[name]) Actions[name](fieldValue(el), el, e);
 });
 document.addEventListener('input', e => {
@@ -312,7 +323,9 @@ function applyBinding(el) {
     if (type === 'int') v = Math.round(v);
     const lo = el.dataset.min !== undefined ? parseFloat(el.dataset.min) : -Infinity;
     const hi = el.dataset.max !== undefined ? parseFloat(el.dataset.max) : Infinity;
+    const raw = v;
     v = clamp(v, lo, hi);
+    if (v !== raw) toast(`Kept to ${type === 'len' ? fmtLen(v) : v}, the ${v === hi ? 'most' : 'least'} allowed here`, 3000);
   }
   if (path.startsWith('ui.')) { setPath(ui, path.slice(3), v); saveUi(); render(); return; }
   setPath(doc, path, v);
@@ -488,6 +501,7 @@ function toast(msg, ms = 2600) {
 /* ---------- global actions ---------- */
 Actions.view = v => {
   if (v === 'cutting') { v = 'fabric'; ui.fabPane = 'cut'; }
+  if (v === 'pattern' && ui.view !== 'pattern' && typeof _patAnchor !== 'undefined') { _patAnchor = null; $('#main').scrollTop = 0; }
   ui.view = v; ui.drawing = []; dockSession.flyout = null; for (const t of $$('#toast-root .toast')) if (!t.querySelector('.toast-act')) t.remove(); saveUi(); render(); $('#main').focus({ preventScroll: true }); };
 // say what was undone, so a change in another workspace isn't silent
 Actions.undo = () => { const l = histLabels.past[histLabels.past.length - 1]; if (!undo()) toast('Nothing to undo'); else if (l) toast(`Undo: ${l}`, 1600); };
@@ -498,11 +512,16 @@ Actions.setUi = (arg) => { const [k, v] = arg.split('='); ui[k] = v === 'true' ?
 Actions.toggleUi = k => { ui[k] = !ui[k]; saveUi(); render(); };
 
 Actions.fileMenu = (a, el) => openMenu(el, MENUS.file());   // the phone-width File button
-Actions.newProject = () => confirmModal('Start a new project?', "This replaces the design you're working on. Save it first (File, Save) to keep it; quilts you've saved aren't affected.", 'Start new', () => {
-  doc = newDoc(); ui.activeBlock = null; ui.projectId = null; ui.fabric = doc.fabrics[1].id; ui.view = 'block';
-  addBlockToDoc(newDrawnBlock('My first block'));
-  resetHistory(); saveNow(); render(); toast('New project started');
-}, true);
+Actions.newProject = () => {
+  const go = () => {
+    doc = newDoc(); ui.activeBlock = null; ui.projectId = null; ui.fabric = doc.fabrics[1].id; ui.view = 'block';
+    addBlockToDoc(newDrawnBlock('My first block'));
+    resetHistory(); saveNow(); render(); toast('New project started');
+  };
+  // replacing a sample nobody has changed needs no warning
+  if (isPristineSample()) go();
+  else confirmModal('Start a new project?', "This replaces the design you're working on. Save it first (File, Save) to keep it; quilts you've saved aren't affected.", 'Start new', go, true);
+};
 Actions.loadSample = () => confirmModal('Load the sample quilt?', "This replaces the design you're working on. Save it first (File, Save) to keep it; quilts you've saved aren't affected.", 'Load sample', () => {
   ui.projectId = null; loadSampleProject(); toast('Sample quilt loaded');
 });

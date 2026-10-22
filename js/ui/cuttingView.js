@@ -40,6 +40,7 @@ function cuttingPlanHtml(plan) {
 // Pointing at a step lights up its cuts on the map, and the other way round.
 function cuttingAfterMain(el) {
   const set = (card, n) => { for (const x of card.querySelectorAll('[data-step]')) x.classList.toggle('hl', n != null && x.dataset.step === n); };
+  if (el._cutHover) return; el._cutHover = true;
   el.addEventListener('mouseover', e => { const t = e.target.closest('[data-step]'), card = e.target.closest('.fabcard'); if (card) set(card, t?.dataset.step); });
   el.addEventListener('mouseleave', () => $$('.fabcard [data-step].hl').forEach(x => x.classList.remove('hl')));
 }

@@ -18,9 +18,9 @@ function welcomeV4(whatsNew) {
       <li>Panels can be moved, folded or closed. <b>Window</b> brings any panel back and resets the layout.</li>
       <li>Press <kbd>Ctrl K</kbd> to search for any command.</li></ul></div>` : ''}
     <div class="welcome-prefs"><span>Look</span><div class="btn-row" style="margin:0">${theme('dark')}${theme('light')}</div>
-      <label class="f" style="margin:0">Around the quilt<select data-change="setSurround">${Object.entries(SURROUNDS).map(([k, [l]]) => `<option value="${k}" ${prefs.surround === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label class="f" style="margin:0">Canvas colour<select data-change="setSurround">${Object.entries(SURROUNDS).map(([k, [l]]) => `<option value="${k}" ${prefs.surround === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label class="check" style="margin:0"><input type="checkbox" data-change="welcomeLarge" ${prefs.density === 'large' ? 'checked' : ''}> Larger text</label></div>
-    <div class="actions welcome-actions">${fresh ? '<button class="btn" data-act="welcomeBlank">Start blank</button><button class="btn" data-act="welcomeClassic">Start from a classic block</button>' : ''}<button class="btn" data-act="startTour">Take a quick tour</button><span class="grow"></span><button class="btn primary" data-act="closeModal">${whatsNew ? 'Close' : v3 ? 'Carry on' : 'Explore the sample'}</button></div>`,
+    <div class="actions welcome-actions">${fresh ? '<button class="btn" data-act="welcomeBlank">Start a new quilt</button><button class="btn" data-act="welcomeClassic">Start from a classic block</button>' : ''}<button class="btn" data-act="startTour">Take a quick tour</button><span class="grow"></span><button class="btn primary" data-act="closeModal">${whatsNew ? 'Close' : v3 ? 'Carry on' : 'Explore the sample'}</button></div>`,
     () => { prefs.welcomed = true; ui.seenTour = true; savePrefs(); saveUi(); });
   $('#modal-root .modal').classList.add('wide');
 }
@@ -261,6 +261,6 @@ Actions.docZoomBy = a => {
 };
 // the Zoom tool on a document: click to zoom in, Alt-click to zoom out
 document.addEventListener('pointerdown', e => {
-  if (!['fabric', 'pattern'].includes(ui.view) || ui.docTool !== 'zoom' || e.button !== 0 || !e.target.closest?.('#main') || e.target.closest('button, input, select, a')) return;
+  if (!['fabric', 'pattern'].includes(ui.view) || ui.docTool !== 'zoom' || e.button !== 0 || !e.target.closest?.('#main') || e.target.id === 'main' || e.target.closest('button, input, select, a, label')) return;
   e.preventDefault(); Actions.docZoomBy(e.altKey ? 'out' : 'in');
 });

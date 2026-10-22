@@ -43,12 +43,12 @@ function fabricEditor(f) {
     <div class="row"><input type="text" value="${esc(f.name)}" data-change="fabName" aria-label="Fabric name">
       <input type="color" value="${f.color}" data-input="fabColorLive" data-change="fabColor" aria-label="Colour"></div>
     <div class="f-row">
-      <label class="f">Hex<input type="text" value="${f.color}" data-change="fabHex" maxlength="7" spellcheck="false"></label>
+      <label class="f">Colour code<input type="text" value="${f.color}" data-change="fabHex" maxlength="7" spellcheck="false"></label>
       <label class="f">Print<select data-change="fabPrint">${PRINT_KINDS.map(k => `<option value="${k}" ${p.kind === k ? 'selected' : ''}>${PRINT_LABELS[k]}</option>`).join('')}</select></label>
     </div>
     ${p.kind !== 'solid' ? `<div class="f-row">
-      <label class="f">Print colour<input type="color" value="${p.color2 || '#ffffff'}" data-input="fabColor2Live" data-change="fabColor2"></label>
-      <label class="f">Print scale<input type="range" min="0.3" max="3" step="0.1" value="${p.scale || 1}" data-input="fabScaleLive" data-change="fabScale"></label>
+      <label class="f">Motif colour<input type="color" value="${p.color2 || '#ffffff'}" data-input="fabColor2Live" data-change="fabColor2"></label>
+      <label class="f">Motif size<input type="range" min="0.3" max="3" step="0.1" value="${p.scale || 1}" data-input="fabScaleLive" data-change="fabScale"></label>
     </div>` : ''}
     <label class="check"><input type="checkbox" ${f.directional ? 'checked' : ''} data-change="fabDir"> Directional print</label>
     ${fabricFormatFields(f)}
@@ -60,6 +60,7 @@ function fabricEditor(f) {
     <div class="harm">${harmonies(f.color).map(h => `<button style="background:${h.hex}" data-act="addFabricColor" data-arg="${h.hex}" title="${colorName(h.hex)}: add as a new fabric" aria-label="Add ${h.label} as a new fabric"></button>`).join('')}</div>
     <div class="btn-row">
       ${isBg ? '<span class="muted">Quilt background</span>' : `<button class="btn small" data-act="setBackground" data-arg="${f.id}">Use as background</button>`}
+      <button class="btn small" data-act="swapFabricMenu" data-arg="${f.id}" aria-haspopup="menu" title="Recolour: this fabric and another trade places everywhere">Swap with…</button>
       <button class="btn small" data-act="dupFabric" data-arg="${f.id}">Duplicate</button>
       <button class="btn small quiet danger" data-act="deleteFabric" data-arg="${f.id}">Delete</button>
     </div>`;
@@ -354,9 +355,10 @@ function savedFabMap(src, usedIds, adopt) {
   const used = others.filter(id => usedIds.has(id));
   for (const id of used) {
     let t = slotFabric(others.indexOf(id) + 1);
-    if (taken.has(t)) t = doc.fabrics.find(f => f.id !== doc.layout.background && !taken.has(f.id))?.id;
+    if (t === BG) t = null;
+    if (t && taken.has(t)) t = doc.fabrics.find(f => f.id !== doc.layout.background && !taken.has(f.id))?.id;
     if (!t && adopt) { const f = { ...JSON.parse(JSON.stringify(src.fabrics.find(x => x.id === id))), id: uid('f') }; doc.fabrics.push(f); added.push(f); t = f.id; }
-    if (!t) t = slotFabric(others.indexOf(id) + 1);
+    if (!t) t = slotFabric(others.indexOf(id) + 1);   // thumbnails: share as before
     taken.add(t); map.set(id, t);
   }
   const fn = id => id === BG || id === bg ? BG : map.get(id) ?? BG;

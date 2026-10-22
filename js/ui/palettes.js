@@ -61,7 +61,7 @@ Actions.deletePalette = id => {
 // name a new palette, then go back to the Palettes window
 function askPaletteName(suggest, onSave) {
   openModal(`<h2>Save palette</h2><label class="f">Name<input type="text" id="pal-name" value="${esc(suggest)}"></label>
-    <div class="actions"><button class="btn" data-act="palettes">Cancel</button><button class="btn primary" data-act="palNameOk">Save</button></div>`);
+    <div class="actions"><button class="btn" data-act="closeModal">Cancel</button><button class="btn primary" data-act="palNameOk">Save</button></div>`);
   Actions.palNameOk = () => { onSave($('#pal-name')?.value.trim() || suggest); _palTab = 'mine'; closeModal(); refreshPalettes(); };
   setTimeout(() => { const i = $('#pal-name'); i?.select(); i?.addEventListener('keydown', e => { if (e.key === 'Enter') Actions.palNameOk(); }); }, 40);
 }
@@ -78,7 +78,7 @@ Actions.swapFabrics = arg => {
   const [a, b] = String(arg).split('|');
   if (!fabricById(a) || !fabricById(b) || a === b) return;
   const na = fabricLabel(a), nb = fabricLabel(b);
-  swapFabrics(a, b); commit();
+  swapFabrics(a, b); commit(`Swap ${na} and ${nb}`);
   toast(`Swapped ${na} and ${nb}`);
 };
 // opened from a right-click menu: wait for that menu to close, then open where it was

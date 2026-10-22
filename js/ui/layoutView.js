@@ -90,7 +90,7 @@ Views.layout = {
     if (e.key === 'Escape') { ui.selCell = null; renderView(); return; }
     // the keyboard way round the quilt: arrows move between positions, Enter puts the chosen block there
     if (/^Arrow/.test(e.key) && e.target.closest?.('#main')) { e.preventDefault(); moveSelCell(e.key); return; }
-    if (e.key === 'Enter' && ui.selCell && e.target.closest?.('#main')) { e.preventDefault(); nextCommitLabel = `Place ${placeBlock()?.name || 'block'}`; Actions.cellReplace(); nextCommitLabel = null; return; }
+    if (e.key === 'Enter' && ui.selCell && e.target.closest?.('#main') && cellContent(ui.selCell)?.b !== placeBlock()?.id) { e.preventDefault(); nextCommitLabel = `Place ${placeBlock()?.name || 'block'}`; Actions.cellReplace(); nextCommitLabel = null; return; }
     const key = ui.selCell || lay.hoverKey;
     if (!key) return;
     if (k === 'r') { e.preventDefault(); rotateCell(key, e.shiftKey ? 3 : 1); commit(); }

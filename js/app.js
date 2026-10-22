@@ -3,6 +3,8 @@
 /* ---------- sample quilts ---------- */
 // "Midnight Bullseye": a straight set showing library blocks recoloured, a custom curved block
 // turned four ways into a bullseye, borders, quilting and a backing.
+// A sample just as it was loaded: its name, and nothing done to it since.
+const isPristineSample = () => ['Midnight Bullseye', 'Hexie Bloom'].includes(doc?.meta?.title) && !undoStack.past.length;
 function loadSampleProject() {
   doc = newDoc();
   doc.fabrics = [
@@ -141,13 +143,13 @@ function init() {
   if (ui.view === 'cutting') { ui.view = 'fabric'; ui.fabPane = 'cut'; }   // Cutting is now part of Fabric & cutting
   if (!Views[ui.view]) ui.view = 'layout';
   onDocChanged = () => { _Q = null; render(); };
-  window._hadStoredDesign = !!d;
   if (d) {
     doc = upgradeDoc(d);
     sanitizeUi();
     resetHistory();
     restoreHistory();
     render();
+    window._hadStoredDesign = !isPristineSample();   // a sample nobody has touched isn't work to protect
   } else {
     loadSampleProject();
   }

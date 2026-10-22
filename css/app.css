@@ -674,7 +674,9 @@ table.t .fabcell { display: flex; align-items: center; gap: 8px; }
 
 /* ---------- print: only the pattern ---------- */
 @media print {
-  html, body { height: auto; overflow: visible; background: #fff; }
+  /* paper is white whatever the screen theme (a dark colour scheme would otherwise colour the page margins) */
+  :root, :root[data-theme], html, body { color-scheme: light !important; background: #fff !important; }
+  html, body { height: auto; overflow: visible; }
   /* #fabric-defs must stay rendered: hidden <pattern>s don't paint */
   body > *:not(#print-root):not(#fabric-defs) { display: none !important; }
   #print-root { display: block !important; }
@@ -884,3 +886,7 @@ body[data-doctool="zoom"] #main { cursor: zoom-in; }
 
 .dflyout .dtab-strip { padding-left: 4px; }
 .dflyout .dtab .dtab-l { padding: 0 10px; display: inline-flex; align-items: center; height: 100%; font-weight: 600; }
+
+.modal > h2:first-of-type { padding-right: 36px; }
+.layout-locked .dock-side .dtabs, .layout-locked #dock-bottom .dtabs { cursor: default; }
+@media (max-width: 900px) { .canvas-wrap { padding: 12px; } }

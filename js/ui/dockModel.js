@@ -170,10 +170,19 @@ function dockLoad(saved, def, known, seen = []) {
 // Move several panels (a whole group or window) to one place, keeping them together as tabs.
 function dockMoveMany(L, ids, t, active) {
   if (!ids.length) return L;
+  if (ids.length === 1) return dockMove(L, ids[0], t);
+  // a whole group dropped on itself (its own tabs, above or below it, beside it) stays as it is
+  const home = dockFind(L, ids[0]);
+  if (home && ids.every(id => home.g.tabs.includes(id)) && home.g.tabs.length === ids.length) {
+    const tg = t.zone === 'float-join' ? L.floating[t.fi] : t.zone === 'bottom' ? L.bottom.groups[t.group ?? 0] : (t.zone === 'left' || t.zone === 'right') && t.how !== 'edge' && t.how !== 'newcol' ? L[t.zone]?.[t.col ?? 0]?.groups[t.group ?? 0] : null;
+    if (tg === home.g) return dockTidy(L);
+  }
+  // the first goes to the drop place; each of the others right after the one before, so they stay together
   L = dockMove(L, ids[0], t);
-  for (const id of ids.slice(1)) {
+  for (let k = 1; k < ids.length; k++) {
     const at = dockFind(L, ids[0]); if (!at) break;
-    L = dockMove(L, id, at.zone === 'float' ? { zone: 'float-join', fi: at.fi } : at.zone === 'bottom' ? { zone: 'bottom', group: at.gi, how: 'tab' } : { zone: at.zone, col: at.ci, group: at.gi, how: 'tab' });
+    const index = at.g.tabs.indexOf(ids[k - 1]) + 1;
+    L = dockMove(L, ids[k], at.zone === 'float' ? { zone: 'float-join', fi: at.fi, index } : at.zone === 'bottom' ? { zone: 'bottom', group: at.gi, how: 'tab', index } : { zone: at.zone, col: at.ci, group: at.gi, how: 'tab', index });
   }
   const at = dockFind(L, active || ids[0]); if (at) at.g.active = active || ids[0];
   return L;

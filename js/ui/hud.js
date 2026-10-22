@@ -32,7 +32,7 @@ function hudInfo() {
   return '';
 }
 function hudZoom() {
-  if (ui.view === 'fabric' || ui.view === 'pattern') return `<div class="hud-group zoom-ctl" role="group" aria-label="Zoom"><button class="tool" data-act="docZoomBy" data-arg="out" title="Zoom out (−)" aria-label="Zoom out">${icon('minus', 14)}</button><button class="tool zoom-pct" data-act="docZoomBy" data-arg="fit" title="Click for 100% (0)">${Math.round(docZoom() * 100)}%</button><button class="tool" data-act="docZoomBy" data-arg="in" title="Zoom in (+)" aria-label="Zoom in">${icon('plus', 14)}</button></div>`;
+  if (ui.view === 'fabric' || ui.view === 'pattern') return `<div class="hud-group zoom-ctl" role="group" aria-label="Zoom"><button class="tool" data-act="docZoomBy" data-arg="out" title="Zoom out (−)" aria-label="Zoom out">${icon('minus', 14)}</button><button class="tool zoom-pct" data-act="docZoomBy" data-arg="fit" title="${ui.view === 'pattern' ? 'Fit the page (0)' : 'Click for 100% (0)'}">${Math.round((ui.view === 'pattern' ? (parseFloat($('#pattern-preview')?.style.zoom) || 1) : docZoom()) * 100)}%</button><button class="tool" data-act="docZoomBy" data-arg="in" title="Zoom in (+)" aria-label="Zoom in">${icon('plus', 14)}</button></div>`;
   const block = ui.view === 'block';
   if (block && activeBlock()?.kind !== 'drawn') return '';
   const z = block ? edZoom() : qzZoom(), act = block ? 'edZoomBy' : 'qZoomBy', id = block ? 'ed-zoom' : 'q-zoom';

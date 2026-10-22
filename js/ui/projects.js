@@ -59,8 +59,8 @@ Actions.saveBrowser = async () => {
   else Actions.saveBrowserAs();
 };
 Actions.saveBrowserAs = () => {
-  openModal(`<h2>Save in this browser</h2><label class="f">Name<input type="text" id="save-name" value="${esc(doc.meta.title === 'Untitled quilt' ? '' : doc.meta.title)}" placeholder="My quilt"></label>
-    <p class="hint">Saved copies stay in this browser. To move a quilt to another computer, use File, Download project file.</p>
+  openModal(`<h2>Save a copy</h2><label class="f">Name<input type="text" id="save-name" value="${esc(doc.meta.title === 'Untitled quilt' ? '' : doc.meta.title)}" placeholder="My quilt"></label>
+    <p class="hint">Your work is kept as you go. A saved copy is listed in File, Open, so you can come back to it after starting something else. Copies stay in this browser; File, Download project file moves one to another computer.</p>
     <div class="actions"><button class="btn" data-act="closeModal">Cancel</button><button class="btn primary" data-act="saveBrowserAsOk">Save</button></div>`);
   setTimeout(() => $('#save-name')?.addEventListener('keydown', e => { if (e.key === 'Enter') Actions.saveBrowserAsOk(); }), 40);
 };
