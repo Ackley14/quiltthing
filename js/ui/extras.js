@@ -7,7 +7,7 @@ function welcomeV4(whatsNew) {
   const v3 = !!localStorage.getItem('quiltthing.v3.ui') || whatsNew;
   // starting over replaces the design in this browser, so only offer it when there's nothing to lose
   const fresh = !whatsNew && !v3 && !window._hadStoredDesign;
-  const theme = t => `<button class="btn${prefs.theme === t ? ' primary' : ''}" data-act="welcomeTheme" data-arg="${t}" aria-pressed="${prefs.theme === t}">${t === 'dark' ? 'Dark' : 'Light'}</button>`;
+  const theme = t => `<button class="btn" data-act="welcomeTheme" data-arg="${t}" aria-pressed="${prefs.theme === t}">${t === 'dark' ? 'Dark' : 'Light'}</button>`;
   openModal(`<h2>${v3 ? 'Welcome to the new Quilt Designer' : 'Quilt Designer'}</h2>
     <p>${v3 ? 'Everything you had is here, in a new layout. Your quilts, fabrics and saved designs carry over.' : 'Design blocks, lay out a quilt and print the pattern. Your work saves in this browser.'}</p>
     ${v3 ? `<div class="welcome-moved"><h4>Where things moved</h4><ul>
@@ -46,7 +46,7 @@ const isShown = x => x.getClientRects().length > 0 && getComputedStyle(x).visibi
 document.addEventListener('keydown', e => {
   if (e.key !== 'F6' || $('#modal-root').innerHTML) return;
   e.preventDefault();
-  const live = REGIONS.map(s => $(s)).filter(el => el && [...el.querySelectorAll('button, input, select, [tabindex]')].some(isShown));
+  const live = REGIONS.map(s => $(s)).filter(el => el && (el.id === 'docarea' || [...el.querySelectorAll('button, input, select, [tabindex]')].some(x => isShown(x) && !x.disabled && x.tabIndex !== -1 || x.matches('[aria-selected="true"]'))));
   if (!live.length) return;
   const i = live.findIndex(el => el.contains(document.activeElement));
   const next = live[(i + (e.shiftKey ? -1 : 1) + live.length) % live.length];

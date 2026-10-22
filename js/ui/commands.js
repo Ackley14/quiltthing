@@ -55,7 +55,7 @@ Actions.commandPalette = () => {
   const q = $('#pal-q');
   q.addEventListener('input', () => paletteFill(q.value));
   q.addEventListener('keydown', e => {
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); _pal.i = clamp(_pal.i + (e.key === 'ArrowDown' ? 1 : -1), 0, _pal.list.length - 1); paletteDraw(); }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); _pal.i = clamp(_pal.i < 0 ? 0 : _pal.i + (e.key === 'ArrowDown' ? 1 : -1), 0, _pal.list.length - 1); paletteDraw(); }
     if (e.key === 'Enter') { e.preventDefault(); paletteRun(_pal.i); }
   });
   paletteFill('');
@@ -67,7 +67,7 @@ function paletteFill(text) {
   if (!q) { const r = _pal.recent.map(k => all.find(c => c.label === k)).filter(Boolean); list = [...r.map(c => ({ c, s: 99, recent: true })), ...list.filter(x => !r.includes(x.c))]; }
   list.sort((a, b) => b.s - a.s);
   _pal.list = list.slice(0, 60).map(x => ({ ...x.c, recent: x.recent }));
-  _pal.i = 0;
+  _pal.i = q ? 0 : -1;
   paletteDraw();
 }
 function paletteDraw() {

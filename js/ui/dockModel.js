@@ -8,7 +8,7 @@
    view (dock.js) redraws from the result. */
 
 const DOCK_VERSION = 1;
-const DOCK_MIN = { colW: 180, colMaxW: 520, groupH: 0.08, floatW: 220, floatH: 140, bottomH: 120, bottomMaxH: 480 };
+const DOCK_MIN = { colW: 220, colMaxW: 520, groupH: 0.08, floatW: 220, floatH: 140, bottomH: 120, bottomMaxH: 480 };
 
 const dockClone = L => JSON.parse(JSON.stringify(L));
 const emptyLayout = () => ({ left: [], right: [], bottom: { h: 220, groups: [] }, floating: [] });
@@ -71,8 +71,19 @@ function dockRemove(L, id) {
      { zone: 'left'|'right', col, group, how: 'above'|'below' } a new group in that column
      { zone: 'left'|'right', col, how: 'newcol', at: 'before'|'after' } a new column
      { zone: 'left'|'right', how: 'edge' }                      a new outermost column
-     { zone: 'bottom', group?, how: 'tab'|'new' }               the bottom dock
-     { zone: 'float', x, y, w, h }                              its own window */
+     { zone: 'bottom', group?, how: 'tab'|'new', side?: 'before'|'after' }  the bottom dock (new: beside that group)
+     { zone: 'float', x, y, w, h }                              its own window
+   A 'tab' target may carry index: where among the tabs it goes (dropping on its own group reorders). */
+// Put a tab at a place among a group's tabs (the end when no index is given).
+function dockInsertTab(g, id, index) {
+  g.tabs.splice(index == null ? g.tabs.length : Math.max(0, Math.min(g.tabs.length, index)), 0, id); g.active = id;
+}
+// Within its own group: move the tab to the index (counted before it was taken out).
+function dockReorder(g, id, index) {
+  if (index == null) return;   // no place given: leave it as it is
+  const from = g.tabs.indexOf(id);
+  g.tabs.splice(from, 1); dockInsertTab(g, id, index > from ? index - 1 : index);
+}
 function dockMove(L, id, t) {
   // Find the target before taking the panel out: removing it can shift or delete groups and columns.
   const clampI = (i, n) => Math.max(0, Math.min(n - 1, i ?? 0));
@@ -80,16 +91,21 @@ function dockMove(L, id, t) {
   if ((t.zone === 'left' || t.zone === 'right') && L[t.zone]?.length && t.how !== 'edge') {
     tc = L[t.zone][clampI(t.col, L[t.zone].length)];
     if (['tab', 'above', 'below'].includes(t.how)) tg = tc.groups[clampI(t.group, tc.groups.length)];
-    // onto its own group as a tab, or beside a group that holds only it: nothing changes
-    if (tg && tg.tabs.includes(id) && (t.how === 'tab' || tg.tabs.length === 1)) return dockTidy(L);
+    // onto its own group as a tab: reorder; beside a group that holds only it: nothing changes
+    if (tg && tg.tabs.includes(id) && t.how === 'tab') { dockReorder(tg, id, t.index); return dockTidy(L); }
+    if (tg && tg.tabs.includes(id) && tg.tabs.length === 1) return dockTidy(L);
   }
-  if (t.zone === 'bottom' && t.how === 'tab') { tg = L.bottom.groups[t.group ?? 0] || null; if (tg?.tabs.includes(id)) return dockTidy(L); }
+  if (t.zone === 'bottom' && t.how === 'tab') { tg = L.bottom.groups[t.group ?? 0] || null; if (tg?.tabs.includes(id)) { dockReorder(tg, id, t.index); return dockTidy(L); } }
+  // beside a bottom group: remember which one (it may move when the panel is taken out)
+  const nb = t.zone === 'bottom' && t.how === 'new' && t.group != null ? L.bottom.groups[t.group] : null;
+  if (nb && nb.tabs.length === 1 && nb.tabs[0] === id) return dockTidy(L);
   // joining a floating window's tabs (t.fi is the window)
   if (t.zone === 'float-join') {
     const f = L.floating[t.fi];
-    if (!f || f.tabs.includes(id)) return dockTidy(L);
+    if (!f) return dockTidy(L);
+    if (f.tabs.includes(id)) { dockReorder(f, id, t.index); return dockTidy(L); }
     L = dockRemove(L, id);
-    if (L.floating.includes(f)) { f.tabs.push(id); f.active = id; return dockTidy(L); }
+    if (L.floating.includes(f)) { dockInsertTab(f, id, t.index); return dockTidy(L); }
     L.floating.push({ tabs: [id], active: id, x: 120, y: 120, w: 300, h: 340 });
     return dockTidy(L);
   }
@@ -97,7 +113,8 @@ function dockMove(L, id, t) {
   const grp = h => ({ tabs: [id], active: id, h: h ?? 0.5 });
   if (t.zone === 'float') { L.floating.push({ tabs: [id], active: id, x: t.x ?? 120, y: t.y ?? 120, w: t.w ?? 300, h: t.h ?? 340 }); return dockTidy(L); }
   if (t.zone === 'bottom') {
-    if (tg && L.bottom.groups.includes(tg)) { tg.tabs.push(id); tg.active = id; } else L.bottom.groups.push(grp(1));
+    if (tg && L.bottom.groups.includes(tg)) dockInsertTab(tg, id, t.index);
+    else { const at = nb && L.bottom.groups.includes(nb) ? L.bottom.groups.indexOf(nb) + (t.side === 'after' ? 1 : 0) : L.bottom.groups.length; L.bottom.groups.splice(at, 0, grp(1)); }
     return dockTidy(L);
   }
   const cols = L[t.zone];
@@ -114,7 +131,7 @@ function dockMove(L, id, t) {
     return dockTidy(L);
   }
   const gi = tg ? c.groups.indexOf(tg) : -1, g = gi >= 0 ? tg : null;
-  if (t.how === 'tab' && g) { g.tabs.splice(t.index ?? g.tabs.length, 0, id); g.active = id; return dockTidy(L); }
+  if (t.how === 'tab' && g) { dockInsertTab(g, id, t.index); return dockTidy(L); }
   // a new group above or below: it takes half the height of the group it splits
   const half = g ? g.h / 2 : 1 / (c.groups.length + 1);
   if (g) g.h = half;
@@ -150,6 +167,18 @@ function dockLoad(saved, def, known, seen = []) {
   } catch { return dockTidy(dockClone(def)); }
 }
 
+// Move several panels (a whole group or window) to one place, keeping them together as tabs.
+function dockMoveMany(L, ids, t, active) {
+  if (!ids.length) return L;
+  L = dockMove(L, ids[0], t);
+  for (const id of ids.slice(1)) {
+    const at = dockFind(L, ids[0]); if (!at) break;
+    L = dockMove(L, id, at.zone === 'float' ? { zone: 'float-join', fi: at.fi } : at.zone === 'bottom' ? { zone: 'bottom', group: at.gi, how: 'tab' } : { zone: at.zone, col: at.ci, group: at.gi, how: 'tab' });
+  }
+  const at = dockFind(L, active || ids[0]); if (at) at.g.active = active || ids[0];
+  return L;
+}
+
 // Re-open a closed panel where the default layout has it (next to a default neighbour if that
 // neighbour is open), otherwise as a new group in the right dock.
 function dockOpen(L, id, def) {
@@ -172,4 +201,4 @@ function dockAddToColumn(L, id, zone, ci) {
 }
 function dockActivate(L, id) { const at = dockFind(L, id); if (at) at.g.active = id; return L; }
 
-if (typeof module !== 'undefined') module.exports = { DOCK_VERSION, DOCK_MIN, emptyLayout, dockGroups, dockFind, dockOpenIds, dockTidy, dockRemove, dockMove, dockLoad, dockOpen, dockActivate, dockClone, dockAddToColumn };
+if (typeof module !== 'undefined') module.exports = { DOCK_VERSION, DOCK_MIN, emptyLayout, dockGroups, dockFind, dockOpenIds, dockTidy, dockRemove, dockMove, dockLoad, dockOpen, dockActivate, dockClone, dockAddToColumn, dockMoveMany };

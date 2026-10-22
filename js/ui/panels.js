@@ -14,7 +14,7 @@ const DOCK_DEFAULTS = {
   block: { left: [col(272, [['fabrics'], 0.34], [['blocks', 'shapes'], 0.66])], right: [col(312, [['props'], 1])], bottom: { h: 220, groups: [] }, floating: [] },
   layout: { left: [col(272, [['fabrics'], 0.34], [['blocks'], 0.66])], right: [col(312, [['quilt'], 0.46], [['props'], 0.54])], bottom: { h: 220, groups: [] }, floating: [] },
   quilting: { left: [], right: [col(312, [['layers'], 0.36], [['props'], 0.64])], bottom: { h: 220, groups: [] }, floating: [] },
-  fabric: { left: [col(256, [['fabrics'], 1])], right: [col(312, [['props', 'stash', 'backing'], 1])], bottom: { h: 220, groups: [] }, floating: [] },
+  fabric: { left: [col(256, [['fabrics'], 1])], right: [col(312, [['props'], 0.6], [['stash', 'backing'], 0.4])], bottom: { h: 220, groups: [] }, floating: [] },
   pattern: { left: [col(232, [['pages'], 1])], right: [col(312, [['props'], 1])], bottom: { h: 220, groups: [] }, floating: [] },
 };
 const wsLabel = ws => VIEW_LIST.find(v => v.key === ws)?.label || ws;

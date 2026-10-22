@@ -59,6 +59,7 @@ const MENUS = {
     const n = ui.view === 'block' && b?.kind === 'drawn' ? selList().length : 0;
     if (n) {
       items.push('-', { header: plural(n, 'shape') },
+        { label: 'Cut', act: 'selCut', kb: 'Ctrl+X' },
         { label: 'Copy', act: 'selCopy', kb: 'Ctrl+C' },
         { label: 'Duplicate', act: 'selDup', kb: 'Ctrl+D' },
         { label: 'Rotate 90°', act: 'selRotate', arg: 'cw', kb: 'E' },
@@ -137,7 +138,7 @@ const MENUS = {
       tick('Hide panels', 'toggleHidePanels', undefined, dockSession.hidden, 'Ctrl+.'),
       tick('Lock layout', 'toggleLockLayout', undefined, prefs.lockLayout),
       '-',
-      { label: `Reset ${wsLabel(ws)} layout`, act: 'resetLayout', arg: 'ws' },
+      { label: `Reset panels in ${wsLabel(ws)}`, act: 'resetLayout', arg: 'ws' },
       { label: 'Reset all layouts', act: 'resetLayout', arg: 'all' },
     ];
   },
@@ -269,6 +270,7 @@ document.addEventListener('contextmenu', e => {
     openMenu({ x: e.clientX, y: e.clientY }, list);
     return;
   }
+  if (!e.target.closest?.('input, textarea, [contenteditable="true"], .docview, .paper, .page, a[href]')) e.preventDefault();
 });
 
 /* ---------- keyboard: arrows move through an open menu, left/right switch menu-bar menus,

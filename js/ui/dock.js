@@ -214,7 +214,7 @@ Actions.dockFloatSize = arg => { const [fi, s] = String(arg).split('#'), L = doc
 Actions.dockGroupMenu = (a, el) => {
   const at = dockArgs(a), g = dockGroupAt(at); if (!g) return;
   const id = g.active, col = at.zone === 'left' || at.zone === 'right' ? wsLayout()[at.zone][at.ci] : null, locked = dockLocked();
-  const moves = [['left', 'Left dock'], ['right', 'Right dock'], ['bottom', 'Bottom dock'], ['float', 'Its own window']].filter(([z]) => z !== at.zone).map(([z, l]) => ({ label: `Move to ${l}`, act: 'dockMoveTo', arg: `${id}|${z}`, disabled: locked }));
+  const moves = [['left', 'Left dock'], ['right', 'Right dock'], ['bottom', 'Bottom dock'], ['float', 'its own window']].filter(([z]) => z !== at.zone).map(([z, l]) => ({ label: `Move to ${l}`, act: 'dockMoveTo', arg: `${id}|${z}`, disabled: locked }));
   openMenu(el.getBoundingClientRect ? el : { x: el.x, y: el.y }, [
     ...(g.tabs.length > 1 ? [{ header: 'Panels here' }, ...g.tabs.map(t => tick(esc(panelTitle(t)), 'dockTab', t, t === id)), '-'] : []),
     { header: esc(panelTitle(id)) + (locked ? ' · layout locked' : '') },
@@ -332,8 +332,23 @@ document.addEventListener('pointerdown', e => {
     const fi = +win.dataset.fi, L = dockClone(wsLayout()), f = Object.assign(L.floating[fi], floatBox(L.floating[fi])), x0 = e.clientX - f.x, y0 = e.clientY - f.y;
     const minY = ($('#ctxbar')?.getBoundingClientRect().bottom || 80) + 4;
     e.preventDefault(); bar.setPointerCapture(e.pointerId);
-    const mv = ev => { f.x = clamp(ev.clientX - x0, -f.w + 80, innerWidth - 80); f.y = clamp(ev.clientY - y0, minY, innerHeight - 40); win.style.left = f.x + 'px'; win.style.top = f.y + 'px'; };
-    const up = () => { bar.removeEventListener('pointermove', mv); bar.removeEventListener('pointerup', up); bar.removeEventListener('pointercancel', up); setLayout(L); };
+    const before = dockClone(wsLayout()), ids = [...f.tabs];
+    let target = null;
+    win.style.pointerEvents = 'none';   // so what's under the window can be found
+    $('#drop-layer').innerHTML = `<div class="drop-ghost"></div><div class="drop-hl" hidden></div>`;
+    const mv = ev => {
+      f.x = clamp(ev.clientX - x0, -f.w + 80, innerWidth - 80); f.y = clamp(ev.clientY - y0, minY, innerHeight - 40); win.style.left = f.x + 'px'; win.style.top = f.y + 'px';
+      const t = dockDropTarget(ev.clientX, ev.clientY);
+      target = t && t.zone !== 'float' && !(t.zone === 'float-join' && t.fi === fi) ? t : null;   // over the canvas it's just moving
+      win.classList.toggle('docking', !!target);
+      if (target) showDropTarget(target, ids.map(panelTitle).join(', '), ev); else { const hl = $('#drop-layer .drop-hl'), gh = $('#drop-layer .drop-ghost'); if (hl) hl.hidden = true; if (gh) gh.textContent = ''; }
+    };
+    const up = e2 => {
+      bar.removeEventListener('pointermove', mv); bar.removeEventListener('pointerup', up); bar.removeEventListener('pointercancel', up);
+      win.style.pointerEvents = ''; $('#drop-layer').innerHTML = '';
+      if (target && e2.type !== 'pointercancel') { setLayout(dockMoveMany(before, ids, target, f.active)); announce(`${ids.map(panelTitle).join(', ')} docked`); }
+      else setLayout(L);
+    };
     bar.addEventListener('pointermove', mv); bar.addEventListener('pointerup', up); bar.addEventListener('pointercancel', up);
     return;
   }
@@ -350,25 +365,37 @@ document.addEventListener('pointerdown', e => {
 /* ---------- dragging tabs to dock them somewhere else ---------- */
 let dockDrag = null;
 document.addEventListener('pointerdown', e => {
+  if (e.button !== 0 || dockLocked() || e.target.closest?.('.dtab-x, [data-split], #flyout-layer')) return;
   const tab = e.target.closest?.('.dtab[data-dtab]');
-  if (e.button !== 0 || !tab || e.target.closest('.dtab-x, [data-split]') || dockLocked()) return;
-  dockDrag = { id: tab.dataset.dtab, x: e.clientX, y: e.clientY, on: false };
+  if (tab) { dockDrag = { id: tab.dataset.dtab, ids: [tab.dataset.dtab], x: e.clientX, y: e.clientY, on: false }; return; }
+  // the empty part of a docked group's tab bar moves the whole group
+  const bar = e.target.closest?.('.dock-side .dtabs, #dock-bottom .dtabs');
+  if (bar && !e.target.closest('button')) {
+    const g = bar.closest('.dgroup'), ids = [...g.querySelectorAll('.dtab[data-dtab]')].map(t => t.dataset.dtab);
+    e.preventDefault();
+    dockDrag = { id: g.querySelector('.dtab.on')?.dataset.dtab || ids[0], ids, x: e.clientX, y: e.clientY, on: false };
+  }
 });
 document.addEventListener('pointermove', e => {
   if (!dockDrag) return;
   if (!dockDrag.on) {
     if (Math.hypot(e.clientX - dockDrag.x, e.clientY - dockDrag.y) < 8) return;
     dockDrag.on = true; document.body.classList.add('dock-dragging');
-    $('#drop-layer').innerHTML = `<div class="drop-ghost">${esc(panelTitle(dockDrag.id))}</div><div class="drop-hl" hidden></div><div class="drop-hint">Drop on a panel's tabs to join it, on a panel to stack, at an edge for a new column, or on the canvas for its own window. Esc cancels.</div>`;
+    $('#drop-layer').innerHTML = `<div class="drop-ghost"></div><div class="drop-hl" hidden></div>`;
   }
-  const t = dockDropTarget(e.clientX, e.clientY);
-  dockDrag.target = t;
-  const ghost = $('#drop-layer .drop-ghost'), hl = $('#drop-layer .drop-hl');
-  ghost.style.transform = `translate(${e.clientX + 12}px, ${e.clientY + 10}px)`;
-  ghost.textContent = `${panelTitle(dockDrag.id)}${t?.label ? ` → ${t.label}` : ''}`;
-  if (t?.rect) { hl.hidden = false; Object.assign(hl.style, { left: t.rect.left + 'px', top: t.rect.top + 'px', width: t.rect.width + 'px', height: t.rect.height + 'px' }); }
-  else hl.hidden = true;
+  dockDrag.target = dockDropTarget(e.clientX, e.clientY);
+  showDropTarget(dockDrag.target, dockDrag.ids.map(panelTitle).join(', '), e);
 });
+// the ghost label beside the pointer (kept on screen) and the outline of where the drop goes
+function showDropTarget(t, name, e) {
+  const ghost = $('#drop-layer .drop-ghost'), hl = $('#drop-layer .drop-hl'); if (!ghost) return;
+  ghost.textContent = `${name}${t?.label ? ` → ${t.label}` : ''}`;
+  const gw = ghost.offsetWidth, gh = ghost.offsetHeight;
+  const gx = e.clientX + 12 + gw > innerWidth - 4 ? e.clientX - 12 - gw : e.clientX + 12, gy = Math.min(e.clientY + 10, innerHeight - gh - 4);
+  ghost.style.transform = `translate(${Math.max(4, gx)}px, ${gy}px)`;
+  if (t?.rect) { hl.hidden = false; hl.classList.toggle('caret', t.rect.width <= 4); Object.assign(hl.style, { left: t.rect.left + 'px', top: t.rect.top + 'px', width: t.rect.width + 'px', height: t.rect.height + 'px' }); }
+  else hl.hidden = true;
+}
 const endDockDrag = e => {
   if (!dockDrag) return;
   const d = dockDrag; dockDrag = null;
@@ -376,12 +403,19 @@ const endDockDrag = e => {
   if (!d.on) return;
   _swallowClick = true; setTimeout(() => { _swallowClick = false; }, 0);
   if (!d.target || e.type === 'pointercancel') { announce('Panel left where it was'); return; }
-  setLayout(dockMove(dockClone(wsLayout()), d.id, d.target));
-  announce(`${panelTitle(d.id)} moved`);
+  setLayout(dockMoveMany(dockClone(wsLayout()), d.ids, d.target, d.id));
+  announce(`${d.ids.map(panelTitle).join(', ')} moved`);
 };
 document.addEventListener('pointerup', endDockDrag);
 document.addEventListener('pointercancel', endDockDrag);
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && dockDrag?.on) { e.stopPropagation(); dockDrag = null; document.body.classList.remove('dock-dragging'); $('#drop-layer').innerHTML = ''; } }, true);
+// Where among a tab strip's tabs a drop at x lands: the index and a thin caret to show it.
+function tabSlot(strip, x) {
+  const tabs = [...strip.querySelectorAll('.dtab')], rs = tabs.map(t => t.getBoundingClientRect());
+  let i = rs.findIndex(r => x < r.left + r.width / 2); if (i < 0) i = tabs.length;
+  const sr = strip.getBoundingClientRect(), cx = i < rs.length ? rs[i].left : (rs.length ? rs[rs.length - 1].right : sr.left);
+  return { index: i, rect: { left: cx - 1, top: sr.top + 3, width: 3, height: sr.height - 6 } };
+}
 // What dropping at (x, y) would do, the rectangle to light up and a few words for the ghost.
 function dockDropTarget(x, y) {
   const L = wsLayout(), el = document.elementFromPoint(x, y);
@@ -395,8 +429,16 @@ function dockDropTarget(x, y) {
   const tabs0 = el.closest('.dtabs'), grp0 = el.closest('.dgroup');
   if (grp0 && !grp0.closest('#flyout-layer')) {
     const zone = grp0.dataset.zone, ci = +grp0.dataset.ci, gi = +grp0.dataset.gi;
-    if (tabs0) return { zone: zone === 'float' ? 'float-join' : zone, col: ci, group: gi, how: 'tab', rect: R(tabs0), fi: gi, label: 'join these tabs' };
-    if (zone === 'bottom') return { zone: 'bottom', group: gi, how: 'tab', rect: R(grp0), label: 'the bottom dock' };
+    if (tabs0) {
+      const slot = tabSlot(tabs0.querySelector('.dtab-strip') || tabs0, x), own = (dockDrag?.ids || []).some(id => grp0.querySelector(`[data-dtab="${CSS.escape(id)}"]`));
+      return { zone: zone === 'float' ? 'float-join' : zone, col: ci, group: gi, how: 'tab', index: slot.index, rect: slot.rect, fi: gi, label: own ? 'here' : 'join these tabs' };
+    }
+    if (zone === 'bottom') {   // the outer quarters: beside this group; the middle: join it
+      const r = R(grp0), q = r.width / 4;
+      if (x < r.left + q) return { zone: 'bottom', group: gi, how: 'new', side: 'before', label: 'beside this panel', rect: { left: r.left, top: r.top, width: r.width / 2, height: r.height } };
+      if (x > r.right - q) return { zone: 'bottom', group: gi, how: 'new', side: 'after', label: 'beside this panel', rect: { left: r.left + r.width / 2, top: r.top, width: r.width / 2, height: r.height } };
+      return { zone: 'bottom', group: gi, how: 'tab', rect: R(grp0), label: 'join these tabs' };
+    }
     if (zone === 'float') return { zone: 'float-join', fi: gi, how: 'tab', rect: R(grp0), label: 'this window' };
     const r = R(grp0), top = y < r.top + r.height / 2;
     return { zone, col: ci, group: gi, how: top ? 'above' : 'below', label: top ? 'above this panel' : 'below this panel', rect: { left: r.left, width: r.width, top: top ? r.top : r.top + r.height / 2, height: r.height / 2 } };
@@ -418,7 +460,7 @@ function dockDropTarget(x, y) {
   const bt = R($('#statusbar'));
   if (y > doc.bottom - 48 && y < bt.top && x > doc.left && x < doc.right) return { zone: 'bottom', how: L.bottom.groups.length ? 'tab' : 'new', group: 0, label: 'the bottom dock', rect: { left: doc.left, top: doc.bottom - 48, width: doc.width, height: 48 } };
   // anywhere else on the canvas: its own window, where it was dropped
-  if (x > doc.left && x < doc.right && y > doc.top && y < doc.bottom) return { zone: 'float', x: x - 150, y: y - 16, label: 'its own window', rect: { left: x - 150, top: y - 16, width: 300, height: 220 } };
+  if (x > doc.left && x < doc.right && y > doc.top && y < doc.bottom) return { zone: 'float', x: x - 150, y: y - 16, label: 'its own window', rect: { left: x - 150, top: y - 16, width: 300, height: 340 } };
   return null;
 }
 /* ---------- helpers used by panels ---------- */
@@ -440,9 +482,12 @@ Actions.dockHeight = arg => {
 };
 
 Actions.dockFloatClose = fi => {
-  const L = dockClone(wsLayout()), f = L.floating[+fi]; if (!f) return;
-  let M = L; for (const id of [...f.tabs]) M = dockRemove(M, id);
-  setLayout(M); toast(`${f.tabs.map(panelTitle).join(', ')} closed. The Window menu opens ${f.tabs.length > 1 ? 'them' : 'it'} again.`);
+  const ws = curWs(), before = dockClone(wsLayout()), f = before.floating[+fi]; if (!f) return;
+  const ids = [...f.tabs], names = ids.map(panelTitle).join(', ');
+  let M = dockClone(before); for (const id of ids) M = dockRemove(M, id);
+  setLayout(M);
+  _closeToast?.remove();
+  _closeToast = toastAction(`${names} closed`, 'Undo', () => { before.__ok = true; dockState.ws[ws] = before; saveDock(); dockSession.sig = ''; if (curWs() !== ws) Actions.view(ws); else render(); });
 };
 // N15: a group whose tabs don't all fit shows a » button listing them
 function markTabOverflow() {

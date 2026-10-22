@@ -793,6 +793,7 @@ function blockViewKey(e) {
   if (e.key === 'Backspace' && ui.drawing.length) { e.preventDefault(); ui.drawing.pop(); refreshEditor(); return; }
   if (ctrl && k === 'a') { e.preventDefault(); if (ui.tool !== 'select') ui.tool = 'select'; setSel(b.regions.map((_, i) => i)); renderView(); return; }
   if (ctrl && k === 'c' && sel.length) { e.preventDefault(); Actions.selCopy(); return; }
+  if (ctrl && k === 'x' && sel.length) { e.preventDefault(); Actions.selCut(); return; }
   if (ctrl && k === 'v') { e.preventDefault(); Actions.selPaste(); return; }
   if (ctrl && k === 'd' && sel.length) { e.preventDefault(); Actions.selDup(); return; }
   if (ctrl) return;
@@ -1017,6 +1018,7 @@ Actions.selDup = () => {
   setSel(copies.map((_, k) => start + k)); ui.tool = 'select'; commit();
 };
 Actions.selCopy = () => { const b = activeBlock(), sel = selList(); if (!sel.length) return; _edClip = { n: b.n, regions: sel.map(i => JSON.parse(JSON.stringify(b.regions[i]))), texts: JSON.parse(JSON.stringify(b.texts || {})), pastes: 0 }; toast(`Copied ${plural(sel.length, 'shape')}`, 1200); };
+Actions.selCut = () => { if (!selList().length) return; const n = selList().length; Actions.selCopy(); nextCommitLabel = 'Cut'; Actions.selDelete(); toast(`Cut ${plural(n, 'shape')}`, 1200); };
 Actions.selPaste = () => {
   const b = activeBlock(); if (!_edClip || !b || b.kind !== 'drawn') return;
   _edClip.pastes++;

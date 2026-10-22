@@ -193,7 +193,7 @@ function renderTopbar() {
   if (document.activeElement?.id !== 'doc-title') slot.innerHTML = `<input id="doc-title" class="doc-title" type="text" data-bind="meta.title" value="${esc(doc.meta.title)}" aria-label="Quilt name" title="Quilt name" spellcheck="false">`;
   renderSaveState();
   $('#menubar').innerHTML = menubarHtml();
-  for (const b of $$('#appbar [data-act="commandPalette"]')) b.innerHTML = `${icon('search')}<span class="bar-kbd">Ctrl K</span>`;
+  for (const b of $$('#appbar [data-act="commandPalette"]')) b.innerHTML = `${icon('search')}<span class="bar-l">Search</span><span class="bar-kbd">Ctrl K</span>`;
   for (const b of $$('#appbar [data-act="toggleDrawer"]')) b.innerHTML = icon(b.dataset.arg === 'left' ? 'panelLeft' : 'panelRight');
   for (const b of $$('#appbar [data-act="allMenus"]')) b.innerHTML = icon('menu');
 }
@@ -458,6 +458,7 @@ document.addEventListener('click', e => {
 });
 
 function toast(msg, ms = 2600) {
+  for (const old of $$('#toast-root .toast')) old.remove();   // one at a time: the newest replaces the last
   const t = document.createElement('div');
   t.className = 'toast';
   t.setAttribute('role', 'status');
@@ -470,7 +471,7 @@ function toast(msg, ms = 2600) {
 /* ---------- global actions ---------- */
 Actions.view = v => {
   if (v === 'cutting') { v = 'fabric'; ui.fabPane = 'cut'; }
-  ui.view = v; ui.drawing = []; dockSession.flyout = null; saveUi(); render(); $('#main').focus({ preventScroll: true }); };
+  ui.view = v; ui.drawing = []; dockSession.flyout = null; for (const t of $$('#toast-root .toast')) if (!t.querySelector('.toast-act')) t.remove(); saveUi(); render(); $('#main').focus({ preventScroll: true }); };
 Actions.undo = () => { if (!undo()) toast('Nothing to undo'); };
 Actions.redo = () => { if (!redo()) toast('Nothing to redo'); };
 Actions.toggleUnits = () => { ui.units = ui.units === 'cm' ? 'in' : 'cm'; saveUi(); render(); toast(ui.units === 'cm' ? 'Showing centimetres' : 'Showing inches'); };
@@ -624,6 +625,8 @@ document.addEventListener('keydown', e => {
   if (!ctrl && !e.altKey && /^[1-5]$/.test(e.key)) { e.preventDefault(); Actions.view(VIEW_LIST[+e.key - 1].key); return; }
   if (!ctrl && (e.key === 'g' || e.key === 'G')) { Actions.toggleUi('grayscale'); return; }
   if (e.key === '?') { Actions.help(); return; }
+  // Ctrl+A belongs to the workspace: shapes in Blocks, the document's text in Fabric and Pattern, nothing elsewhere
+  if (ctrl && (e.key === 'a' || e.key === 'A') && (ui.view === 'layout' || ui.view === 'quilting')) { e.preventDefault(); return; }
   // tabs, splitters and menus use the arrow keys themselves; buttons and links use Enter and Space
   if (/^(Arrow|Home$|End$|PageUp$|PageDown$)/.test(e.key) && t?.closest?.('[role="tab"], [data-split], [role="separator"], [role^="menuitem"], [role="option"], [role="slider"], [role="radio"]')) return;
   if ((e.key === 'Enter' || e.key === ' ') && t?.closest?.('button, a[href], [role="button"], [role="tab"]') && !t.closest('#main')) return;
