@@ -1,7 +1,7 @@
 /* Quilting view: stack of generated quilting-line layers previewed over the quilt. */
 
 Views.quilting = {
-  tools() { return { act: 'qTool', active: ui.qTool || 'hand', list: NAV_TOOLS }; },
+  tools() { return { act: 'qTool', active: ui.qTool || 'zoom', list: NAV_TOOLS }; },
   docs() { const back = ui.qSide === 'back'; return [{ label: 'Front', on: !back, act: 'qSide', arg: 'front', icon: 'quilt' }, { label: 'Back', on: back, act: 'qSide', arg: 'back', icon: 'quilt' }]; },
   options() {
     return `<button class="tool fab-drop" data-act="addLayerMenu" aria-haspopup="menu">${icon('plus', 14)} Add quilting ${icon('down', 12)}</button>`;
@@ -151,13 +151,29 @@ Actions.qTool = t => { ui.qTool = t; saveUi(); renderView(); };
 // drag a layer row onto another to move it there (Move up/down in Properties does the same)
 let _layerDrag = null;
 document.addEventListener('dragstart', e => { const r = e.target.closest?.('.part-row.layer[data-li]'); if (r) { _layerDrag = +r.dataset.li; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', 'layer'); } });
-document.addEventListener('dragover', e => { const r = _layerDrag != null && e.target.closest?.('.part-row.layer[data-li]'); if (r) { e.preventDefault(); $$('.part-row.layer').forEach(x => x.classList.toggle('drop-here', x === r)); } });
+// the pointer's half of the row says above or below it, and the line is drawn there
+const layerDropAt = (e, r) => +r.dataset.li + (e.clientY > r.getBoundingClientRect().top + r.offsetHeight / 2 ? 1 : 0);
+document.addEventListener('dragover', e => {
+  const r = _layerDrag != null && e.target.closest?.('.part-row.layer[data-li]'); if (!r) return;
+  e.preventDefault();
+  const below = layerDropAt(e, r) > +r.dataset.li;
+  $$('.part-row.layer').forEach(x => { x.classList.toggle('drop-here', x === r && !below); x.classList.toggle('drop-below', x === r && below); });
+});
 document.addEventListener('drop', e => {
   const r = _layerDrag != null && e.target.closest?.('.part-row.layer[data-li]'); if (!r) return;
   e.preventDefault();
-  const from = _layerDrag, to = +r.dataset.li, L = doc.quilting.layers; _layerDrag = null;
+  const from = _layerDrag, L = doc.quilting.layers; let to = layerDropAt(e, r); _layerDrag = null;
+  if (to > from) to--;
   if (from === to) return;
   const [m] = L.splice(from, 1); L.splice(to, 0, m);
   commit('Reorder quilting layers');
 });
-document.addEventListener('dragend', () => { _layerDrag = null; $$('.part-row.layer.drop-here').forEach(x => x.classList.remove('drop-here')); });
+document.addEventListener('dragend', () => { _layerDrag = null; $$('.part-row.layer').forEach(x => x.classList.remove('drop-here', 'drop-below')); });
+document.addEventListener('keydown', e => {
+  const r = e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && e.target.closest?.('.part-row.layer[data-li]'); if (!r) return;
+  e.preventDefault();
+  const i = +r.dataset.li, j = i + (e.key === 'ArrowUp' ? -1 : 1), L = doc.quilting.layers;
+  if (j < 0 || j >= L.length) return;
+  [L[i], L[j]] = [L[j], L[i]]; commit('Reorder quilting layers');
+  setTimeout(() => $(`.part-row.layer[data-li="${j}"] .part-pick`)?.focus(), 0);
+});

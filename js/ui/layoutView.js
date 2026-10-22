@@ -623,7 +623,7 @@ function layoutProps() {
   const all = openSections(() => sectionsByKey(layoutInspector()));
   let h = '';
   if (ui.selCell && layoutTool() === 'select') h += positionSection();
-  h += `<div class="props-head">${icon(cur.icon, 14)}<b>${esc(cur.label)}</b><span class="grow"></span>${!dockFind(wsLayout(), 'quilt') ? '<button class="btn small quiet" data-act="openPanel" data-arg="quilt">All parts…</button>' : ''}</div>`;
+  if (!dockFind(wsLayout(), 'quilt')) h += `<div class="props-head">${icon(cur.icon, 14)}<b>${esc(cur.label)}</b><span class="grow"></span><button class="btn small quiet" data-act="openPanel" data-arg="quilt">All parts…</button></div>`;
   h += cur.keys.map(k => all[k] || '').join('');
   // the extra Layout settings (partial blocks) sit with the panels part today; show them with setting too
   return h;

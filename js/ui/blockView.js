@@ -48,7 +48,7 @@ Views.block = {
     else if (ui.tool === 'zoom') opts = `<span class="tb-hint">Click to zoom in, Alt-click to zoom out.</span><button class="tool small" data-act="edZoomBy" data-arg="fit">Fit</button>`;
     else if (ui.tool === 'erase') opts = '<span class="tb-hint">Click a shape or seam line to remove it, or drag across several.</span>';
     else if (ui.tool === 'paint' || ui.tool === 'fill') opts = `<span class="tb-label">${ui.tool === 'fill' ? 'Fill with' : 'Paint with'}</span>${fabBtn('paintFabricMenu', ui.fabric)}`;
-    else if (ui.tool !== 'select') opts = `<button class="tool toggle" data-act="toggleSnap" aria-pressed="${!ui.snapOff}" title="Snap points to the grid">Snap</button>`;
+    else if (ui.tool !== 'select') opts = `<span class="tb-hint">${{ polygon: 'Click grid points; click the first one or press Enter to finish.', rect: 'Drag from corner to corner.', tri: 'Click a square to cut it into triangles; drag for bigger ones.', arc: 'Click a square for a quarter circle; drag from a corner for a bigger one.', seam: 'Click a point on a line, then a point on another line.' }[ui.tool] || ''}</span><button class="tool toggle" data-act="toggleSnap" aria-pressed="${!ui.snapOff}" title="Snap points to the grid">Snap</button>`;
     const tl = [...BLOCK_TOOLS, ...NAV_TOOLS].find(t => t.key === ui.tool);
     return `${tl ? `<span class="tool-chip">${icon(tl.icon, 16)}${tl.label}</span>` : ''}${opts}
       ${refImgs[b.id] ? `<span class="sep"></span><button class="tool toggle" data-act="refAdjustToggle" aria-pressed="${!!ui.refAdjust}" title="Drag to move the tracing picture, scroll to resize it">Move picture</button>` : ''}
@@ -1268,7 +1268,7 @@ function edWheel(e) {
 function edZoom() { return ed.zoomBlock === ui.activeBlock ? ed.zoom || 1 : 1; }
 function edViewBox(S) {
   const m = S * 0.07, full = S + 2 * m, z = edZoom(), w = full / z;
-  if (z <= 1) return [-m, -m, full, full];
+  if (z <= 1) return [S / 2 - w / 2, S / 2 - w / 2, w, w];   // fitted or zoomed out: centred
   ed.cx = clamp(ed.cx ?? S / 2, -m + w / 2, S + m - w / 2);
   ed.cy = clamp(ed.cy ?? S / 2, -m + w / 2, S + m - w / 2);
   return [ed.cx - w / 2, ed.cy - w / 2, w, w];
@@ -1278,7 +1278,7 @@ function setZoom(z, at) {
   const b = activeBlock(); if (!b || b.kind !== 'drawn') return;
   const S = blockFrameSize(b), old = edViewBox(S);
   if (ed.zoomBlock !== b.id) { ed.zoomBlock = b.id; ed.cx = ed.cy = null; }
-  z = clamp(z, 1, 16);
+  z = clamp(z, 0.25, 16);
   const w = S * 1.14 / z, p = at || [old[0] + old[2] / 2, old[1] + old[3] / 2];
   const fx = (p[0] - old[0]) / old[2], fy = (p[1] - old[1]) / old[3];
   ed.zoom = z; ed.cx = p[0] - fx * w + w / 2; ed.cy = p[1] - fy * w + w / 2;
@@ -1288,7 +1288,7 @@ function applyView() {
   const b = activeBlock(), svg = $('#editor'); if (!svg || !b) return;
   svg.setAttribute('viewBox', edViewBox(blockFrameSize(b)).map(v => round(v, 4)).join(' '));
   refreshEditor(false);
-  const z = $('#ed-zoom'); if (z) z.textContent = `${Math.round(edZoom() * 100)}%`;
+  const z = $('#ed-zoom'); if (z) z.textContent = zoomPctText();
 }
 Actions.edZoomBy = dir => setZoom(dir === 'fit' ? 1 : edZoom() * (dir === 'in' ? 1.5 : 1 / 1.5));
 for (const type of ['keydown', 'keyup']) document.addEventListener(type, e => {
@@ -1434,17 +1434,25 @@ registerPanel('shapes', { title: 'Shapes', short: 'Shapes', icon: 'shapes', ws: 
 // Position and size of the selection, in finished inches (or cm) from the block's top-left corner.
 function selGeomFields(b, sel) {
   const bb = selBounds(b, sel), k = blockFrameSize(b) / b.n;
-  const f = (key, label, v) => `<label class="f">${label}<input type="text" inputmode="decimal" data-change="selGeom" data-arg="${key}" value="${esc(inputLen(v))}" aria-label="${label}" title="Accepts 4.5, 4 1/2, 4-1/2, +1/4, *2…"></label>`;
-  return `<div class="f-row geom">${f('x', 'X', bb.x * k)}${f('y', 'Y', bb.y * k)}</div><div class="f-row geom">${f('w', 'W', bb.w * k)}${f('h', 'H', bb.h * k)}</div>`;
+  const f = (key, label, v) => `<label class="f">${label}<input type="text" inputmode="decimal" data-type="len" data-change="selGeom" data-arg="${key}" value="${esc(inputLen(v))}" aria-label="${label}" title="Accepts 4.5, 4 1/2, 4-1/2, +1/4, *2…"></label>`;
+  return `<div class="f-row geom">${f('x', 'X', bb.x * k)}${f('y', 'Y', bb.y * k)}</div><div class="f-row geom">${f('w', 'W', bb.w * k)}${f('h', 'H', bb.h * k)}</div>
+    <label class="check"><input type="checkbox" data-change="geomLock" ${ui.geomLock ? 'checked' : ''}> Keep proportions</label>`;
 }
 Actions.selGeom = (v, el) => {
   const b = activeBlock(), sel = selList(); if (!b || !sel.length) return;
   const key = el.dataset.arg, bb = selBounds(b, sel), k = blockFrameSize(b) / b.n;
   const cur = { x: bb.x, y: bb.y, w: bb.w, h: bb.h }[key] * k, n = parseLenExpr(v, cur);
   if (!Number.isFinite(n) || (key === 'w' || key === 'h') && n <= 0) { lenFieldError(el, v); return; }
-  const g = n / k;   // grid units
+  const S = blockFrameSize(b);
+  // keep the shape on the block: positions within it, sizes no bigger than it
+  let g = (key === 'x' ? clamp(n, -bb.w * k + 0.25, S - 0.25) : key === 'y' ? clamp(n, -bb.h * k + 0.25, S - 0.25) : clamp(n, 1 / 16, S * 2)) / k;
+  if (Math.abs(g * k - n) > 1e-6) toast(`Kept on the block: ${fmtLen(g * k)}`, 2200);
+  const fx = key === 'w' ? g / (bb.w || 1) : key === 'h' && ui.geomLock ? g / (bb.h || 1) : 1;
+  const fy = key === 'h' ? g / (bb.h || 1) : key === 'w' && ui.geomLock ? g / (bb.w || 1) : 1;
   const map = key === 'x' ? ([x, y]) => [x + g - bb.x, y] : key === 'y' ? ([x, y]) => [x, y + g - bb.y]
-    : key === 'w' ? ([x, y]) => [bb.x + (x - bb.x) * g / (bb.w || 1), y] : ([x, y]) => [x, bb.y + (y - bb.y) * g / (bb.h || 1)];
+    : ([x, y]) => [bb.x + (x - bb.x) * fx, bb.y + (y - bb.y) * fy];
   for (const i of sel) b.regions[i].pts = b.regions[i].pts.map(p => map(p).map(c => round(c, 5)));
   commit({ x: 'Move shapes', y: 'Move shapes', w: 'Resize shapes', h: 'Resize shapes' }[key]);
 };
+
+Actions.geomLock = v => { ui.geomLock = !!v; saveUi(); };

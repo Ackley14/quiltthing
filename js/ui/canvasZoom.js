@@ -17,7 +17,7 @@ function qzBase(svg) {
 function qzApply(svg = qzSvg()) {
   if (!svg) return;
   const [x0, y0, W, H] = qzBase(svg), s = qzState();
-  if (s.z <= 1) svg.setAttribute('viewBox', [x0, y0, W, H].join(' '));
+  if (s.z <= 1) { const w = W / s.z, h = H / s.z; svg.setAttribute('viewBox', [x0 + W / 2 - w / 2, y0 + H / 2 - h / 2, w, h].map(v => round(v, 4)).join(' ')); }
   else {
     const w = W / s.z, h = H / s.z;
     s.cx = clamp(s.cx ?? x0 + W / 2, x0 + w / 2, x0 + W - w / 2);
@@ -25,13 +25,14 @@ function qzApply(svg = qzSvg()) {
     svg.setAttribute('viewBox', [s.cx - w / 2, s.cy - h / 2, w, h].map(v => round(v, 4)).join(' '));
   }
   svg.classList.toggle('zoomed', s.z > 1);
-  const lbl = $('#q-zoom'); if (lbl) lbl.textContent = `${Math.round(s.z * 100)}%`;
+  svg.dataset.nav = qzNavTool() || '';
+  const lbl = $('#q-zoom'); if (lbl) lbl.textContent = zoomPctText();
 }
 // Zoom to z, keeping the point `at` (quilt units) where it is on screen.
 function qzSet(z, at) {
   const svg = qzSvg(); if (!svg) return;
   const s = qzState(), cur = svg.getAttribute('viewBox').split(/[ ,]+/).map(Number), [, , W, H] = qzBase(svg);
-  z = clamp(z, 1, 12);
+  z = clamp(z, 0.25, 12);
   const p = at || [cur[0] + cur[2] / 2, cur[1] + cur[3] / 2];
   const fx = (p[0] - cur[0]) / cur[2], fy = (p[1] - cur[1]) / cur[3], w = W / z, h = H / z;
   s.z = z; s.cx = p[0] - fx * w + w / 2; s.cy = p[1] - fy * h + h / 2;
@@ -88,4 +89,4 @@ document.addEventListener('keyup', e => { if (e.key === ' ' && _qz.space) { _qz.
 window.addEventListener('blur', () => { _qz.space = false; });
 
 // the Hand or Zoom tool, if one is chosen on this canvas
-function qzNavTool() { const t = ui.view === 'layout' ? ui.layoutTool : ui.view === 'quilting' ? (ui.qTool || 'hand') : null; return t === 'hand' || t === 'zoom' ? t : null; }
+function qzNavTool() { const t = ui.view === 'layout' ? ui.layoutTool : ui.view === 'quilting' ? (ui.qTool || 'zoom') : null; return t === 'hand' || t === 'zoom' ? t : null; }

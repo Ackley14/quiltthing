@@ -4,7 +4,7 @@
    fabrics. The shortcut sheet below is the one list of key bindings, grouped by where they work. */
 
 // words quilters use that aren't in the command names
-const CMD_SYNONYMS = { hst: 'half square triangle seam', qst: 'quarter square triangle', yardage: 'fabric buy shopping', cut: 'cutting plan', binding: 'binding', pdf: 'print pattern', colour: 'color fabric palette', color: 'colour fabric palette', recolour: 'palette', undo: 'history', layer: 'quilting', applique: 'appliqué', sashing: 'sashing', border: 'border', zoom: 'zoom fit', dark: 'theme', light: 'theme' };
+const CMD_SYNONYMS = { stitch: 'quilting', stitching: 'quilting', turn: 'rotate', spin: 'rotate', mirror: 'flip', hst: 'half square triangle seam', qst: 'quarter square triangle', yardage: 'fabric buy shopping', cut: 'cutting plan', binding: 'binding', pdf: 'print pattern', colour: 'color fabric palette', color: 'colour fabric palette', recolour: 'palette', undo: 'history', layer: 'quilting', applique: 'appliqué', sashing: 'sashing', border: 'border', zoom: 'zoom fit', dark: 'theme', light: 'theme' };
 function commandList() {
   const out = [], seen = new Set();
   const add = c => { const k = c.label + '|' + c.act + '|' + (c.arg ?? ''); if (!seen.has(k)) { seen.add(k); out.push(c); } };
@@ -16,13 +16,14 @@ function commandList() {
       if (it === '-') { head = ''; continue; }
       if (!it) continue;
       if (it.header) { head = it.header.replace(/<[^>]+>/g, ''); continue; }
-      if (!it.act || it.disabled) continue;
-      add({ label: it.label.replace(/<[^>]+>/g, '').trim(), path: `${name}${head ? ` › ${head}` : ''}`, act: it.act, arg: it.arg, kb: it.kb, checked: it.checked });
+      if (!it.act) continue;
+      add({ label: it.label.replace(/<[^>]+>/g, '').trim(), path: `${name}${head ? ` › ${head}` : ''}`, act: it.act, arg: it.arg, kb: it.kb, checked: it.checked, disabled: !!it.disabled });
     }
   }
   VIEW_LIST.forEach((v, i) => add({ label: `Go to ${v.label}`, path: 'Workspace', act: 'view', arg: v.key, kb: String(i + 1) }));
   for (const [id, P] of Object.entries(Panels)) add({ label: `${dockFind(wsLayout(), id) ? 'Show' : 'Open'} the ${P.title} panel`, path: 'Window', act: 'openPanel', arg: id });
   for (const p of (typeof quiltParts === 'function' ? quiltParts() : [])) add({ label: `${p.label} (quilt)`, path: 'Layout › Quilt panel', act: 'goQuiltPart', arg: p.key });
+  if (ui.view === 'layout' && ui.selCell && cellContent(ui.selCell)?.b) for (const [l, a] of [['Rotate the selected block', 'cellRotate'], ['Flip the selected block', 'cellFlip'], ['Clear the selected position', 'cellClear']]) add({ label: l, path: 'Layout › selected position', act: a });
   for (const [l, a, arg] of [['Rotate shapes 90°', 'selRotate', 'cw'], ['Flip shapes horizontally', 'selMirror', 'h'], ['Flip shapes vertically', 'selMirror', 'v'], ['Duplicate shapes', 'selDup'], ['Delete shapes', 'selDelete']]) if (ui.view === 'block' && selList().length) add({ label: l, path: 'Blocks › selection', act: a, arg });
   for (const id of doc.blockOrder) add({ label: `Open block: ${doc.blocks[id].name}`, path: 'Blocks', act: 'pickBlock', arg: id });
   doc.fabrics.forEach((f, i) => add({ label: `Fabric ${letterFor(i)}: ${f.name}`, path: 'Fabrics', act: 'fabricPopover', arg: f.id }));
@@ -30,7 +31,9 @@ function commandList() {
 }
 // Every word must match the command's name or menu path, directly or through one of its synonyms.
 function scoreCommand(c, q) {
-  if (!q) return 1;
+  if (!q) return c.disabled ? 0 : 1;
+  // words that say what to do rather than what to find
+  q = q.split(/\s+/).filter(w => !['open', 'show', 'go', 'to', 'the', 'a', 'an', 'add', 'new', 'make', 'my', 'panel'].includes(w)).join(' ') || q;
   const label = c.label.toLowerCase(), path = c.path.toLowerCase(), wordStart = (t, w) => t.split(/[^a-z0-9½¼¾"]+/).some(x => x.startsWith(w));
   let s = 0;
   for (const w of q.split(/\s+/).filter(Boolean)) {
@@ -69,13 +72,14 @@ function paletteFill(text) {
 }
 function paletteDraw() {
   const el = $('#pal-list'); if (!el) return;
-  el.innerHTML = _pal.list.length ? _pal.list.map((c, i) => `<div class="pal-item${i === _pal.i ? ' on' : ''}" role="option" id="pal-o${i}" aria-selected="${i === _pal.i}" data-act="palRun" data-arg="${i}"><span class="pal-l">${c.checked ? `${icon('check', 13)} ` : ''}${esc(c.label)}</span><span class="pal-p">${c.recent ? 'Recent · ' : ''}${esc(c.path)}</span>${c.kb ? `<kbd>${esc(c.kb)}</kbd>` : ''}</div>`).join('')
+  el.innerHTML = _pal.list.length ? _pal.list.map((c, i) => `<div class="pal-item${i === _pal.i ? ' on' : ''}${c.disabled ? ' off' : ''}" role="option" id="pal-o${i}" aria-selected="${i === _pal.i}" aria-disabled="${!!c.disabled}" data-act="palRun" data-arg="${i}" title="${c.disabled ? 'Not available right now' : ''}"><span class="pal-l">${c.checked ? `${icon('check', 13)} ` : ''}${esc(c.label)}</span><span class="pal-p">${c.recent ? 'Recent · ' : ''}${esc(c.path)}</span>${c.kb ? `<kbd>${esc(c.kb)}</kbd>` : ''}</div>`).join('')
     : '<p class="hint pad">Nothing matches. Try other words, like "border", "print" or "yardage".</p>';
   $('#pal-q')?.setAttribute('aria-activedescendant', `pal-o${_pal.i}`);
   el.querySelector('.pal-item.on')?.scrollIntoView({ block: 'nearest' });
 }
 function paletteRun(i) {
   const c = _pal.list[+i]; if (!c) return;
+  if (c.disabled) { toast(`${c.label} isn't available right now`); return; }
   _pal.recent = [c.label, ..._pal.recent.filter(x => x !== c.label)].slice(0, 6);
   try { localStorage.setItem('quiltthing.v4.recentCmds', JSON.stringify(_pal.recent)); } catch {}
   closeModal();

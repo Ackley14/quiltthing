@@ -337,8 +337,10 @@ function renderToolbar() {
   preserveFocus($('#ctxbar'), () => { $('#ctxbar').innerHTML = undoRedo + `<div class="cz cz-opts">${V.options?.() || ''}</div>`; });
   const T = V.tools?.();
   const strip = $('#toolstrip');
+  requestAnimationFrame(() => { if (strip.scrollHeight > strip.clientHeight + 2) strip.classList.add('compact'); });
   strip.hidden = !T;
   if (T) preserveFocus(strip, () => {
+    strip.classList.remove('compact');
     strip.innerHTML = T.list.map(t => t.sep ? '<span class="stool-sep" role="separator"></span>' : `<button class="stool" data-act="${T.act}" data-arg="${t.key}" aria-pressed="${T.active === t.key}" title="${t.label} (${t.kb})" aria-label="${t.label}" aria-keyshortcuts="${t.kb}">${icon(t.icon, 20)}<span class="stool-l">${t.label}</span>${t.badge || ''}</button>`).join('');
   });
 }

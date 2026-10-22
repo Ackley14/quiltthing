@@ -34,7 +34,7 @@ function hudZoom() {
   const block = ui.view === 'block';
   if (block && activeBlock()?.kind !== 'drawn') return '';
   const z = block ? edZoom() : qzZoom(), act = block ? 'edZoomBy' : 'qZoomBy', id = block ? 'ed-zoom' : 'q-zoom';
-  return `<div class="hud-group zoom-ctl" role="group" aria-label="Zoom"><button class="tool" data-act="${act}" data-arg="out" title="Zoom out (−)" aria-label="Zoom out">${icon('minus', 14)}</button><button class="tool zoom-pct" id="${id}" data-act="${act}" data-arg="fit" title="Fit (0)">${Math.round(z * 100)}%</button><button class="tool" data-act="${act}" data-arg="in" title="Zoom in (+)" aria-label="Zoom in">${icon('plus', 14)}</button></div>`;
+  return `<div class="hud-group zoom-ctl" role="group" aria-label="Zoom"><button class="tool" data-act="${act}" data-arg="out" title="Zoom out (−)" aria-label="Zoom out">${icon('minus', 14)}</button><button class="tool zoom-pct" id="${id}" data-act="zoomMenu" aria-haspopup="menu" title="Zoom: % of actual size">${zoomPctText()}</button><button class="tool" data-act="${act}" data-arg="in" title="Zoom in (+)" aria-label="Zoom in">${icon('plus', 14)}</button></div>`;
 }
 function renderHud() {
   const hud = $('#hud'); if (!hud) return;
@@ -49,21 +49,24 @@ function renderHud() {
   preserveFocus(hud, () => { hud.innerHTML = Object.entries(corners).map(([c, list]) => `<div class="hud-c ${c}">${list.join('')}</div>`).join(''); });
   hud.classList.toggle('with-rulers', !!prefs.rulers);
   if (typeof drawRulers === 'function') requestAnimationFrame(drawRulers);
+  requestAnimationFrame(() => { for (const el of $$('#ed-zoom, #q-zoom')) el.textContent = zoomPctText(); });
 }
+const HUD_CORNERS = [['tl', 'Top left'], ['tr', 'Top right'], ['bl', 'Bottom left'], ['br', 'Bottom right']];
+const hudInCorner = c => hudFor().filter(id => hudPref(id).corner === c).sort((x, y) => hudPref(x).order - hudPref(y).order);
 Actions.hudCustomise = () => {
-  const ids = hudFor().sort((x, y) => hudPref(x).order - hudPref(y).order);
-  const row = (id, i) => { const p = hudPref(id); return `<div class="hud-row"><label class="check"><input type="checkbox" data-change="hudShow" data-arg="${id}" ${p.show ? 'checked' : ''}> ${HUD_WIDGETS[id].label}</label>
-    <select data-change="hudCorner" data-arg="${id}" aria-label="Corner for ${HUD_WIDGETS[id].label}">${[['tl', 'Top left'], ['tr', 'Top right'], ['bl', 'Bottom left'], ['br', 'Bottom right']].map(([k, l]) => `<option value="${k}" ${p.corner === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
-    <span class="hud-ord"><button class="icon-btn sm" data-act="hudOrder" data-arg="${id}|-1" ${i ? '' : 'disabled'} aria-label="Move ${HUD_WIDGETS[id].label} up" title="Earlier in its corner">${icon('up', 14)}</button><button class="icon-btn sm" data-act="hudOrder" data-arg="${id}|1" ${i < ids.length - 1 ? '' : 'disabled'} aria-label="Move ${HUD_WIDGETS[id].label} down" title="Later in its corner">${icon('down', 14)}</button></span></div>`; };
-  openModal(`<h2>Customise the canvas HUD</h2><p class="hint">For the ${esc(wsLabel(curWs()))} workspace: which controls float over the canvas, in which corner and in what order.</p><div class="hud-rows">${ids.map(row).join('')}</div>
+  const row = (id, i, n) => { const p = hudPref(id); return `<div class="hud-row"><label class="check"><input type="checkbox" data-change="hudShow" data-arg="${id}" ${p.show ? 'checked' : ''}> ${HUD_WIDGETS[id].label}</label>
+    <select data-change="hudCorner" data-arg="${id}" aria-label="Corner for ${HUD_WIDGETS[id].label}">${HUD_CORNERS.map(([k, l]) => `<option value="${k}" ${p.corner === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    <span class="hud-ord"><button class="icon-btn sm" data-act="hudOrder" data-arg="${id}|-1" ${i ? '' : 'disabled'} aria-label="Move ${HUD_WIDGETS[id].label} up" title="Earlier in this corner">${icon('up', 14)}</button><button class="icon-btn sm" data-act="hudOrder" data-arg="${id}|1" ${i < n - 1 ? '' : 'disabled'} aria-label="Move ${HUD_WIDGETS[id].label} down" title="Later in this corner">${icon('down', 14)}</button></span></div>`; };
+  const groups = HUD_CORNERS.map(([c, l]) => { const ids = hudInCorner(c); return ids.length ? `<h4 class="hud-corner">${l}</h4>${ids.map((id, i) => row(id, i, ids.length)).join('')}` : ''; }).join('');
+  openModal(`<h2>Customise the canvas HUD</h2><p class="hint">For the ${esc(wsLabel(curWs()))} workspace: which controls float over the canvas, in which corner and in what order.</p><div class="hud-rows">${groups}</div>
     <div class="actions"><button class="btn" data-act="hudReset">Reset</button><button class="btn" data-act="hudAll">Use for every workspace</button><span class="grow"></span><button class="btn primary" data-act="closeModal">Done</button></div>`);
 };
 const setHud = (id, patch) => { const ws = curWs(); prefs.hud = { ...(prefs.hud || {}), [ws]: { ...(prefs.hud?.[ws] || {}), [id]: { ...hudPref(id), ...patch } } }; savePrefs(); renderHud(); };
 Actions.hudShow = (v, el) => setHud(el.dataset.arg, { show: !!v });
-Actions.hudCorner = (v, el) => setHud(el.dataset.arg, { corner: v });
+Actions.hudCorner = (v, el) => { setHud(el.dataset.arg, { corner: v, order: 99 }); Actions.hudCustomise(); };
 Actions.hudToggle = id => setHud(id, { show: !hudPref(id).show });
 Actions.hudOrder = arg => {
-  const [id, d] = arg.split('|'), ids = hudFor().sort((x, y) => hudPref(x).order - hudPref(y).order), i = ids.indexOf(id), j = i + +d;
+  const [id, d] = arg.split('|'), ids = hudInCorner(hudPref(id).corner), i = ids.indexOf(id), j = i + +d;
   if (j < 0 || j >= ids.length) return;
   [ids[i], ids[j]] = [ids[j], ids[i]];
   ids.forEach((x, k) => setHud(x, { order: k }));
@@ -71,3 +74,5 @@ Actions.hudOrder = arg => {
 };
 Actions.hudAll = () => { const cur = Object.fromEntries(Object.keys(HUD_WIDGETS).map(id => [id, hudPref(id)])); for (const v of VIEW_LIST) prefs.hud = { ...(prefs.hud || {}), [v.key]: cur }; savePrefs(); renderHud(); toast('Every workspace uses this HUD setup'); };
 Actions.hudReset = () => { const ws = curWs(); if (prefs.hud) delete prefs.hud[ws]; savePrefs(); renderHud(); closeModal(); toast('The HUD is back to its starting setup here'); };
+
+Actions.zoomMenu = (a, el) => { const act = ui.view === 'block' ? 'edZoomBy' : 'qZoomBy'; openMenu(el, [{ label: 'Fit', act, arg: 'fit', kb: '0' }, { label: 'Actual size (100%)', act: 'zoomActual', kb: 'Shift+0' }, '-', { label: 'Zoom in', act, arg: 'in', kb: '+' }, { label: 'Zoom out', act, arg: 'out', kb: '−' }]); };

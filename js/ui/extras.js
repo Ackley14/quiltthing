@@ -60,10 +60,10 @@ document.addEventListener('focusin', e => { const el = e.target; if (el.matches?
 document.addEventListener('keydown', e => {
   const el = e.target;
   if (!el.matches?.('input[data-type="len"]')) return;
-  if (e.key === 'Escape') { el.value = el.dataset.was ?? el.value; el.classList.remove('invalid'); el.nextElementSibling?.classList?.contains('field-err') && el.nextElementSibling.remove(); el.blur(); e.stopPropagation(); return; }
+  if (e.key === 'Escape') { el.value = el.dataset.was ?? el.value; el.classList.remove('invalid'); el.nextElementSibling?.classList?.contains('field-err') && el.nextElementSibling.remove(); delete el.dataset.stepped; el.blur(); e.stopImmediatePropagation(); e.preventDefault(); return; }
   if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
   e.preventDefault();
-  const path = el.dataset.bind, cur = parseLenExpr(el.value, getPath(doc, path));
+  const path = el.dataset.bind, cur = path ? parseLenExpr(el.value, getPath(doc, path)) : parseLenExpr(el.value);
   if (!Number.isFinite(cur)) return;
   // inches: 1/8" (Shift 1", Alt 1/16"); centimetres: 0.5 cm (Shift 1 cm, Alt 1 mm)
   const step = ui.units === 'cm' ? (e.shiftKey ? 1 : e.altKey ? 0.1 : 0.5) / 2.54 : e.shiftKey ? 1 : e.altKey ? 1 / 16 : 1 / 8;
@@ -108,7 +108,7 @@ HUD_WIDGETS.selsize = {
     const sel = selList(); if (!sel.length) return '';
     const k = blockFrameSize(b) / b.n, pts = sel.flatMap(i => b.regions[i].pts), bb = bounds(pts);
     const name = sel.length === 1 ? regionName(b, b.regions[sel[0]]) : plural(sel.length, 'shape');
-    return `<div class="hud-info"><b>${esc(name)}</b> · ${fmtSize(bb.w * k, bb.h * k)} finished</div>`;
+    return `<div class="hud-info"><b>${esc(name)}</b> · ${inputLen(bb.w * k)} × ${inputLen(bb.h * k)}${ui.units === 'cm' ? ' cm' : '"'} finished</div>`;
   },
 };
 
@@ -172,14 +172,22 @@ function showTour() {
   box.innerHTML = `<div class="tour-hl" style="left:${r.left - 4}px;top:${r.top - 4}px;width:${r.width + 8}px;height:${r.height + 8}px"></div>
     <div class="tour-card"><b>${title}</b> <span class="muted">${_tour + 1} of ${TOUR.length}</span><p>${text}</p><div class="btn-row"><button class="btn small" data-act="tourEnd">Close</button><span class="grow"></span>${_tour ? '<button class="btn small" data-act="tourStep" data-arg="-1">Back</button>' : ''}<button class="btn small primary" data-act="tourStep" data-arg="1">${_tour === TOUR.length - 1 ? 'Done' : 'Next'}</button></div></div>`;
   document.body.appendChild(box);
-  const card = box.querySelector('.tour-card'), below = r.bottom + 12 + 160 < innerHeight;
-  card.style.top = `${below ? r.bottom + 12 : Math.max(12, r.top - card.offsetHeight - 12)}px`;
-  card.style.left = `${clamp(r.left, 12, innerWidth - card.offsetWidth - 12)}px`;
+  const card = box.querySelector('.tour-card'), cw = card.offsetWidth, ch = card.offsetHeight;
+  if (r.height > innerHeight / 3) {   // tall targets (the tool strip, the panels): beside them
+    const right = r.right + 16 + cw < innerWidth;
+    card.style.left = `${right ? r.right + 16 : Math.max(12, r.left - cw - 16)}px`;
+    card.style.top = `${clamp(r.top + 40, 12, innerHeight - ch - 12)}px`;
+  } else {
+    const below = r.bottom + 12 + ch < innerHeight;
+    card.style.top = `${below ? r.bottom + 12 : Math.max(12, r.top - ch - 12)}px`;
+    card.style.left = `${clamp(r.left, 12, innerWidth - cw - 12)}px`;
+  }
   card.querySelector('.primary').focus();
 }
 Actions.tourStep = d => { _tour += +d; showTour(); };
 Actions.tourEnd = () => { _tour = -1; $('#tour')?.remove(); };
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && _tour >= 0) Actions.tourEnd(); });
+window.addEventListener('resize', debounce(() => { if (_tour >= 0) showTour(); }, 100));
 
 document.addEventListener('keydown', e => {
   const t = e.target.closest?.('#ws-tabs [role="tab"]');
@@ -208,3 +216,21 @@ document.addEventListener('keydown', e => {
   if (ui.view === 'quilting' && (k === 'h' || k === 'z')) Actions.qTool(k === 'h' ? 'hand' : 'zoom');
   if (['fabric', 'pattern'].includes(ui.view) && (k === 'h' || k === 'v')) Actions.docTool(k === 'h' ? 'hand' : 'pointer');
 });
+
+/* ---------- zoom at true scale ---------- */
+// screen pixels per inch on the canvas now (null when there's no zoomable canvas)
+function canvasPxPerInch() {
+  if (ui.view === 'block') { const b = activeBlock(), g = $('#ed-c'); if (!b || b.kind !== 'drawn' || !g) return null; const m = g.getScreenCTM(); return m ? m.a * gridScale(b) * b.n / blockFrameSize(b) : null; }
+  if (['layout', 'quilting'].includes(ui.view)) { const m = $('#main svg.quilt-svg')?.getScreenCTM(); return m ? m.a : null; }
+  return null;
+}
+// 100% is actual size (a 1" piece measures 1" on a typical 96 dpi screen)
+function zoomPctText() { const p = canvasPxPerInch(); return p ? `${Math.max(1, Math.round(p / 96 * 100))}%` : '—'; }
+Actions.zoomActual = () => {
+  const p = canvasPxPerInch(); if (!p) return;
+  if (ui.view === 'block') setZoom(edZoom() * 96 / p); else qzSet(qzZoom() * 96 / p);
+};
+document.addEventListener('keydown', e => {
+  if (!e.shiftKey || e.ctrlKey || e.metaKey || e.altKey || e.code !== 'Digit0' || e.target.closest?.('input, select, textarea') || $('#modal-root').innerHTML) return;
+  e.preventDefault(); Actions.zoomActual();
+}, true);
