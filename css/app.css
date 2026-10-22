@@ -67,7 +67,9 @@ a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: un
 ::-webkit-scrollbar-track { background: transparent; }
 
 /* ---------- frame ---------- */
-#app { display: grid; height: 100vh; grid-template-rows: auto auto minmax(0, 1fr) auto auto; }
+#app { display: grid; height: 100vh; grid-template-rows: auto auto minmax(0, 1fr) auto auto; grid-template-columns: minmax(0, 1fr); }
+#appbar > * { min-width: 0; }
+#ws-tabs { overflow-x: auto; scrollbar-width: none; }
 #body { display: flex; min-height: 0; min-width: 0; }
 #docarea { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--surround); position: relative; }
 #docwrap { flex: 1; min-height: 0; position: relative; }
@@ -735,3 +737,39 @@ table.t .fabcell { display: flex; align-items: center; gap: 8px; }
 .fabprops .row { display: flex; gap: 6px; align-items: center; }
 .fabprops .row > input[type=text] { flex: 1; }
 .popover .pop-h .grow { flex: 1; }
+
+/* welcome, tab guard, position chip */
+.moved { background: var(--bg-sunk); border: 1px solid var(--line); border-radius: 8px; padding: 6px 14px 4px; margin: 12px 0; }
+.moved h4 { margin: 6px 0; }
+.moved ul { margin: 0 0 6px; padding-left: 18px; }
+.moved li { margin-bottom: 4px; }
+.welcome-prefs { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-top: 10px; }
+.welcome-prefs > span { font-weight: 600; font-size: var(--fs-s); }
+.welcome-prefs select { margin-top: 0 !important; display: inline-block !important; width: auto !important; margin-left: 6px !important; }
+.welcome-prefs label.f { display: flex; align-items: center; }
+#tab-guard { position: fixed; top: 84px; left: 50%; transform: translateX(-50%); z-index: 75; display: flex; align-items: center; gap: 10px; background: var(--bg-raised); color: var(--text); border: 1px solid var(--warn); border-left: 4px solid var(--warn); border-radius: 8px; padding: 8px 12px; box-shadow: var(--shadow); font-size: var(--fs-s); max-width: calc(100vw - 24px); }
+#tab-guard .ic { color: var(--warn); }
+.sb-pos { font-variant-numeric: tabular-nums; color: var(--text-3); min-width: 90px; text-align: right; }
+@media (max-width: 900px) {
+  #appbar { gap: 4px; padding: 0 4px; }
+  .mark, #doc-title-slot, .save-state { display: none; }
+  #ws-tabs { flex: 1; min-width: 0; margin: 0; }
+  #ws-tabs button { padding: 0 9px; }
+  .hud-c.tr .hud-group { max-width: 70vw; }
+}
+
+/* rulers */
+#rulers { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+.ruler { position: absolute; background: var(--bg-panel); color: var(--text-3); font: 10px/1 var(--font); overflow: hidden; }
+.ruler.top { left: 0; right: 0; top: 0; height: 20px; border-bottom: 1px solid var(--line-strong); }
+.ruler.left { top: 0; bottom: 0; left: 0; width: 20px; border-right: 1px solid var(--line-strong); }
+.ruler i { position: absolute; background: var(--text-3); }
+.ruler.top i { left: var(--p); bottom: 0; width: 1px; height: 5px; }
+.ruler.top i.big { height: 9px; }
+.ruler.top i b { position: absolute; left: 3px; bottom: 7px; font-weight: 400; }
+.ruler.left i { top: var(--p); right: 0; height: 1px; width: 5px; }
+.ruler.left i.big { width: 9px; }
+.ruler.left i b { position: absolute; right: 8px; top: 2px; font-weight: 400; writing-mode: vertical-rl; transform: rotate(180deg); }
+.ruler-corner { position: absolute; left: 0; top: 0; width: 20px; height: 20px; background: var(--bg-panel); border-right: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); font: 9px/20px var(--font); text-align: center; color: var(--text-3); }
+#hud.with-rulers { inset: 20px 14px 14px 20px; }
+@media (max-width: 600px) { .hud-c.tl [data-hud="info"] { display: none; } }

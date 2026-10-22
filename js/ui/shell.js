@@ -4,11 +4,11 @@
 const Actions = {};
 const Views = {};
 const VIEW_LIST = [
-  { key: 'block', label: 'Blocks' },
-  { key: 'layout', label: 'Layout' },
-  { key: 'quilting', label: 'Quilting' },
-  { key: 'fabric', label: 'Fabric & cutting' },
-  { key: 'pattern', label: 'Pattern' },
+  { key: 'block', label: 'Blocks', short: 'Blocks' },
+  { key: 'layout', label: 'Layout', short: 'Layout' },
+  { key: 'quilting', label: 'Quilting', short: 'Quilting' },
+  { key: 'fabric', label: 'Fabric & cutting', short: 'Fabric' },
+  { key: 'pattern', label: 'Pattern', short: 'Pattern' },
 ];
 // The fabric list and the cutting plan share one step; "cutting" opens it on the cutting plan.
 const tabOf = v => v === 'cutting' ? 'fabric' : v;
@@ -191,6 +191,7 @@ function renderTopbar() {
   $('#menubar').innerHTML = menubarHtml();
   for (const b of $$('#appbar [data-act="commandPalette"]')) b.innerHTML = `${icon('search')}<span class="bar-kbd">Ctrl K</span>`;
   for (const b of $$('#appbar [data-act="toggleDrawer"]')) b.innerHTML = icon(b.dataset.arg === 'left' ? 'panelLeft' : 'panelRight');
+  for (const b of $$('#appbar [data-act="allMenus"]')) b.innerHTML = icon('menu');
 }
 function renderSaveState() {
   const el = $('#save-state'); if (!el) return;
@@ -214,7 +215,7 @@ function renderStatus() {
   left.innerHTML = '';
   if (src) { src.classList.add('moved'); left.appendChild(src); }
   const issues = typeof issueCount === 'function' ? issueCount() : 0;
-  bar.querySelector('.sb-r').innerHTML = `
+  bar.querySelector('.sb-r').innerHTML = `<span class="sb-pos" id="sb-pos" title="Pointer position, from the top left"></span>
     ${issues ? `<button class="sb-chip warn" data-act="openPanel" data-arg="issues" title="Things to check">${icon('warn', 13)} ${plural(issues, 'issue')}</button>` : ''}
     ${ui.view === 'block' ? `<button class="sb-chip" data-act="toggleSnap" aria-pressed="${!ui.snapOff}" title="Snap points to the grid">Snap ${ui.snapOff ? 'off' : 'on'}</button>` : ''}
     <button class="sb-chip" data-act="setUnits" data-arg="${ui.units === 'cm' ? 'in' : 'cm'}" title="Switch units">${ui.units === 'cm' ? 'cm' : 'inches'}</button>`;
@@ -236,8 +237,9 @@ document.addEventListener('click', e => {
 });
 // A name for the undo step a control makes (History panel): its label, title or text.
 function labelNextCommit(el) {
-  const lab = el.closest?.('label, .f');
-  let t = el.getAttribute?.('aria-label') || (el.tagName === 'BUTTON' && el.textContent.trim()) || el.title || (lab && (lab.firstChild?.textContent || lab.textContent)) || '';
+  const lab = el.closest?.('label, .f'), field = /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName);
+  const labText = lab && (lab.firstChild?.nodeType === 3 ? lab.firstChild.textContent : lab.textContent);
+  let t = el.getAttribute?.('aria-label') || (field && labText) || (el.tagName === 'BUTTON' && el.textContent.trim()) || el.title || labText || '';
   t = String(t).replace(/\s+/g, ' ').replace(/[…:]$/, '').trim().slice(0, 48);
   nextCommitLabel = t || null;
   setTimeout(() => { nextCommitLabel = null; }, 0);
@@ -273,7 +275,7 @@ function applyBinding(el) {
   if (type === 'len') v = parseLenExpr(v, getPath(path.startsWith('ui.') ? ui : doc, path.replace(/^ui\./, '')));
   else if (type === 'num' || type === 'int') v = parseFloat(v);
   if (type === 'len' || type === 'num' || type === 'int') {
-    if (!Number.isFinite(v)) { toast('Please enter a number'); renderView(); return; }
+    if (!Number.isFinite(v)) { if (type === 'len') lenFieldError(el, fieldValue(el)); else { toast('Please enter a number'); renderView(); } return; }
     if (type === 'int') v = Math.round(v);
     const lo = el.dataset.min !== undefined ? parseFloat(el.dataset.min) : -Infinity;
     const hi = el.dataset.max !== undefined ? parseFloat(el.dataset.max) : Infinity;

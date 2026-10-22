@@ -40,6 +40,8 @@ function renderHud() {
     if (h) corners[p.corner in corners ? p.corner : w.corner].push(`<div class="hud-w" data-hud="${id}">${h}</div>`);
   }
   preserveFocus(hud, () => { hud.innerHTML = Object.entries(corners).map(([c, list]) => `<div class="hud-c ${c}">${list.join('')}</div>`).join(''); });
+  hud.classList.toggle('with-rulers', !!prefs.rulers);
+  if (typeof drawRulers === 'function') requestAnimationFrame(drawRulers);
 }
 Actions.hudCustomise = () => {
   const row = id => { const p = hudPref(id); return `<div class="hud-row"><label class="check"><input type="checkbox" data-change="hudShow" data-arg="${id}" ${p.show ? 'checked' : ''}> ${HUD_WIDGETS[id].label}</label>

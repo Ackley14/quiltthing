@@ -120,11 +120,6 @@ async function loadTessSample() {
   resetHistory(); saveNow(); render();
 }
 
-function welcome() {
-  openModal(`<h2>Quilt Designer</h2>
-    <p>Design blocks, lay out a quilt and print the pattern. Your work saves in this browser.</p>
-    <div class="actions welcome-actions"><button class="btn" data-act="welcomeBlank">Start blank</button><button class="btn" data-act="welcomeClassic">Start from a classic block</button><button class="btn primary" data-act="closeModal">Explore the sample</button></div>`, () => { ui.seenTour = true; saveUi(); });
-}
 function startBlank() {
   doc = newDoc(); ui.projectId = null;
   addBlockToDoc(newDrawnBlock('My first block'));
@@ -155,7 +150,7 @@ function init() {
   } else {
     loadSampleProject();
   }
-  if (!ui.seenTour) welcome();
+  if (!prefs.welcomed) welcomeV4();
   // keep the "Saved" indicator fresh after debounced saves
   setInterval(renderSaveState, 1500);
   // the canvas area changes size when panels open, close or are resized, not only with the window

@@ -106,7 +106,8 @@ const MENUS = {
     items.push('-', { header: 'Theme' }, tick('Dark', 'setTheme', 'dark', prefs.theme !== 'light'), tick('Light', 'setTheme', 'light', prefs.theme === 'light'),
       '-', { header: 'Around the quilt' }, ...Object.entries(SURROUNDS).map(([k, [l]]) => tick(l, 'setSurround', k, prefs.surround === k)),
       '-', { header: 'Text size' }, tick('Standard', 'setDensity', 'standard', prefs.density !== 'large'), tick('Large', 'setDensity', 'large', prefs.density === 'large'),
-      '-', tick('Tool names in the tool strip', 'toggleToolLabels', undefined, prefs.toolLabels),
+      '-', tick('Rulers', 'toggleRulers', undefined, prefs.rulers),
+      tick('Tool names in the tool strip', 'toggleToolLabels', undefined, prefs.toolLabels),
       { label: 'Customise the canvas HUD…', act: 'hudCustomise' },
       tick('Hide panels', 'toggleHidePanels', undefined, dockSession.hidden, 'Ctrl+.'));
     return items;
@@ -160,6 +161,7 @@ const MENUS = {
   help: () => [
     { label: 'How it works', act: 'help', kb: '?' },
     { label: 'Keyboard shortcuts', act: 'shortcuts' },
+    { label: "What's new and where things moved", act: 'whatsNew' },
     '-',
     { label: 'About', act: 'about' },
   ],
@@ -295,3 +297,10 @@ Actions.selNone = () => { setSel([]); refreshEditor(); renderView(); };
 Actions.selInvert = () => { const b = activeBlock(), s = new Set(selList()); if (ui.tool !== 'select') ui.tool = 'select'; setSel(b.regions.map((_, i) => i).filter(i => !s.has(i))); renderView(); };
 Actions.selSameFabric = () => { const b = activeBlock(), fabs = new Set(selList().map(i => resolveFab(b.regions[i].fab))); setSel(b.regions.map((r, i) => fabs.has(resolveFab(r.fab)) ? i : -1).filter(i => i >= 0)); renderView(); };
 Actions.selByFabric = f => { const b = activeBlock(); if (ui.tool !== 'select') ui.tool = 'select'; setSel(b.regions.map((r, i) => r.fab === f ? i : -1).filter(i => i >= 0)); renderView(); };
+
+// Small screens: every menu in one list (the menu bar doesn't fit)
+Actions.allMenus = (a, el) => {
+  const items = [{ label: 'Quilt name…', act: 'focusTitle' }];
+  for (const [k, name] of BAR_MENUS) { items.push('-', { header: name }); for (const it of MENUS[k]()) if (it !== '-' && !(it && it.header)) items.push(it); }
+  openMenu(el, items, { align: 'left' });
+};
