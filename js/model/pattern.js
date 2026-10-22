@@ -29,13 +29,13 @@ function bindingStepsHtml(bnd, sa) {
   const mitre = `<svg viewBox="0 0 150 110" width="1.6in"><rect x="10" y="30" width="90" height="70" fill="#f4f1ea" ${st}/><rect x="10" y="30" width="80" height="10" fill="${fab}" ${st}/><path d="M90 30 L120 0 L130 10 L100 40 Z" fill="${fab}" ${st} fill-opacity=".85"/><text x="18" y="66" font-size="10" fill="#2b3a4a">fold up at 45°,</text><text x="18" y="80" font-size="10" fill="#2b3a4a">then down</text></svg>`;
   const ends = `<svg viewBox="0 0 150 110" width="1.6in"><rect x="10" y="45" width="80" height="18" fill="${fab}" ${st}/><rect x="60" y="45" width="80" height="18" fill="${fab}" ${st} fill-opacity=".75"/><line x1="60" y1="35" x2="60" y2="75" ${dash}/><line x1="78" y1="35" x2="78" y2="75" ${dash}/><text x="52" y="92" font-size="10" fill="#2b3a4a">overlap = ${esc(W)}</text></svg>`;
   return `<h3>Binding</h3><div class="bind-figs">${fig(join, 'Join strips on the diagonal')}${fig(mitre, 'Mitre each corner')}${fig(ends, 'Join the ends')}</div><ol>
-      <li>Lay two ${W} strips (fabric ${fabricLetter(bnd.fabric)}) right sides together at a right angle and sew corner to corner across the overlap. Trim to ${fmtLen(sa)} and press open. Join all the strips this way into one long strip.</li>
+      <li>Lay one ${W} strip (fabric ${fabricLetter(bnd.fabric)}) right side up. Lay a second strip right side down across its end at a right angle, so they make an L with the ends overlapping in a square. Draw a line across the square from the inside corner to the outside corner and sew on it. Open it to check it makes a straight strip, then trim ${fmtLen(sa)} beyond the seam and press it open. Join all the strips this way into one long strip.</li>
       <li>Press the strip in half lengthwise, wrong sides together, so it is ${fold} wide.</li>
       <li>Trim the batting and backing even with the quilt top.</li>
-      <li>Start midway along one side. Leaving a 10" tail, sew the raw edges of the binding to the front of the quilt with a ${fmtLen(sa)} seam. Stop ${fmtLen(sa)} from the corner and backstitch.</li>
+      <li>Start midway along one side. Leaving a 10" tail, sew the raw edges of the binding to the front of the quilt with a ${fmtLen(sa)} seam (a walking foot helps keep the layers together). Stop ${fmtLen(sa)} from the corner and backstitch.</li>
       <li>Fold the binding up at 45°, away from the quilt, then fold it straight down along the next side, the fold level with the edge you just sewed. Start sewing again at the edge. Repeat at every corner.</li>
-      <li>Stop about 10" before where you started. Overlap the two tails by ${W} and trim. Open them out, sew them together on the diagonal like step 1, refold and finish sewing.</li>
-      <li>Fold the binding over to the back so it just covers the stitching line, folding the corners into mitres.</li>
+      <li>Stop about 10" before where you started. Lay both tails flat along the edge and trim them so they overlap by exactly ${W} (the strip width). Open them out, lay them right sides together at a right angle and sew corner to corner as in step 1. Check, trim to ${fmtLen(sa)}, refold and finish sewing.</li>
+      <li>Fold the binding over to the back so it just covers the stitching line. At each corner fold one side over, then the other, to make a neat diagonal (a mitre); a pin or clip holds it.</li>
       <li>Hand-stitch it down with a blind stitch, or machine-stitch from the front in the ditch next to the binding.</li></ol>`;
 }
 function battingText(b) {
@@ -152,34 +152,96 @@ function blockDiagramSvg(block, BS, paperIn, opts = {}) {
   return s + '</svg>';
 }
 
-const UNIT_NAMES = { hst: 'half-square triangle (HST) unit', qst: 'quarter-square triangle unit', goose: 'flying-geese unit', snowball: 'stitch-and-flip unit', curved: 'curved unit', hrt: 'half-rectangle triangle unit', complex: 'set-in unit' };
+const UNIT_NAMES = { hst: 'half-square triangle (HST) unit', qst: 'quarter-square triangle (QST) unit', goose: 'flying-geese unit', snowball: 'stitch-and-flip unit', curved: 'curved unit', hrt: 'half-rectangle triangle (HRT) unit', complex: 'set-in unit' };
 
-function unitMethodText(type, sample, n, sa) {
-  const r = sample.rect, unf = fmtSize(r.w + 2 * sa, r.h + 2 * sa);
-  const L = f => `<b>${fabricLetter(f)}</b>`;
-  const fabs = sample.unit.fabs || [];
+// How to make one kind of unit: what it is, then lettered sub-steps (one action each).
+// n = units per block, copies = blocks. Every size is a cut or unfinished size.
+function unitMethodText(type, sample, n, sa, copies = 1) {
+  const r = sample.rect, unf = fmtSize(r.w + 2 * sa, r.h + 2 * sa), S = fmtLen(sa);
+  const L = f => `<b>${fabricLetter(resolveFab(f))}</b>`;
+  const byLight = uniq((sample.unit.fabs || []).map(resolveFab)).sort((p, q) => luminance(fabricHex(q)) - luminance(fabricHex(p)));
+  const lt = byLight[0], dk = byLight[byLight.length - 1];
+  const total = n * copies;
+  const make = (one, many, what) => `Make <b>${total}</b> ${total === 1 ? one : many}${copies > 1 ? ` (${n} per block)` : ''}. ${what}`;
+  const steps = list => `<ol class="sub">${list.map(t => `<li>${t}</li>`).join('')}</ol>`;
+  const spare = got => (got > total ? ` You'll have ${got - total} spare.` : '');
   switch (type) {
     case 'hst': {
-      const sq = fmtLen(ceilEighth(r.w + sa * (2 + Math.SQRT2)), 'up');
-      return `Make <b>${n}</b> HST units (${fabs.map(L).join(' + ')}). Pair a ${sq} square of each fabric right sides together, draw a diagonal line on the lighter one, sew ${fmtLen(sa)} on both sides of the line and cut on it. Each pair makes 2 units. Press toward the darker fabric and trim to ${unf}.`;
+      const sq = fmtLen(ceilEighth(r.w + sa * (2 + Math.SQRT2)), 'up'), pairs = Math.ceil(total / 2);
+      return make('half-square triangle (HST)', 'half-square triangles (HSTs)', `An HST is a square made of two triangles, here ${L(lt)} and ${L(dk)}.`) + steps([
+        `Draw a diagonal line, corner to corner, on the wrong side of each ${sq} ${L(lt)} square.`,
+        `Place each on a ${sq} ${L(dk)} square, right sides together, edges matching.`,
+        `Sew ${S} from the line on both sides.`,
+        `Cut on the drawn line. Each pair of squares makes 2 HSTs (${plural(pairs, 'pair')} make ${pairs * 2}).${spare(pairs * 2)}`,
+        `Open each HST and press the seam toward ${L(dk)}. Trim off the dog ears (the small points sticking out at two corners). Each HST should measure ${unf}; trim if needed, keeping the seam corner to corner.`,
+      ]);
     }
     case 'qst': {
-      const sq = fmtLen(ceilEighth(r.w + 2 * sa * (1 + Math.SQRT2)), 'up');   // finished + 1¼" (for ¼" seams)
-      return `Make <b>${n}</b> quarter-square triangle units (${fabs.map(L).join(' + ')}). ${fabs.length === 2 ? `Make HSTs from the ${sq} squares (two at a time), pair two HSTs with contrasting fabrics facing, draw a diagonal across the seam, sew ${fmtLen(sa)} each side and cut. Each pair makes 2 units.` : 'Sew the triangles in pairs, then join the pairs, matching the centre.'} Trim to ${unf}.`;
+      if (byLight.length === 2) {
+        const sq = fmtLen(ceilEighth(r.w + 2 * sa * (1 + Math.SQRT2)), 'up'), pairs = Math.ceil(total / 2);
+        return make('quarter-square triangle (QST)', 'quarter-square triangles (QSTs)', `A QST (also called an hourglass) is a square made of four triangles meeting in the centre. You make HSTs first, then cut them again.`) + steps([
+          `Make HSTs: draw a diagonal on the wrong side of each ${sq} ${L(lt)} square, place it on a ${sq} ${L(dk)} square right sides together, sew ${S} each side of the line and cut on it. Press toward ${L(dk)}. Don't trim these HSTs.`,
+          `Draw a diagonal on the wrong side of half the HSTs, corner to corner across the seam.`,
+          `Place each marked HST on an unmarked one, right sides together, ${L(lt)} facing ${L(dk)}. The seams lie on top of each other, pressed in opposite directions so they butt together (nest).`,
+          `Sew ${S} each side of the line and cut on it. Each pair of HSTs makes 2 QSTs.${spare(pairs * 2)}`,
+          `Press, then trim each QST to ${unf}, keeping the centre point in the centre: line up the ruler's diagonal line with a seam.`,
+        ]);
+      }
+      return make('quarter-square triangle (QST)', 'quarter-square triangles (QSTs)', `A QST is a square made of four triangles meeting in the centre, here ${byLight.map(L).join(', ')}.`) + steps([
+        `Lay out the four triangles of each unit as in the picture.`,
+        `Sew them in pairs along a short edge, right sides together, to make two halves. The long edges are bias, so handle them gently. Press toward the darker fabric.`,
+        `Place the halves right sides together, nesting the centre seams so the points meet, and sew along the long edge.`,
+        `Press and trim the dog ears. Each unit should measure ${unf}.`,
+      ]);
     }
     case 'goose': {
       const big = fmtLen(ceilEighth(Math.max(r.w, r.h) + 2 * sa * (1 + Math.SQRT2)), 'up');
       const small = fmtLen(ceilEighth(Math.min(r.w, r.h) + sa * (2 + Math.SQRT2)), 'up');
-      return `Make <b>${n}</b> flying-geese units (goose ${L(sample.unit.goose)}, sky ${L(sample.unit.sky)}) with the no-waste method: place two ${small} sky squares on opposite corners of a ${big} goose square, sew ${fmtLen(sa)} each side of the diagonal, cut apart, add the remaining sky squares the same way. Every big square makes 4 geese. Trim to ${unf}.`;
+      const bigs = Math.ceil(total / 4), g = L(sample.unit.goose), k = L(sample.unit.sky);
+      return make('flying-geese unit', 'flying-geese units', `A flying-geese unit is a rectangle with a large ${g} triangle (the "goose") and a small ${k} triangle (the "sky") on each side. They're made four at a time: each ${big} ${g} square and four ${small} ${k} squares make 4 geese (${plural(bigs, 'big square')} and ${bigs * 4} small squares make ${bigs * 4}).${spare(bigs * 4)}`) + steps([
+        `Draw a diagonal line on the wrong side of each ${small} ${k} square.`,
+        `Place two of them on opposite corners of a ${big} ${g} square, right sides together, so the drawn lines form one line across the big square. The small squares overlap a little in the middle.`,
+        `Sew ${S} from the line on both sides. Cut on the drawn line.`,
+        `Press the small triangles out, away from the big one. You now have two heart-shaped pieces.`,
+        `Place a ${small} ${k} square on the ${g} corner of each heart, right sides together, its drawn line running from that corner to the dip between the two small triangles. Sew ${S} each side of the line and cut on it.`,
+        `Press the small triangles out. Each heart gives 2 geese, so each big square gives 4.`,
+        `Trim the dog ears and square each unit to ${unf}. Keep ${S} above the goose's point: that is the seam allowance, so the point stays sharp when the unit is sewn in.`,
+      ]);
     }
-    case 'snowball':
-      return `Make <b>${n}</b> stitch-and-flip units: draw a diagonal on the wrong side of each small corner square, place it on the corner of the main piece right sides together, sew on the line, trim ${fmtLen(sa)} beyond the seam and press open. Unit measures ${unf}.`;
-    case 'curved':
-      return `Make <b>${n}</b> curved units: fold each piece in half to finger-press the centre of the curve, pin the centres and ends right sides together with the concave piece on top, and sew slowly, easing the curve. Press toward the convex piece. Trim to ${unf}.`;
+    case 'snowball': {
+      const u = sample.unit, c = u.corners[0], cq = fmtLen(ceilEighth(c.cls.leg + 2 * sa), 'up'), nc = u.corners.length;
+      return make('stitch-and-flip unit', 'stitch-and-flip units', `Each is a ${unf} ${L(u.main.fab)} piece with ${nc === 1 ? 'one corner' : `${nc} corners`} replaced by ${L(c.fab)} triangles sewn from small squares.`) + steps([
+        `Draw a diagonal line on the wrong side of each ${cq} ${L(c.fab)} square.`,
+        `Place one on a corner of the ${L(u.main.fab)} piece, right sides together, edges matching, with the line running across the corner.`,
+        `Sew on the line. Sewing a thread's width toward the corner keeps the unit full size after pressing.`,
+        `Trim ${S} outside the stitching, cutting away the corner of both layers.`,
+        `Press the triangle toward the corner.${nc > 1 ? ' Repeat on the other corners.' : ''} The unit still measures ${unf}.`,
+      ]);
+    }
+    case 'curved': {
+      const np = (sample.pieces || []).length, many = np > 2;
+      return make('curved unit', 'curved units', `Each joins a convex piece (it bulges out, like a pie slice) to a concave one (scooped in, like an L).${many ? ` This unit has ${np} curved pieces: start with the smallest and add one ring at a time, working outward.` : ''}`) + steps([
+        `Fold each piece in half along its curved edge and finger-press a small crease at the centre of the curve.`,
+        `Place the concave piece on top of the convex one, right sides together, matching the creases. Pin at the centre, then at both ends, then in between, easing the top edge to follow the curve.`,
+        `Sew slowly with a ${S} seam, concave piece on top. Every inch or so, stop with the needle down and straighten the fabric ahead.`,
+        `Press the seam toward the convex piece. If it pulls, clip the concave piece's seam allowance a few times, no deeper than ⅛".`,
+        `Trim to ${unf}.`,
+      ]);
+    }
     case 'hrt':
-      return `Make <b>${n}</b> half-rectangle triangle units: sew the triangles along the long edge with the points offset so the unit squares up to ${unf}.`;
+      return make('half-rectangle triangle (HRT)', 'half-rectangle triangles (HRTs)', `An HRT is a rectangle cut corner to corner into two long triangles, here ${byLight.map(L).join(' and ')}. The triangles aren't 45°, so their tips don't line up like an HST's.`) + steps([
+        `Check the triangles were cut with the fabric right side up (see the cutting list): a mirror-image triangle won't fit.`,
+        `Lay a ${L(lt)} and a ${L(dk)} triangle right sides together along their long edges. Slide them so the edges cross ${S} in from each end: that is where the seam starts and stops.`,
+        `Sew along the long edge with a ${S} seam. Press toward ${L(dk)}.`,
+        `Trim the dog ears. The unit should measure ${unf}. The seam meets the short edges a little way in from the corners, not in them: that's right for an HRT.`,
+      ]);
     case 'complex':
-      return `This block has <b>set-in (Y) seams</b>. Mark the ${fmtLen(sa)} seam intersections on the wrong side, sew each seam only between the marks and back-stitch, then pivot to set in the next piece. English paper piecing is a good alternative.`;
+      return `This block has <b>set-in (Y) seams</b>: three pieces meet at one point, so those seams are sewn only up to the seam line, never into the seam allowance.` + steps([
+        `On the wrong side of each piece, mark a dot ${S} in from each corner where three seams will meet.`,
+        `Sew the pieces that form the centre first (the diamonds of a star, or the centre of a hexagon), starting and stopping exactly at the dots and backstitching at both. Press seams open.`,
+        `Set in each remaining piece with two seams: pin it to one neighbour, dot to dot, and sew from the outer edge in to the dot; backstitch. Lift the needle, swing the next edge into line and sew from the dot out to the edge.`,
+        `Press, then square the block to its unfinished size.`,
+      ]) + ` English paper piecing is a good alternative.`;
   }
   return '';
 }
@@ -211,7 +273,7 @@ function appliqueSteps(block, BS, sa, an) {
     ? `Trace each reversed template onto the paper side of fusible web, cut it out roughly, fuse it to the wrong side of the fabric and cut on the line. Peel off the paper, place the pieces and fuse with a hot, dry iron. Finish the raw edges with a blanket, zigzag or close straight stitch.`
     : `Trace each template onto the right side of the fabric: that line is the fold line. Cut 3/16" outside it. Pin or glue-baste the pieces in place, then turn the allowance under with the needle tip, a little at a time, and blind-stitch with thread that matches the appliqué. Clip inner curves almost to the line; don't turn edges that will be covered by another piece.`;
   return [
-    { text: `<b>Appliqué placement</b> (fabric ${fabs}). ${plainBack ? `Appliqué shrinks and frays the background a little, so cut it 1" bigger all round (${fmtSize(BS + 2 * sa + 2, BS + 2 * sa + 2)}) and trim it back to ${fmtSize(BS + 2 * sa, BS + 2 * sa)} afterwards, keeping the design in place. ` : ''}${where}`, diag: sketch },
+    { text: `<b>Appliqué placement</b> (fabric ${fabs}). ${plainBack ? `Appliqué shrinks and frays the background a little, so it was cut 1" bigger all round (${fmtSize(BS + 2 * sa + 2, BS + 2 * sa + 2)}). After stitching, trim it to ${fmtSize(BS + 2 * sa, BS + 2 * sa)}, keeping the design centred where it should be. ` : ''}${where}`, diag: sketch },
     { text: `<b>${fusible ? 'Fusible' : 'Turned-edge'} appliqué.</b> ${method}${order}`, diag: blockDiagramSvg(block, BS, STEP_DIAG_IN) },
   ];
 }
@@ -231,8 +293,7 @@ function blockStepsHtml(block, BS, sa, copies = 1) {
   }
   for (const list of groups.values()) {
     const u = list[0].unit;
-    let text = unitMethodText(u.type, list[0], list.length, sa);
-    if (copies > 1 && u.type !== 'complex') text = text.replace(`<b>${list.length}</b>`, `<b>${list.length}</b> per block (<b>${list.length * copies}</b> in total)`);
+    let text = unitMethodText(u.type, list[0], list.length, sa, copies);
     // sketch of the method, in the unit's own fabrics (lighter fabric first)
     const fabs = (u.fabs || []).slice().sort((p, q) => luminance(fabricHex(q)) - luminance(fabricHex(p)));
     const howto = u.type === 'goose' ? unitHowToSvg('goose', u.goose, u.sky)
@@ -242,6 +303,9 @@ function blockStepsHtml(block, BS, sa, copies = 1) {
     if (howto) text += `<div class="howto-wrap">${howto}</div>`;
     steps.push({ text, diag: blockDiagramSvg(block, BS, STEP_DIAG_IN, { level: an.height + 1, highlight: new Set(list), dim: true }) });
   }
+  // lay everything out first; the bias note is said once
+  if (an.height > 0) steps.push({ text: 'Lay out the units and pieces as in the block picture, checking that every triangle and goose points the right way.', diag: blockDiagramSvg(block, BS, STEP_DIAG_IN, { level: an.height + 1 }) });
+  let biasSaid = false;
   for (let k = 1; k <= an.height; k++) {
     const nodes = [];
     walkTree(an.root, n => { if (n.children.length && treeHeight(n) === k) nodes.push(n); });
@@ -254,17 +318,18 @@ function blockStepsHtml(block, BS, sa, copies = 1) {
       // a single short run of loose pieces: name them so the reader knows what goes where
       if (cnt === 1 && m <= 5 && sample.children.every(c => !c.children.length && c.pieces.length === 1)) {
         const names = sample.children.map(c => `${shapeName(c.pieces[0].cls).toLowerCase()} (<b>${fabricLetter(c.pieces[0].fab)}</b>)`).join(' + ');
-        parts.push(dir === 'cols' ? `Sew ${names} side by side` : dir === 'rows' ? `Sew ${names} top to bottom` : `Sew ${names} together along the diagonal seams, in that order`);
+        parts.push(dir === 'cols' ? `Sew ${names} together, side by side` : dir === 'rows' ? `Sew ${names} together, one above the other` : `Sew ${names} together along the diagonal seams, in that order`);
         continue;
       }
-      if (dir === 'cols') parts.push(isRoot && cnt === 1 ? `Sew the ${m} ${t} side by side` : `Sew ${cnt === 1 ? `the ${m} ${t}` : `${cnt} rows of ${m} ${t}`} side by side`);
-      else if (dir === 'rows') parts.push(isRoot && cnt === 1 ? `Join the ${m} ${t === 'sections' ? 'rows' : t} top to bottom` : `Join ${cnt === 1 ? `the ${m} ${t}` : `${cnt} sets of ${m} ${t}`} top to bottom`);
-      else parts.push(`Sew ${cnt === 1 ? `the ${m} ${t}` : `${cnt} groups of ${m} ${t}`} together along the diagonal seams, working outward from the centre`);
+      if (dir === 'cols') parts.push(cnt === 1 ? `Sew the ${m} ${t} together, side by side` : `Sew the ${t} in each row together, side by side (${cnt} rows of ${m})`);
+      else if (dir === 'rows') parts.push(isRoot && cnt === 1 ? `Sew the ${m} ${t === 'sections' ? 'rows' : t} together, top to bottom, matching seams` : cnt === 1 ? `Sew the ${m} ${t} together, one above the other` : `Sew ${m} ${t} together, one above the other (make ${cnt})`);
+      else parts.push(`Sew the ${t} to the centre, opposite sides first, working outward${cnt > 1 ? ` (${cnt} groups)` : ''}`);
     }
     let text = parts.join('. ') + '.';
-    if (descr.diag) text += ' Diagonal edges are cut on the bias and stretch easily: pin well, centre each piece so its points ("dog ears") overhang equally at both ends, and press without steam. Trim the dog ears after sewing.';
-    if (isRoot) text += isHexBlock(block) ? ` Press, then trim the hexagon to ${blockSizeText(block, BS, 2 * sa)} (${fmtLen(sa)} beyond each point of the sewn shape).` : ` Press, then square the block to ${fmtSize(BS + 2 * sa, BS + 2 * sa)}.`;
-    else if (descr.cols) text += ' Press seams in alternate directions from row to row so they nest.';
+    if (descr.diag && !biasSaid) { biasSaid = true; text += ' The long edges of triangles are on the bias and stretch easily: pin, don\'t pull, and press without steam. Centre each piece so its dog ears overhang equally at both ends, and trim them after each seam.'; }
+    if (isRoot) text += isHexBlock(block) ? ` Press, then trim it to a ${blockSizeText(block, BS, 2 * sa)}, ${fmtLen(sa)} beyond each point of the sewn shape.` : ` Press. The block should measure ${fmtSize(BS + 2 * sa, BS + 2 * sa)}; trim only if it's larger, keeping ${fmtLen(sa)} beyond any points.`;
+    else if ((descr.cols || 0) > 1 || nodes.filter(nd => nd.dir === 'cols').length > 1) text += ' Press the seams of each row the opposite way to the row before, so they nest when the rows are joined.';
+    else if (descr.cols || descr.rows) text += ' Press toward the darker fabric.';
     steps.push({ text, diag: blockDiagramSvg(block, BS, STEP_DIAG_IN, { level: k }) });
   }
   if (an.applique.length) steps.push(...appliqueSteps(block, BS, sa, an));
@@ -454,7 +519,7 @@ function renderPatternDoc() {
       ${doc.layout.binding?.fabric ? `<tr><td><b>Binding</b></td><td>${bindingText(plan)}</td></tr>` : ''}
       ${stats.total > 0 ? `<tr><td><b>Thread</b></td><td>About ${Math.ceil(stats.threadYds / 50) * 50} yd for quilting (${Math.round(stats.total / 36)} yd of stitching, top + bobbin)</td></tr>` : ''}
     </tbody></table>
-    <div class="note"><b>Before you start.</b> Read all instructions. All seams are ${fmtLen(sa)} unless noted; measurements include seam allowance. <b>WOF</b> = width of fabric. <b>RST</b> = right sides together. <b>HST</b> = half-square triangle.</div>
+    <div class="note"><b>Before you start.</b> Read all the instructions first. All seams are ${fmtLen(sa)} and sewn with right sides together unless noted. Every size given includes the seam allowance. <b>Finished</b> = the size in the quilt; <b>unfinished</b> = the size before it's sewn in (${fmtLen(2 * sa)} bigger). <b>WOF</b> = width of fabric, selvage to selvage. <b>Dog ears</b> = the small points that stick out past the edge after a diagonal seam; trim them off. Units such as HSTs and flying geese are explained where you first make them.</div>
     <div class="note"><b>Get ready.</b> Prewash your fabrics if you prewash (all of them, or none), then press them flat with starch or sizing so they cut accurately. Sew a test seam on scraps: two 2" strips sewn together should measure 3½" across. If not, adjust your needle or seam guide before you start.</div>`);
 
   /* --- cutting --- */
@@ -608,7 +673,7 @@ function panelStepsHtml(Q, sa, name, exact) {
     const content = p.b && doc.blocks[p.b] ? `the ${esc(doc.blocks[p.b].name)} block` : p.fab ? `a ${fmtSize(p.size, p.size)} square of fabric ${fabricLetter(p.fab)}` : 'the centre square';
     const frames = (p.frames || []).filter(f => f.width > 0);
     const tess = Q.mode === 'tess';
-    h += `<li><b>Panel:</b> ${frames.length ? `frame ${content} with ${frames.map((f, k) => `${fmtLen(f.width)} strips of fabric ${fabricLetter(f.fabric)}${k === 0 ? ' (innermost)' : ''}`).join(', then ')}, sides first, then top and bottom, so it measures ${fmtSize(pg.outer + 2 * sa, pg.outer + 2 * sa)} unfinished.` : `${content} measures ${fmtSize(pg.outer + 2 * sa, pg.outer + 2 * sa)} unfinished.`}</li>
+    h += `<li><b>Panel:</b> ${frames.length ? `frame ${content} with ${frames.map((f, k) => `${fmtLen(f.width + 2 * sa)}-wide strips of fabric ${fabricLetter(f.fabric)} (${fmtLen(f.width)} finished)${k === 0 ? ', innermost' : ''}`).join(', then ')}: sides first, pressing toward the frame, then top and bottom. It then measures ${fmtSize(pg.outer + 2 * sa, pg.outer + 2 * sa)} unfinished.` : `${content} measures ${fmtSize(pg.outer + 2 * sa, pg.outer + 2 * sa)} unfinished.`}</li>
       ${Q.mode === 'grid' ? '' : `<li><b>Setting the panel in:</b> piece the ${name} in sections: the full-width rows above and below the panel, and the shorter rows to its left and right. ${exact ? 'The pieces along the panel are cut to shape, so each section already has a straight edge there.' : `Trim each section's edge that meets the panel straight, ${fmtLen(sa)} beyond the panel line.`} Sew the left and right sections to the panel, then add the top and bottom sections, matching seams.</li>`}`;
   }
   return h;
@@ -666,25 +731,26 @@ function assemblyText(Q, sa) {
     const sw = g.sashing.width;
     if ((L.panels || []).length) h += medallionSteps(Q, sa);
     else if (sw) {
-      h += `<li>Sew each row together, placing a ${fmtSize(sw, Q.BS)} (finished) sashing strip between blocks${g.sashing.outer ? ' and at both ends' : ''}. Press toward the sashing.</li>`;
+      const cutS = fmtSize(sw + 2 * sa, Q.BS + 2 * sa), out = g.sashing.outer;
+      h += `<li><b>Block rows:</b> sew the blocks of each row together with a ${cutS} sashing strip between them${out ? ' and at both ends' : ''}. Press toward the sashing. Make ${g.rows}.</li>`;
       h += g.sashing.cornerstones
-        ? `<li>Make sashing rows: alternate sashing strips with cornerstones (fabric ${fabricLetter(g.sashing.cornerFabric)}). Press toward the sashing.</li><li>Join block rows and sashing rows, matching cornerstones to the vertical sashing.</li>`
-        : `<li>Join the rows with long horizontal sashing strips between them${g.sashing.outer ? ' and at the top and bottom' : ''}. Mark the block positions on each strip so the vertical sashing lines up.</li>`;
+        ? `<li><b>Sashing rows:</b> sew sashing strips and ${fmtSize(sw + 2 * sa, sw + 2 * sa)} cornerstones (fabric ${fabricLetter(g.sashing.cornerFabric)}) together, ${out ? 'starting and ending with a cornerstone' : 'a cornerstone between each pair of strips'}. Press toward the sashing. Make ${out ? g.rows + 1 : g.rows - 1}.</li><li>Join the rows${out ? ', starting and ending with a sashing row' : ', a sashing row between each pair of block rows'}. Match each cornerstone to the vertical sashing above and below it.</li>`
+        : `<li>Join the rows with long horizontal sashing strips between them${out ? ' and at the top and bottom' : ''}. Mark where the blocks' seams fall on each strip so the vertical sashing lines up from row to row.</li>`;
     } else {
-      h += `<li>Sew the blocks in each row together. Press the seams of alternate rows in opposite directions.</li><li>Join the rows, nesting the seams at each intersection.</li>`;
+      h += `<li>Sew the blocks of each row together. Press the seams of row A to the left, row B to the right, and so on.</li><li>Join the rows, nesting the seams at each intersection, and press.</li>`;
     }
     h += '</ol>';
   } else if (Q.mode === 'onpoint') {
-    h += `<ol><li>Lay out the blocks on point with the side setting triangles (fabric ${fabricLetter(L.onpoint.fill)}) at the ends of each diagonal row, as numbered.</li>
-      <li>Sew the blocks and side triangles of each diagonal row together. The setting triangles are cut oversized slightly; align their square corner with the block edge.</li>
+    h += `<ol><li>Lay out the blocks on point (turned 45°) in diagonal rows, as in the picture. Put a side setting triangle (fabric ${fabricLetter(L.onpoint.fill)}, the larger triangles) at both ends of each diagonal row, long edge facing out.</li>
+      <li>Sew each diagonal row together, right sides together. The setting triangles are cut to exact size: line up the triangle's square corner with the corner of the block it's sewn to, so its long edge runs straight with the other edges. Press each row the opposite way to the one before.</li>
       ${Q.cells.some(c => c.setting) ? (exactEdges() ? '<li>Blocks in setting-triangle positions are partial: only the part that shows is cut, to shape, and pieced like the full block before it goes into its diagonal row.</li>' : '<li>Blocks shown in setting-triangle positions are made whole and sewn into their diagonal rows like the others; only part of them shows, and the rest is trimmed away with the edges in the last step.</li>') : ''}
-      <li>Join the diagonal rows, matching seams. Add the four corner triangles last.</li>
-      <li>Trim the edges straight, leaving ${fmtLen(sa)} beyond the block points for seam allowance.</li>${panelStepsHtml(Q, sa, 'blocks', exactEdges())}</ol>`;
+      <li>Join the rows, matching seams where the blocks meet. Add the four corner triangles (the smaller ones) last, centring each on its block.</li>
+      <li>Check the edges are straight, with ${fmtLen(sa)} beyond the block corners for the seam allowance. Trim only where an edge wanders.</li>${panelStepsHtml(Q, sa, 'blocks', exactEdges())}</ol>`;
   } else {
     const t = L.tess, name = tessShape(t.shape).label.replace(/ \(.*\)$/, '').toLowerCase();
     const edge = t.edge !== 'fill' && t.cutEdges ? 'Edge pieces are cut to their exact shape (each has its own code on the map), so the edges come out straight with no trimming. Sew them in with their rows.' : t.edge === 'fill' ? `Partial shapes at the edges are cut from fabric ${fabricLetter(t.fill)} so the quilt finishes with straight edges.` : 'Shapes at the edges are trimmed straight after the top is assembled. Cut them as whole shapes and trim later, or use the edge templates.';
     const how = {
-      hex: `Hexagons need set-in (Y) seams. English paper piecing (EPP) is the easiest route: baste each hexagon over a paper template and whip-stitch neighbours together. By machine, sew hexagons into rows, stopping ${fmtLen(sa)} from each end, then set rows together.`,
+      hex: `Hexagons are joined with set-in (Y) seams. English paper piecing (EPP) is the easiest route: baste each hexagon over a paper hexagon and whip-stitch neighbours together (cut papers on the template's solid line and fabric on the dashed line). By machine: mark a dot ${fmtLen(sa)} in from every corner on the wrong side, sew the hexagons into rows sewing only from dot to dot and backstitching, then join the rows one edge at a time: sew to a dot, lift the needle, swing the next edge into line and carry on.`,
       tumbling: 'Sew three diamonds (one of each orientation) into a hexagon "cube" with set-in seams, then join the cubes into rows. EPP works well here too.',
       triangle: 'Sew the triangles into rows, alternating point up and point down and offsetting each so the edges align. Join the rows, matching points.',
       zigzag: 'Sew the parallelograms into horizontal rows, matching the angled edges. Join the rows so the zigzags line up into lightning bolts.',
@@ -699,7 +765,7 @@ function assemblyText(Q, sa) {
   }
   const bs = L.borders.filter(b => b.width > 0);
   if (bs.length) {
-    h += `<h3>Borders</h3><p>Measure the quilt through the centre and adjust these lengths if yours differs. For each border, sew the side strips first, press toward the border, then add the top and bottom.</p><ol>`;
+    h += `<h3>Borders</h3><p>Measure your quilt top through the centre, top to bottom and side to side; if it differs from the sizes below, cut the borders to your measurement. For each border, innermost first: fold a side strip and the quilt's side in half and mark the centres. Pin them right sides together at the centres and ends, then in between, easing in any fullness. Sew and press toward the border. Repeat on the other side, then add the top and bottom the same way.</p><ol>`;
     for (const p of Q.patches.filter(p => p.role === 'border' && (p.side === 'left' || p.side === 'top'))) {
       const bb = bounds(p.pts);
       h += `<li>Border ${p.ring + 1} (fabric ${fabricLetter(p.fab)}), ${p.side === 'left' ? 'sides' : 'top & bottom'}: ${fmtSize(Math.max(bb.w, bb.h) + 2 * sa, Math.min(bb.w, bb.h) + 2 * sa, 'up')} (cut size)</li>`;

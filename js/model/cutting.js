@@ -174,6 +174,9 @@ function collectCutItems(Q) {
   const ro = (fab, o = {}) => ({ ...o, wof: fabricRun(resolveFab(fab)) });   // recipe options for this fabric
   const isDir = fab => !!fabricById(fab).directional;
 
+  // no-waste geese are made four at a time from 1 big and 4 small squares: tally them per
+  // (goose, sky, size) so whole sets of squares are cut (the extras make spare geese)
+  const geese = new Map();
   // blocks: group identical placements
   const groups = new Map();
   for (const c of Q.cells) {
@@ -194,16 +197,29 @@ function collectCutItems(Q) {
     const speed = speedPieces(an);
     const use = p => ({ b: bid, i: all.indexOf(p) });
     for (const u of an.units) {
+      if (u.unit.type === 'goose') {
+        const gf = resolveFab(u.unit.goose), sf = resolveFab(u.unit.sky);
+        // the goose is the unit's biggest triangle; the other two are sky
+        const gp = u.pieces.reduce((a, p) => (polyArea(p.pts) > polyArea(a.pts) ? p : a)), sp = u.pieces.find(p => p !== gp);
+        if (gp && sp) {
+          const key = `${gf}|${sf}|${[round(u.rect.w, 3), round(u.rect.h, 3)].sort((a, b) => a - b).join('x')}`;
+          const g = geese.get(key) || { n: 0, gp, sp, name, use: use(gp), useS: use(sp) };
+          g.n += n; geese.set(key, g);
+        }
+      }
       if (u.unit.type === 'snowball') {
         handled.add(u.unit.main);
         add(u.unit.main.fab, recipeStitchMain(u.rect, sa), n, name, use(u.unit.main));
         for (const t of u.unit.corners) { handled.add(t); add(t.fab, recipeStitchCorner(t.cls.leg, sa), n, name, use(t)); }
       }
     }
+    // an appliqué block on one plain background piece: that piece is cut 1" bigger all round, to trim after stitching
+    const plainBg = an.applique.length && !isHexBlock(block) ? all.filter(p => !p.app) : [];
+    const oversizeBg = plainBg.length === 1 && plainBg[0].cls.shape === 'rect' ? plainBg[0] : null;
     for (const p of all) {
       if (handled.has(p)) continue;
       // mirrored placements only matter for pieces that have a left and right hand
-      let cls = p.cls, holes = p.holes;
+      let cls = p === oversizeBg ? { ...p.cls, w: p.cls.w + 2, h: p.cls.h + 2 } : p.cls, holes = p.holes;
       if (flip && ['rtri', 'para', 'tri', 'quad', 'poly', 'curved', 'holed'].includes(cls.shape)) {
         cls = classifyPiece(mirrorPolyX(p.pts, size / 2), { curved: p.curved });
         holes = holes.map(h => mirrorPolyX(h, size / 2));
@@ -211,6 +227,13 @@ function collectCutItems(Q) {
       }
       add(p.fab, recipeFor(cls, sa, ro(p.fab, { directional: isDir(p.fab), applique: p.app, holes })), n, name, use(p), speed.has(p) ? n : 0);
     }
+  }
+  for (const g of geese.values()) {
+    const extra = 4 * Math.ceil(g.n / 4) - g.n;
+    if (!extra) continue;
+    const r = p => recipeFor(p.cls, sa, ro(p.fab, { directional: isDir(p.fab), applique: p.app, holes: p.holes }));
+    add(g.gp.fab, r(g.gp), extra, g.name, g.use, extra);
+    add(g.sp.fab, r(g.sp), 2 * extra, g.name, g.useS, 2 * extra);
   }
   // tiles & setting triangles
   for (const t of Q.tiles) {
@@ -779,13 +802,13 @@ function cutVerb(recipe, units, speedUnits = 0) {
   // squares for two-at-a-time HSTs, no-waste geese and two-fabric hourglasses are sewn whole first
   if (speedUnits && ['diag', 'diagR', 'diagL', 'cross'].includes(recipe.cut)) {
     const keep = Math.min(units, speedUnits);
-    if (keep === units) return `sew them before cutting apart (see the block steps)`;
+    if (keep === units) return units === 1 ? `don't cut it yet: it's sewn first, then cut (see the block steps)` : `don't cut them yet: they're sewn first, then cut (see the block steps)`;
     const rest = units - keep, per = recipe.cut === 'cross' ? 4 : 2;
     return `keep ${keep} whole to sew first (see the block steps); cut the other ${rest} ${recipe.cut === 'cross' ? 'twice on the diagonal' : 'once on the diagonal'} → ${yieldText(rest * per)}`;
   }
   switch (recipe.cut) {
     case 'diag': return `cut once on the diagonal → ${yieldText(units * 2)}`;
-    case 'diagR': case 'diagL': return `cut each on the diagonal (${recipe.cut === 'diagR' ? 'top-left to bottom-right' : 'top-right to bottom-left'}) → ${yieldText(units * 2)}`;
+    case 'diagR': case 'diagL': return `with the fabric right side up, cut each on the diagonal (${recipe.cut === 'diagR' ? 'top-left to bottom-right' : 'top-right to bottom-left'}) → ${yieldText(units * 2)}. Don't fold or stack the fabric face to face: the triangles would be mirror images`;
     case 'cross': return `cut twice on the diagonal (an X) → ${yieldText(units * 4)}`;
     case 'stitch': return `for stitch-and-flip corners`;
     default: return '';

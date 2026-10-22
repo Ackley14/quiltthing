@@ -930,3 +930,6 @@ div.f > .seg { margin-top: 4px; }
 /* bottom corners: widgets side by side, so the canvas only keeps one row of room for them */
 .hud-c.bl, .hud-c.br { flex-direction: row; align-items: flex-end; }
 .hud-c.br { flex-direction: row-reverse; }
+
+.page ol.sub { list-style: lower-alpha; padding-left: 18px; margin: 3px 0 0; }
+.page ol.sub li { margin-bottom: 2px; }
