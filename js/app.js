@@ -141,6 +141,7 @@ function init() {
   if (ui.view === 'cutting') { ui.view = 'fabric'; ui.fabPane = 'cut'; }   // Cutting is now part of Fabric & cutting
   if (!Views[ui.view]) ui.view = 'layout';
   onDocChanged = () => { _Q = null; render(); };
+  window._hadStoredDesign = !!d;
   if (d) {
     doc = upgradeDoc(d);
     sanitizeUi();

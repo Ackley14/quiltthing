@@ -59,15 +59,15 @@ let _issues = { key: '', list: [], pending: false };
 // and the Issues panel update.
 function issueList() {
   const key = undoStack.current + '|' + ui.units;
-  if (_issues.key !== key && !_issues.pending) {
-    _issues.pending = true;
-    (window.requestIdleCallback || (f => setTimeout(f, 200)))(() => {
-      _issues.pending = false;
+  if (_issues.key !== key) {
+    clearTimeout(_issues.timer);
+    _issues.timer = setTimeout(() => (window.requestIdleCallback || (f => f()))(() => {
+      if (undoStack.current + '|' + ui.units !== key) return;   // changed again: a newer timer will run
       const k = undoStack.current + '|' + ui.units, list = computeIssues();
       const changed = JSON.stringify(list) !== JSON.stringify(_issues.list);
-      _issues = { key: k, list, pending: false };
+      _issues = { ...(_issues), key: k, list };
       if (changed) { renderStatus(); dockRender(); }
-    }, { timeout: 1500 });
+    }, { timeout: 1500 }), 900);
   }
   return _issues.list;
 }

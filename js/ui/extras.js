@@ -6,7 +6,7 @@
 function welcomeV4(whatsNew) {
   const v3 = !!localStorage.getItem('quiltthing.v3.ui') || whatsNew;
   // starting over replaces the design in this browser, so only offer it when there's nothing to lose
-  const fresh = !whatsNew && !v3;
+  const fresh = !whatsNew && !v3 && !window._hadStoredDesign;
   const theme = t => `<button class="btn${prefs.theme === t ? ' primary' : ''}" data-act="welcomeTheme" data-arg="${t}" aria-pressed="${prefs.theme === t}">${t === 'dark' ? 'Dark' : 'Light'}</button>`;
   openModal(`<h2>${v3 ? 'Welcome to the new Quilt Designer' : 'Quilt Designer'}</h2>
     <p>${v3 ? 'Everything you had is here, in a new layout. Your quilts, fabrics and saved designs carry over.' : 'Design blocks, lay out a quilt and print the pattern. Your work saves in this browser.'}</p>
@@ -32,12 +32,13 @@ Actions.whatsNew = () => { _welcomeWhatsNew = true; welcomeV4(true); };
 /* ---------- second tab: warn when the design changes somewhere else ---------- */
 window.addEventListener('storage', e => {
   if (e.key !== 'quiltthing.v3.doc' || !e.newValue || e.newValue === snapshot()) return;
+  savePaused = true;
   let bar = $('#tab-guard');
   if (!bar) { bar = document.createElement('div'); bar.id = 'tab-guard'; bar.setAttribute('role', 'alert'); document.body.appendChild(bar); }
-  bar.innerHTML = `${icon('warn', 16)}<span>This design was changed in another tab or window. Saving here would replace that work.</span><button class="btn small primary" data-act="tabGuardLoad">Load the other version</button><button class="btn small" data-act="tabGuardKeep">Keep this one</button>`;
+  bar.innerHTML = `${icon('warn', 16)}<span>This design was changed in another tab or window. Saving here is paused so that work isn't replaced.</span><button class="btn small primary" data-act="tabGuardLoad">Load the other version</button><button class="btn small" data-act="tabGuardKeep">Keep this one</button>`;
 });
 Actions.tabGuardLoad = () => location.reload();
-Actions.tabGuardKeep = () => { $('#tab-guard')?.remove(); saveNow(); toast('Kept this version'); };
+Actions.tabGuardKeep = () => { $('#tab-guard')?.remove(); savePaused = false; saveNow(); renderSaveState(); toast('Kept this version; saving again'); };
 
 /* ---------- F6: jump between regions (app bar, tool options, tools, panels, canvas, status) ---------- */
 const REGIONS = ['#appbar', '#ctxbar', '#toolstrip', '#dock-left', '#docarea', '#dock-right', '#dock-bottom', '#float-layer', '#statusbar'];

@@ -545,7 +545,7 @@ function layoutInspector() {
 
 
   let borders = L.borders.map((b, i) => `<div class="list-item"><div class="li-h"><b>Border ${i + 1}</b><button class="icon-btn sm" data-act="removeBorder" data-arg="${i}" aria-label="Remove border ${i + 1}" title="Remove">${icon('x', 14)}</button></div>
-      ${lenField('Width', `layout.borders.${i}.width`, { min: 0.25, max: 24 })}
+      ${lenField('Width', `layout.borders.${i}.width`, { min: 0.25, max: 24, aria: `Border ${i + 1} width` })}
       ${fabricPicker(b.fabric, 'borderFab').replace(/data-arg="([^"]+)"/g, `data-arg="${i}|$1"`)}</div>`).join('');
   h += section('Borders', `${borders}<div class="btn-row"><button class="btn small" data-act="addBorder">${icon('plus', 14)} Add border</button></div>`, { key: 'borders' });
 
@@ -606,8 +606,8 @@ function quiltParts() {
 function quiltPanel() {
   const parts = quiltParts(), cur = parts.some(p => p.key === ui.quiltPart) ? ui.quiltPart : 'setting', Q = Qnow();
   return `<div class="panel-tools"><span class="pt-note"><b>${fmtSize(Q.W, Q.H)}</b> finished</span><span class="grow"></span><button class="btn small" data-act="quiltAddMenu" aria-haspopup="menu">${icon('plus', 14)} Add ${icon('down', 12)}</button></div>
-    <div class="part-list" role="list" aria-label="Parts of the quilt">${parts.map(p => `<button class="part-row" role="listitem" aria-current="${p.key === cur}" data-act="quiltPart" data-arg="${p.key}">
-      <span class="part-ic">${p.fab ? swatchHtml(p.fab, 18) : icon(p.icon, 16)}</span><span class="part-t"><b>${esc(p.label)}</b><span class="muted">${esc(p.note)}</span></span></button>`).join('')}</div>`;
+    <div class="part-list" role="list" aria-label="Parts of the quilt">${parts.map(p => `<div role="listitem"><button class="part-row" aria-current="${p.key === cur}" data-act="quiltPart" data-arg="${p.key}">
+      <span class="part-ic">${p.fab ? swatchHtml(p.fab, 18) : icon(p.icon, 16)}</span><span class="part-t"><b>${esc(p.label)}</b><span class="muted">${esc(p.note)}</span></span></button></div>`).join('')}</div>`;
 }
 Actions.quiltPart = k => { ui.quiltPart = k; ui.selCell = null; saveUi(); renderToolbar(); renderInspector(); };
 Actions.quiltAddMenu = (a, el) => openMenu(el, [

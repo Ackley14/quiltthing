@@ -820,3 +820,15 @@ body[data-ws="layout"] #main svg.quilt-svg, body[data-ws="quilting"] #main svg.q
 #toolstrip.compact .stool-l { display: none; }
 #toolstrip.compact .stool { width: var(--tool); min-height: var(--tool); }
 .pal-item.off { opacity: .5; }
+
+.dtab-x { pointer-events: none; }
+.dtab:hover .dtab-x, .dtab:focus-within .dtab-x { pointer-events: auto; }
+@media (hover: none) { .dtab-x { opacity: 1; pointer-events: auto; } }
+/* Windows High Contrast: swatches keep their colours; the selected one gets an outline */
+@media (forced-colors: active) {
+  .sw, .fab-chip, .fabpick button, .pal-strip span, .blk svg, .canvas-wrap svg, .layer-sw { forced-color-adjust: none; }
+  .fab-chip[aria-pressed="true"], .fabpick button[aria-pressed="true"], .blk[aria-pressed="true"], .part-row[aria-current="true"] { outline: 3px solid Highlight; outline-offset: 1px; }
+}
+
+.stool-l { font-size: 12px; }
+[data-density="large"] .docview, [data-density="large"] .pattern-preview { zoom: 1.15; }

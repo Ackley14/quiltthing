@@ -201,7 +201,7 @@ function renderSaveState() {
   const el = $('#save-state'); if (!el) return;
   const bad = saveStatus.at && !saveStatus.ok;
   el.className = `save-state${bad ? ' bad' : ''}`;
-  el.innerHTML = bad ? `${icon('warn', 14)}<span>Not saved</span>` : saveStatus.at ? `${icon('check', 14)}<span>Saved</span>` : '';
+  el.innerHTML = saveStatus.paused ? `${icon('warn', 14)}<span>Saving paused</span>` : bad ? `${icon('warn', 14)}<span>Not saved</span>` : saveStatus.at ? `${icon('check', 14)}<span>Saved</span>` : '';
   el.title = bad ? "This browser couldn't save the design. Download a project file to keep it." : 'Your design is saved in this browser';
 }
 // Document tabs above the canvas: the documents of this workspace.
@@ -263,7 +263,12 @@ document.addEventListener('input', e => {
 });
 // Enter in a bound text/number field commits immediately
 document.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && e.target.matches?.('input[data-bind], input[data-change]')) e.target.blur();
+  const el = e.target;
+  if (e.key !== 'Enter' || !el.matches?.('input[data-bind], input[data-change]') || el.type === 'checkbox') return;
+  e.preventDefault();
+  if (el.dataset.stepped) delete el.dataset.stepped;
+  el.dispatchEvent(new Event('change', { bubbles: true }));   // the redraw puts focus back on the same field
+  el.dataset.was = el.value;
 });
 
 function getPath(root, path) { return path.split('.').reduce((o, k) => o?.[k], root); }
@@ -294,7 +299,7 @@ function applyBinding(el) {
 // A length box. opts.step adds − and + buttons that change it by that much.
 function lenField(label, path, opts = {}) {
   const v = getPath(doc, path);
-  const input = `<input type="text" inputmode="decimal" data-bind="${path}" data-type="len" value="${esc(inputLen(v))}"${opts.min !== undefined ? ` data-min="${opts.min}"` : ''}${opts.max !== undefined ? ` data-max="${opts.max}"` : ''} title="Accepts 4.5, 4 1/2, 4½, 11.4cm, sums like 3 + 1/4, or +1/4, *2, 50%">`;
+  const input = `<input type="text" inputmode="decimal" data-bind="${path}" data-type="len" value="${esc(inputLen(v))}"${opts.aria ? ` aria-label="${esc(opts.aria)}"` : ''}${opts.min !== undefined ? ` data-min="${opts.min}"` : ''}${opts.max !== undefined ? ` data-max="${opts.max}"` : ''} title="Accepts 4.5, 4 1/2, 4½, 11.4cm, sums like 3 + 1/4, or +1/4, *2, 50%">`;
   if (!opts.step) return `<label class="f">${label}${opts.suffix ? ` <span class="muted">${opts.suffix}</span>` : ''}${input}</label>`;
   const arg = d => `${path}|${d}|${opts.min ?? 0}|${opts.max ?? 1e9}`;
   return `<div class="f">${label}<span class="stepper"><button class="btn small" data-act="lenStep" data-arg="${arg(-opts.step)}" aria-label="Less">−</button>${input}<button class="btn small" data-act="lenStep" data-arg="${arg(opts.step)}" aria-label="More">+</button></span></div>`;
@@ -374,9 +379,11 @@ function openModal(html, onClose) {
   closeMenu();
   _modalReturn = document.activeElement;
   $('#modal-root').innerHTML = `<div class="modal-back" data-act="modalBack"><div class="modal" role="dialog" aria-modal="true"><button class="x" data-act="closeModal" aria-label="Close">${icon('x')}</button>${html}</div></div>`;
+  const h = $('#modal-root .modal h2'); if (h) { h.id = 'modal-title'; $('#modal-root .modal').setAttribute('aria-labelledby', 'modal-title'); }
   $('#app').inert = true;
   _modalClose = onClose || null;
-  setTimeout(() => $('#modal-root .modal input, #modal-root .modal [data-act="confirmOk"], #modal-root .modal button.primary')?.focus(), 30);
+  // a confirmation that destroys something starts on Cancel; otherwise the first field or the main button
+  setTimeout(() => ($('#modal-root .modal .btn.danger[data-act="confirmOk"]') ? $('#modal-root .modal [data-act="closeModal"].btn') : null || $('#modal-root .modal input:not([type=checkbox]), #modal-root .modal [data-act="confirmOk"], #modal-root .modal button.primary'))?.focus(), 30);
 }
 function closeModal() {
   if (!$('#modal-root').innerHTML) return false;
@@ -407,7 +414,7 @@ function openMenu(anchor, items, opts = {}) {
   m.setAttribute('role', 'menu');
   const ticks = items.some(it => it && it.checked !== undefined);
   m.innerHTML = items.filter(Boolean).map(it => it === '-' ? '<hr>' : it.header ? `<div class="menu-h">${it.header}</div>`
-    : `<button role="menuitem" class="${it.danger ? 'danger' : ''}" data-act="${it.act}" ${it.arg !== undefined ? `data-arg="${esc(it.arg)}"` : ''} ${it.disabled ? 'disabled' : ''}>${ticks ? (it.checked ? icon('check', 14) : '<span class="ic-gap"></span>') : ''}${it.label}${it.kb ? `<span class="kb">${it.kb}</span>` : ''}</button>`).join('');
+    : `<button role="${it.checked !== undefined ? 'menuitemcheckbox' : 'menuitem'}" ${it.checked !== undefined ? `aria-checked="${!!it.checked}"` : ''} class="${it.danger ? 'danger' : ''}" data-act="${it.act}" ${it.arg !== undefined ? `data-arg="${esc(it.arg)}"` : ''} ${it.disabled ? 'disabled' : ''}>${ticks ? (it.checked ? icon('check', 14) : '<span class="ic-gap"></span>') : ''}${it.label}${it.kb ? `<span class="kb">${it.kb}</span>` : ''}</button>`).join('');
   document.body.appendChild(m);
   const mw = m.offsetWidth, mh = m.offsetHeight;
   if (anchor.getBoundingClientRect) {
@@ -430,7 +437,17 @@ document.addEventListener('pointerdown', e => {
   if (!bar) { e.preventDefault(); e.stopPropagation(); _swallowClick = true; }
 }, true);
 document.addEventListener('click', e => { if (_swallowClick) { _swallowClick = false; e.preventDefault(); e.stopPropagation(); } }, true);
-document.addEventListener('click', e => { if (_menuEl && _menuEl.contains(e.target) && e.target.closest('[data-act]:not([disabled])')) setTimeout(closeMenu, 0); });
+document.addEventListener('click', e => {
+  if (!(_menuEl && _menuEl.contains(e.target) && e.target.closest('[data-act]:not([disabled])'))) return;
+  const back = _menuReturn;
+  setTimeout(() => {
+    closeMenu();
+    const a = document.activeElement;
+    // the menu bar may have been redrawn: find the same menu button again
+    const again = back?.isConnected ? back : back && $$('#menubar button').find(b => b.textContent === back.textContent);
+    if ((!a || a === document.body) && !$('#modal-root').innerHTML) (again || $('#main'))?.focus({ preventScroll: true });
+  }, 0);
+});
 
 function toast(msg, ms = 2600) {
   const t = document.createElement('div');

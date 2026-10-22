@@ -169,10 +169,10 @@ Actions.dockExpand = a => {
 };
 Actions.dockCollapse = a => { const at = dockArgs(a), L = dockClone(wsLayout()); dockSession.expanded.delete(`${curWs()}|${at.zone}|${at.ci}`); if (L[at.zone][at.ci]) L[at.zone][at.ci].collapsed = true; setLayout(L); };
 Actions.dockFlyout = id => {
-  const opener = id ? $(`.dstrip-b[data-arg="${CSS.escape(id)}"]`) : null;
+  const was = dockSession.flyout, opener = $(`.dstrip-b[data-arg="${CSS.escape(id || was || '')}"]`);
   dockSession.flyout = id && dockSession.flyout !== id ? id : null; dockSession.sig = ''; render();
   if (dockSession.flyout) setTimeout(() => $('#flyout-layer .dbody :is(button, input, select, [tabindex="0"])')?.focus(), 0);
-  else setTimeout(() => opener?.focus(), 0);
+  else setTimeout(() => $(`.dstrip-b[data-arg="${CSS.escape(was || '')}"]`)?.focus() || opener?.focus(), 0);
 };
 Actions.openPanel = id => {
   if (!Panels[id]) return;
@@ -187,7 +187,11 @@ Actions.openPanel = id => {
   }
   setTimeout(() => { $(`[data-host="${CSS.escape(id)}"]`)?.scrollIntoView?.({ block: 'nearest' }); ($(`#flyout-layer [data-host="${CSS.escape(id)}"] :is(button, input, select)`) || $(`[data-dtab="${CSS.escape(id)}"] .dtab-b`))?.focus(); }, 0);
 };
-Actions.togglePanel = id => { if (dockFind(wsLayout(), id)) Actions.dockClose(id); else Actions.openPanel(id); };
+Actions.togglePanel = id => {
+  const at = dockFind(wsLayout(), id);
+  const visible = at && at.g.active === id && !at.g.folded && !dockSession.hidden && !((at.zone === 'left' || at.zone === 'right') && colCollapsed(wsLayout()[at.zone][at.ci], at.zone, at.ci));
+  if (visible) Actions.dockClose(id); else Actions.openPanel(id);
+};
 Actions.dockMoveTo = arg => {
   if (dockLocked()) { toast('The layout is locked (Window ▸ Lock layout)'); return; }
   const [id, to] = String(arg).split('|'), L = dockClone(wsLayout());
@@ -244,7 +248,13 @@ Actions.resetLayout = which => {
 };
 Actions.toggleHidePanels = () => { dockSession.hidden = !dockSession.hidden; dockSession.sig = ''; render(); renderStatus(); announce(dockSession.hidden ? 'Panels hidden. Ctrl+. shows them.' : 'Panels shown'); };
 Actions.toggleLockLayout = () => { prefs.lockLayout = !prefs.lockLayout; savePrefs(); dockSession.sig = ''; render(); toast(prefs.lockLayout ? 'Layout locked: panels can be resized and folded but not moved' : 'Layout unlocked'); };
-Actions.toggleDrawer = side => { dockSession.drawer = dockSession.drawer === side ? null : side; document.body.dataset.drawer = dockSession.drawer || ''; };
+Actions.toggleDrawer = side => {
+  dockSession.drawer = dockSession.drawer === side ? null : side; document.body.dataset.drawer = dockSession.drawer || '';
+  for (const b of $$('[data-act="toggleDrawer"]')) b.setAttribute('aria-expanded', b.dataset.arg === dockSession.drawer);
+  if (dockSession.drawer) setTimeout(() => $(`#dock-${side} :is(.dtab-b[aria-selected="true"], button, input)`)?.focus(), 0);
+  else $(`[data-act="toggleDrawer"][data-arg="${side}"]`)?.focus();
+};
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && dockSession.drawer && e.target.closest?.('.dock-side')) { e.stopPropagation(); Actions.toggleDrawer(dockSession.drawer); } }, true);
 document.addEventListener('pointerdown', e => {   // a tap outside a drawer or fly-out closes it, and does nothing else
   if (dockSession.drawer && !e.target.closest('.dock-side, [data-act="toggleDrawer"], .menu, .modal-back')) { dockSession.drawer = null; document.body.dataset.drawer = ''; }
   if (dockSession.flyout && !e.target.closest('#flyout-layer, .dstrip, .menu, .modal-back, .popover')) {

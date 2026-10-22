@@ -11,7 +11,7 @@ function fabricsSection() {
   const bgId = doc.layout.background;
   let chips = '';
   doc.fabrics.forEach((f, i) => {
-    chips += `<button class="fab-chip${f.id === bgId ? ' is-bg' : ''}" draggable="true" aria-pressed="${ui.fabric === f.id}" data-act="pickFabric" data-arg="${f.id}" title="${letterFor(i)} · ${esc(f.name)}${f.id === bgId ? ' (background)' : ''}${ui.fabric === f.id ? '. Click again to edit.' : ''}">
+    chips += `<button class="fab-chip${f.id === bgId ? ' is-bg' : ''}" draggable="true" aria-label="${letterFor(i)}: ${esc(f.name)}${f.id === bgId ? ', background' : ''}" aria-pressed="${ui.fabric === f.id}" data-act="pickFabric" data-arg="${f.id}" title="${letterFor(i)} · ${esc(f.name)}${f.id === bgId ? ' (background)' : ''}${ui.fabric === f.id ? '. Click again to edit.' : ''}">
       ${swatchHtml(f.id, 40)}<span class="lt" style="color:${inkOn(f.color)};text-shadow:0 0 2px ${inkOn(f.color) === '#ffffff' ? 'rgba(0,0,0,.6)' : 'rgba(255,255,255,.9)'}">${letterFor(i)}</span>${ui.grayscale ? `<span class="val">${valueLetter(f.color)}</span>` : ''}</button>`;
   });
   chips += `<button class="fab-chip add" data-act="addFabric" title="Add a fabric" aria-label="Add a fabric">${icon('plus', 18)}</button>`;
@@ -228,7 +228,7 @@ Actions.pickBlock = id => {
     return;
   }
   // in Layout a pick only chooses what to place; the editor keeps its block
-  if (ui.view === 'layout') { ui.placeBlock = id; saveUi(); render(); return; }
+  if (ui.view === 'layout') { ui.placeBlock = id; if (['hand', 'zoom', 'select'].includes(ui.layoutTool)) ui.layoutTool = 'place'; saveUi(); render(); return; }
   ui.activeBlock = ui.placeBlock = id; ui.selRegion = null; ui.selEdge = null; ui.drawing = []; ui.activeSlot = null;
   if (ui.view !== 'block') ui.view = 'block';
   saveUi(); render();

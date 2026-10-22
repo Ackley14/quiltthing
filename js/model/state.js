@@ -161,7 +161,9 @@ function sanitizeUi() {
 /* ---------- persistence ---------- */
 let saveStatus = { at: null, ok: true };
 const scheduleSave = debounce(saveNow, 400);
+let savePaused = false;   // another tab changed the design: don't overwrite it until the person chooses
 function saveNow() {
+  if (savePaused) { saveStatus = { at: Date.now(), ok: false, paused: true }; if (typeof renderSaveState === 'function') renderSaveState(); return; }
   try {
     localStorage.setItem(STORE_DOC, snapshot());
     saveStatus = { at: Date.now(), ok: true };
@@ -178,7 +180,7 @@ function saveHistory() {
   for (let n = Math.min(20, undoStack.past.length); n >= 0; n = n ? Math.floor(n / 2) : -1) {
     try {
       localStorage.setItem(STORE_HIST, JSON.stringify({ current: undoStack.current, past: n ? undoStack.past.slice(-n) : [], future: n ? undoStack.future.slice(-5) : [] }));
-      try { localStorage.setItem('quiltthing.v4.hist', JSON.stringify({ past: n ? histLabels.past.slice(-n) : [], future: n ? histLabels.future.slice(-5) : [] })); } catch {}
+      try { localStorage.setItem('quiltthing.v4.hist', JSON.stringify({ at: hashStr(undoStack.current), past: n ? histLabels.past.slice(-n) : [], future: n ? histLabels.future.slice(-5) : [] })); } catch {}
       return;
     } catch { localStorage.removeItem(STORE_HIST); }
   }
@@ -189,7 +191,8 @@ function restoreHistory() {
     const h = JSON.parse(localStorage.getItem(STORE_HIST) || 'null');
     if (h && h.current === undoStack.current) {
       undoStack.past = h.past || []; undoStack.future = h.future || [];
-      const L = JSON.parse(localStorage.getItem('quiltthing.v4.hist') || 'null');
+      let L = JSON.parse(localStorage.getItem('quiltthing.v4.hist') || 'null');
+      if (L && L.at !== hashStr(undoStack.current)) L = null;   // the design changed elsewhere (v3): names no longer match
       const fit = (a, n) => Array.from({ length: n }, (_, i) => (a || [])[(a || []).length - n + i] || 'Earlier change');
       histLabels.past = fit(L?.past, undoStack.past.length); histLabels.future = fit(L?.future, undoStack.future.length);
     }

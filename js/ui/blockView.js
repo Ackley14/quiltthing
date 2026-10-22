@@ -1435,7 +1435,7 @@ registerPanel('shapes', { title: 'Shapes', short: 'Shapes', icon: 'shapes', ws: 
 function selGeomFields(b, sel) {
   const bb = selBounds(b, sel), k = blockFrameSize(b) / b.n;
   const f = (key, label, v) => `<label class="f">${label}<input type="text" inputmode="decimal" data-type="len" data-change="selGeom" data-arg="${key}" value="${esc(inputLen(v))}" aria-label="${label}" title="Accepts 4.5, 4 1/2, 4-1/2, +1/4, *2…"></label>`;
-  return `<div class="f-row geom">${f('x', 'X', bb.x * k)}${f('y', 'Y', bb.y * k)}</div><div class="f-row geom">${f('w', 'W', bb.w * k)}${f('h', 'H', bb.h * k)}</div>
+  return `<div class="f-row geom">${f('x', 'From left', bb.x * k)}${f('y', 'From top', bb.y * k)}</div><div class="f-row geom">${f('w', 'Width', bb.w * k)}${f('h', 'Height', bb.h * k)}</div>
     <label class="check"><input type="checkbox" data-change="geomLock" ${ui.geomLock ? 'checked' : ''}> Keep proportions</label>`;
 }
 Actions.selGeom = (v, el) => {
