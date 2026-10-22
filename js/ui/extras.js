@@ -160,17 +160,19 @@ document.addEventListener('keydown', e => {
 
 const TOUR = [
   ['#ws-tabs', 'Steps', 'Work moves left to right: draw blocks, lay out the quilt, plan the quilting, then fabric & cutting and the printed pattern. Keys 1 to 5 jump between them.'],
+  ['[data-panel="fabrics"], .dstrip-b[data-arg="fabrics"]', 'Fabrics', 'Click a fabric to paint with it, and click it again to edit it. Palettes recolour the whole quilt at once.'],
+  ['[data-panel="blocks"], .dstrip-b[data-arg="blocks"]', 'Blocks', 'Add blocks from the library or draw your own. In Layout, pick a block and click the quilt to place it.'],
   ['#toolstrip', 'Tools', 'Drawing and painting tools. The bar above the canvas shows the options for the tool you pick.'],
   ['#dock-right', 'Panels', 'Settings for whatever is selected are in Properties. Panels can be folded, moved or closed; the Window menu brings any panel back.'],
-  ['#appbar [data-act="commandPalette"]', 'Search', 'Press Ctrl K and type what you want to do, like "border", "print" or "palette".'],
+  ['#appbar [data-act="commandPalette"]', 'Search', 'Press Ctrl K and type what you want to do, like "border", "print" or "palette". Your work saves as you go; File, Save keeps a named copy.'],
 ];
 let _tour = -1;
 Actions.startTour = () => { closeModal(); _tour = 0; showTour(); };
 function showTour() {
   $('#tour')?.remove();
   if (_tour < 0 || _tour >= TOUR.length) { _tour = -1; return; }
-  const [sel, title, text] = TOUR[_tour], el = $(sel);
-  const r = el?.offsetParent !== null ? el.getBoundingClientRect() : { left: innerWidth / 2, top: innerHeight / 3, width: 0, height: 0, right: innerWidth / 2, bottom: innerHeight / 3 };
+  const [sel, title, text] = TOUR[_tour], el = [...document.querySelectorAll(sel)].find(x => x.offsetParent !== null || x.getClientRects().length);
+  const r = el ? el.getBoundingClientRect() : { left: innerWidth / 2, top: innerHeight / 3, width: 0, height: 0, right: innerWidth / 2, bottom: innerHeight / 3 };
   const box = document.createElement('div');
   box.id = 'tour'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', `Tour: ${title}`);
   box.innerHTML = `<div class="tour-hl" style="left:${r.left - 4}px;top:${r.top - 4}px;width:${r.width + 8}px;height:${r.height + 8}px"></div>
