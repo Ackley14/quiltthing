@@ -133,6 +133,44 @@ function snapDot(b, p, fine, skip) {
   b.regions.forEach((r, i) => { if (i !== skip) for (const q of r.pts) consider(q); });
   return best ? [best[0], best[1]] : best;
 }
+// Shift while drawing: the point sits on a line from `from` at a 15° step. With snap on it lands on a
+// grid dot (or a shape's corner) on that line when one is near, otherwise where the line crosses a
+// grid line, so the angle stays exact. Given `lines` (the seam tool), it lands where the line meets
+// one of them. Snap off: the angle is exact and the length free.
+function angleLock(b, from, p, fine, lines, skip, square) {
+  // a rectangle's diagonal only at 45°, so Shift makes a square
+  const raw = Math.atan2(p[1] - from[1], p[0] - from[0]);
+  const a = square ? (Math.floor(raw / (Math.PI / 2)) + 0.5) * (Math.PI / 2) : Math.round(raw / (Math.PI / 12)) * (Math.PI / 12);
+  const d = [Math.cos(a), Math.sin(a)].map(v => (Math.abs(v) < 1e-12 ? 0 : v));
+  const t0 = Math.max(0, (p[0] - from[0]) * d[0] + (p[1] - from[1]) * d[1]);
+  const at = t => [round(from[0] + d[0] * t, 6), round(from[1] + d[1] * t, 6)];
+  const hx = isHexBlock(b) ? blockOutline(b, b.n) : null;
+  const inside = q => q[0] > -1e-6 && q[1] > -1e-6 && q[0] < b.n + 1e-6 && q[1] < b.n + 1e-6 && (!hx || pointInPoly(q, hx) || hx.some((A, i) => distToSegment(q, A, hx[(i + 1) % hx.length]) < 1e-6));
+  let best = null, bd = Infinity;
+  const take = (t, slack = Infinity) => { const dd = Math.abs(t - t0); if (t > 1e-6 && dd < bd && dd <= slack && inside(at(t))) { bd = dd; best = t; } };
+  if (lines) {
+    for (const [A, B] of lines) {
+      const e = [B[0] - A[0], B[1] - A[1]], den = d[0] * e[1] - d[1] * e[0]; if (Math.abs(den) < 1e-12) continue;
+      const w = [A[0] - from[0], A[1] - from[1]], t = (w[0] * e[1] - w[1] * e[0]) / den, s = (w[0] * d[1] - w[1] * d[0]) / den;
+      if (s > -1e-9 && s < 1 + 1e-9) take(t);
+    }
+    return best == null ? null : at(best);
+  }
+  if (ui.snapOff) { const q = at(t0); return [clamp(q[0], 0, b.n), clamp(q[1], 0, b.n)]; }
+  const st = fine ? 0.5 : 1;
+  // a grid dot or corner on the line, within half a step of the pointer
+  for (const q of [...latticeDots(b, fine), ...b.regions.flatMap((r, i) => (i === skip ? [] : r.pts))]) {
+    if (Math.abs((q[0] - from[0]) * d[1] - (q[1] - from[1]) * d[0]) < 1e-6) take((q[0] - from[0]) * d[0] + (q[1] - from[1]) * d[1], st / 2);
+  }
+  if (best != null) return at(best);
+  // otherwise the nearest crossing with a grid line (square grids; lattice grids keep the free length)
+  if (b.lattice !== 'tri' && !isHexBlock(b)) {
+    for (let k = 0; k <= b.n + 1e-9; k += st) for (const ax of [0, 1]) if (d[ax]) take((k - from[ax]) / d[ax]);
+  }
+  return best != null ? at(best) : at(t0);
+}
+// Where a drawing click lands: Shift locks the line from `from` to 15° steps; Alt snaps to half-grid points.
+const drawSnap = (b, p, e, from, skip) => (e.shiftKey && from ? angleLock(b, from, p, e.altKey, null, skip, ui.tool === 'rect') : snapDot(b, p, e.altKey, skip));
 const samePt = (a, b) => a && b && Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6;
 // Seam lines run from line to line: each end lands on a piece's edge, the block's edge or another
 // seam. The lines a seam can start or end on (grid units):
@@ -325,16 +363,16 @@ function blockStatus(b) {
       if (!n) return '<b>Select</b>: click a shape. Shift-click or drag a box for more.';
       return `<b>${plural(n, 'shape')}</b>: drag to move, arrows to nudge, Delete to remove.${n === 1 ? ' Drag the white corners to reshape.' : ''}`;
     }
-    case 'polygon': return ui.drawing.length ? `<b>${ui.drawing.length} points</b>: click the first point or press Enter to finish. Esc cancels.` : '<b>Shape</b>: click grid points. Shift for half steps.';
-    case 'rect': return '<b>Rectangle</b>: drag from corner to corner.';
+    case 'polygon': return ui.drawing.length ? `<b>${ui.drawing.length} points</b>: click the first point or press Enter to finish. Shift keeps lines to 15° steps. Esc cancels.` : '<b>Shape</b>: click grid points. Shift keeps lines to 15° steps, Alt for half steps.';
+    case 'rect': return '<b>Rectangle</b>: drag from corner to corner. Shift keeps it square, Alt for half steps.';
     case 'text': return loadedFont(textOpts().font) ? '<b>Text</b>: click where the words go, then type them in Properties.' : 'Loading the font…';
     case 'arc': return isHexBlock(b) || b.lattice === 'tri' ? 'Quarter circles need a square grid.' : '<b>Quarter circle</b>: click a square, or drag from a corner for a bigger one.';
-    case 'tri': return b.lattice === 'tri' || isHexBlock(b) ? '<b>Triangle</b>: click inside a lattice triangle. Shift for half size.' : '<b>Triangle</b>: click near a corner of a square. Shift for half size.';
+    case 'tri': return b.lattice === 'tri' || isHexBlock(b) ? '<b>Triangle</b>: click inside a lattice triangle. Alt for half size.' : '<b>Triangle</b>: click near a corner of a square. Alt for half size.';
     case 'fill': return `<b>Fill</b> with ${fab}: click empty space to fill it with a new shape, or a shape to repaint it.`;
     case 'hand': return `<b>Hand</b>: drag to move around the block when zoomed in.`;
     case 'zoom': return `<b>Zoom</b>: click to zoom in, Alt-click to zoom out. 0 fits the block.`;
     case 'erase': return '<b>Eraser</b>: click a shape or seam line to remove it, or drag across several.';
-    case 'seam': return ui.drawing.length ? 'Now click a point on another line. Esc cancels.' : '<b>Seam line</b>: click a point on any edge, then on another. Through appliqué or lettering it cuts them too. Click a seam to remove it.';
+    case 'seam': return ui.drawing.length ? 'Now click a point on another line. Shift keeps the seam to 15° steps. Esc cancels.' : '<b>Seam line</b>: click a point on any edge, then on another. Through appliqué or lettering it cuts them too. Click a seam to remove it.';
   }
   return '';
 }
@@ -407,7 +445,7 @@ function eraseAt(e, b) {
 function edDown(e) {
   const b = activeBlock(); if (!b) return;
   const svg = e.currentTarget;
-  const p = evtGrid(e, b), fine = e.shiftKey;
+  const p = evtGrid(e, b), fine = e.altKey;
   const tool = ui.tool;
   if (ui.tool === 'zoom' && e.button === 0) { setZoom(edZoom() * (e.altKey ? 1 / 1.5 : 1.5), svgPoint(svg, e)); return; }
   if (e.button === 1 || ((ed.space || ui.tool === 'hand') && e.button === 0)) {
@@ -477,7 +515,7 @@ function edDown(e) {
     return;
   }
   if (tool === 'polygon') {
-    const d = snapDot(b, p, fine), dr = ui.drawing;
+    const dr = ui.drawing, d = drawSnap(b, p, e, dr[dr.length - 1]);
     if (dr.length >= 3 && samePt(d, dr[0])) return finishPolygon();
     if (dr.length && samePt(d, dr[dr.length - 1])) return;
     dr.push(d);
@@ -485,7 +523,7 @@ function edDown(e) {
     return;
   }
   if (tool === 'rect') {
-    const d = snapDot(b, p, fine);
+    const d = drawSnap(b, p, e, ui.drawing.length === 1 ? ui.drawing[0] : null);
     if (ui.drawing.length === 1) { addRect(ui.drawing[0], d); return; }
     ui.drawing = [d];
     svg.setPointerCapture(e.pointerId);
@@ -509,7 +547,7 @@ function edDown(e) {
   if (tool === 'seam') {
     const sl = e.target.closest('[data-seam]');
     if (sl && !ui.drawing.length) { removeSeam(b, sl.dataset.seam); commit(); toast('Seam removed', 1200); return; }
-    const d = seamSnap(b, p, fine);
+    const d = e.shiftKey && ui.drawing.length ? angleLock(b, ui.drawing[0], p, fine, seamTargets(b)) : seamSnap(b, p, fine);
     if (!d) { toast(ui.drawing.length ? 'End the seam on a line or the block edge' : 'Start the seam on a line or the block edge', 1600); return; }
     if (!ui.drawing.length) { ui.drawing = [d]; refreshEditor(); return; }
     const a = ui.drawing[0];
@@ -523,7 +561,7 @@ function edDown(e) {
 }
 function edMove(e) {
   const b = activeBlock(); if (!b) return;
-  const p = evtGrid(e, b), fine = e.shiftKey;
+  const p = evtGrid(e, b), fine = e.altKey;
   const dr = ed.drag;
   if (dr?.kind === 'paint') { paintAt(e, b); return; }
   if (dr?.kind === 'erase') { eraseAt(e, b); return; }
@@ -554,7 +592,7 @@ function edMove(e) {
   if (dr?.kind === 'marquee') { dr.cur = p; drawOverlay(); return; }
   if (dr?.kind === 'vertex') {
     const r = b.regions[ui.selRegion]; if (!r) return;
-    const d = snapDot(b, p, fine, ui.selRegion);
+    const d = drawSnap(b, p, e, e.shiftKey ? r.pts[(dr.i - 1 + r.pts.length) % r.pts.length] : null, ui.selRegion);
     if (!samePt(r.pts[dr.i], d)) { r.pts[dr.i] = d; dr.moved = true; refreshEditor(false); }
     return;
   }
@@ -577,15 +615,16 @@ function edMove(e) {
     return;
   }
   if (dr?.kind === 'arc') {
-    const cur = snapDot(b, p, e.shiftKey);
-    ed.triPreview = samePt(cur, dr.start) ? pieAt(b, dr.p0, e.shiftKey) : pieFrom(dr.start, cur);
+    const cur = snapDot(b, p, fine);
+    ed.triPreview = samePt(cur, dr.start) ? pieAt(b, dr.p0, fine) : pieFrom(dr.start, cur);
     drawOverlay();
     return;
   }
   // hover feedback
   if (ui.tool === 'text') { ed.hover = ui.snapOff ? p : snapDot(b, p, fine); drawOverlay(); return; }
   if (['polygon', 'rect', 'seam'].includes(ui.tool)) {
-    const d = ui.tool === 'seam' ? seamSnap(b, p, fine) : snapDot(b, p, fine);
+    const anchor = ui.tool === 'polygon' ? ui.drawing[ui.drawing.length - 1] : ui.drawing.length === 1 ? ui.drawing[0] : null;
+    const d = ui.tool === 'seam' ? (e.shiftKey && anchor ? angleLock(b, anchor, p, fine, seamTargets(b)) : seamSnap(b, p, fine)) : drawSnap(b, p, e, anchor);
     if (ui.tool === 'seam' && ui.drawing.length) { ed.hover = d; ed.cursor = p; drawOverlay(); return; }
     if (!samePt(d, ed.hover)) { ed.hover = d; drawOverlay(); }
   } else if (ui.tool === 'tri') {
@@ -631,7 +670,7 @@ function edUp(e) {
     return;
   }
   if (dr.kind === 'rect') {
-    const d = snapDot(b, evtGrid(e, b), e.shiftKey);
+    const d = drawSnap(b, evtGrid(e, b), e, dr.start);
     if (!samePt(d, dr.start)) addRect(dr.start, d);
     // otherwise keep the first corner and wait for a second click
   }
@@ -959,13 +998,20 @@ Actions.blockName = v => { const b = activeBlock(); if (b) { b.name = v.trim() |
 Actions.blockGrid = v => {
   const b = activeBlock(); let n = clamp(parseInt(v, 10) || b.n, 1, 48);
   if (isHexBlock(b)) n = Math.max(2, Math.round(n / 2) * 2);   // the hexagon lattice needs an even count
-  const k = n / b.n;
-  // scale geometry exactly so the design keeps its shape
-  for (const r of b.regions) r.pts = r.pts.map(([x, y]) => [round(x * k, 6), round(y * k, 6)]);
-  b.seams = (b.seams || []).map(s => s.map(([x, y]) => [round(x * k, 6), round(y * k, 6)]));
-  if (b.appSeams) b.appSeams = b.appSeams.map(s => s.map(([x, y]) => [round(x * k, 6), round(y * k, 6)]));
+  if (n === b.n) return;
+  // shapes stay on their grid squares, so a finer grid makes them smaller. A hexagon's lattice is
+  // centred on the hexagon, so there the design is scaled instead and keeps its place and size.
+  if (isHexBlock(b)) {
+    const k = n / b.n, sc = pts => pts.map(([x, y]) => [round(x * k, 6), round(y * k, 6)]);
+    for (const r of b.regions) r.pts = sc(r.pts);
+    b.seams = (b.seams || []).map(sc);
+    if (b.appSeams) b.appSeams = b.appSeams.map(sc);
+  }
+  const was = b.n;
   b.n = n; ui.drawing = [];
   commit();
+  const out = n < was ? b.regions.filter(r => r.pts.some(([x, y]) => x > n + 1e-6 || y > n + 1e-6)).length : 0;
+  if (out) toast(`${plural(out, 'shape')} now ${out === 1 ? 'runs' : 'run'} past the block's edge. Undo to go back.`, 2600);
 };
 Actions.blockLattice = v => { const b = activeBlock(); b.lattice = v; ui.drawing = []; commit(); };
 Actions.blockDuplicate = () => { const b = activeBlock(); const c = cloneBlock(b); c.name = b.name + ' copy'; doc.blocks[c.id] = c; if (refImgs[b.id]) { refImgs[c.id] = { ...refImgs[b.id] }; saveRefs(); } doc.blockOrder.splice(doc.blockOrder.indexOf(b.id) + 1, 0, c.id); ui.activeBlock = c.id; commit(); };
