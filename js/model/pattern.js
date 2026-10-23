@@ -274,8 +274,8 @@ function unitMethodText(type, sample, n, sa, copies = 1, block = null) {
     }
     case 'peel': {
       const u = sample.unit, cs = uniq(u.corners.map(c => resolveFab(c.fab))), sq = Math.abs(r.w - r.h) < 1e-3 * r.w;
-      const C = cs.length === 1 ? `two ${L(cs[0])} corner pieces` : `a ${L(cs[0])} and a ${L(cs[1])} corner piece`;
-      return make('orange-peel unit', 'orange-peel units', `Each is a ${sq ? 'square' : 'rectangle'} made of a ${L(u.petal.fab)} petal, a lens shape with its tips in two opposite corners, and ${C} with scooped edges. It has two curved seams, sewn one at a time.${u.cornerDeg < SHARP_DEG ? ' The corner pieces narrow to a very fine point at each tip. The last bit of the point disappears into the seam allowance, so don\'t worry if it looks lost.' : ''}`) + steps([
+      const C = cs.length === 1 ? `two corner pieces in ${L(cs[0])}` : `two corner pieces, one in ${L(cs[0])} and one in ${L(cs[1])}`;
+      return make('orange-peel unit', 'orange-peel units', `Each is a ${sq ? 'square' : 'rectangle'} made of a petal in ${L(u.petal.fab)}, a lens shape with its tips in two opposite corners, and ${C}, with scooped edges. It has two curved seams, sewn one at a time.${u.cornerDeg < SHARP_DEG ? ' The corner pieces narrow to a very fine point at each tip. The last bit of the point disappears into the seam allowance, so don\'t worry if it looks lost.' : ''}`) + steps([
         `Snip the matching marks on each piece's curved edge, no deeper than ⅛", or fold each curved edge in half and finger-press a crease at its centre. The petal has ${u.seams[0].notches.length > 1 ? 'marks' : 'a mark'} on each side.`,
         `Lay a corner piece on the petal, right sides together, corner piece on top. Match the centre marks and pin there, then pin both ends with the cut edges level, then pin in between, easing the corner piece to follow the curve.`,
         `Sew with a ${S} seam, corner piece on top. Go slowly, stopping every inch or so with the needle down to straighten the fabric ahead.`,

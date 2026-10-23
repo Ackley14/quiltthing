@@ -1548,9 +1548,10 @@ function constructionSection(b, S) {
   for (const u of an.units) if (u.unit.type !== 'piece') units[u.unit.type] = (units[u.unit.type] || 0) + 1;
   const probs = pieceProblems(b, S);
   const how = an.setIn ? 'Has set-in (Y) seams. Add seam lines to avoid them.'
+    : an.curveIssue ? ''   // the curve warning below says what to do
     : pieces.length > 1 ? (an.height ? `Sews in ${plural(an.height, 'step')}${an.units.some(u => CURVED_UNITS.has(u.unit.type)) ? ', with curved seams' : ''}.` : 'Sews as one unit.') : 'One piece.';
   let body = `<p class="${an.setIn ? 'hint warn' : 'hint'}">${plural(pieces.length, 'piece')} to cut. ${how}</p>
-    <dl class="kv">${Object.entries(counts).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}${Object.entries(units).map(([k, v]) => `<dt>${esc(UNIT_NAMES[k] || k)}</dt><dd>${v}</dd>`).join('')}</dl>`;
+    <dl class="kv">${Object.entries(counts).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}${Object.entries(units).map(([k, v]) => `<dt>${esc((UNIT_NAMES[k] || k).replace(/^./, c => c.toUpperCase()))}</dt><dd>${v}</dd>`).join('')}</dl>`;
   // construction seams (curves.js): sewn with the block, not drawn unless asked for
   const cp = constructionPlan(b);
   if (cp) body += `<p class="hint">${esc(constructionText(b, cp, fabricLabel, true))}</p><div class="btn-row"><button class="btn small" data-act="addConstructionSeams">Add these seams to the drawing</button></div>`;
