@@ -417,9 +417,9 @@ function regionAtEvent(e) {
 function fillTarget(b, p) {
   if (b.kind !== 'drawn') return null;
   const inside = q => pointInPoly(p, q.pts) && !q.holes.some(h => pointInPoly(p, h));
-  const app = blockPieces(b, b.n, b.n).find(q => q.app && inside(q));
+  const app = blockPieces(b, b.n, b.n, 0, true).find(q => q.app && inside(q));
   if (app) return { kind: 'shape' };
-  const piece = blockPieces(b, b.n, b.n).find(q => !q.app && inside(q));
+  const piece = blockPieces(b, b.n, b.n, 0, true).find(q => !q.app && inside(q));
   if (!piece) return null;
   const covered = b.regions.some(r => !r.app && r.pts.length > 2 && pointInPoly(p, regionRing(r, 1, 1, new Set())));
   return covered ? { kind: 'shape' } : { kind: 'empty', pts: cleanPoly(piece.pts.map(q => [round(q[0], 4), round(q[1], 4)])), holes: piece.holes };
@@ -707,7 +707,7 @@ function paintAt(e, b) {
   // seam lines split shapes into pieces you can paint one by one
   if ((b.seams || []).length && !(ri != null && b.regions[ri].app) && b.kind === 'drawn') {
     const p = evtGrid(e, b), inPiece = q => !q.app && pointInPoly(p, q.pts) && !q.holes.some(h => pointInPoly(p, h));
-    const piece = blockPieces(b, b.n, b.n).find(inPiece), whole = blockPieces({ ...b, seams: [] }, b.n, b.n).find(inPiece);
+    const piece = blockPieces(b, b.n, b.n, 0, true).find(inPiece), whole = blockPieces({ ...b, seams: [] }, b.n, b.n, 0, true).find(inPiece);
     if (piece && whole && !piece.holes.length && Math.abs(polyArea(piece.pts) - polyArea(whole.pts)) > 1e-3) {
       if (resolveFab(piece.fab) !== resolveFab(ui.fabric)) {
         b.regions.push({ pts: cleanPoly(piece.pts.map(q => [round(q[0], 4), round(q[1], 4)])), fab: ui.fabric });
@@ -958,7 +958,7 @@ Actions.applySeams = mode => {
   ui.seamPreview = false;
   commit();
   const an = analyzeBlock(b, blockFrameSize(b));
-  toast(an.setIn ? `Added ${plural(add.length, 'seam')}. Some Y-seams remain.` : an.curveIssue ? `Added ${plural(add.length, 'seam')}. Some curves still can't be sewn as drawn.` : `Added ${plural(add.length, 'seam')}`);
+  toast(an.setIn ? `Added ${plural(add.length, 'seam')}. Some Y-seams remain.` : an.curveIssue ? `Added ${plural(add.length, 'seam')}. Some curved shapes still can't be pieced in one piece as drawn.` : `Added ${plural(add.length, 'seam')}`);
 };
 Actions.autoSeams = () => {
   const sg = seamSuggestions(activeBlock());
@@ -984,13 +984,14 @@ function curveCardHtml(b, c, preview) {
   const what = whole ? 'These curved shapes' : mid ? 'The curved shapes in the middle' : 'Some curved shapes';
   const units = Object.entries(c.units).map(([t, k]) => `${k} ${UNIT_NAMES[t] || t}${k === 1 ? '' : 's'}`).join(' and ');
   const peel = Object.keys(c.units).length === 1 && c.units.peel, them = c.regions.length === 1 ? 'it' : 'them';
-  let h = `<b>Curved shapes</b><br>${what} can't be sewn as drawn: ${CURVE_WHY[c.why] || CURVE_WHY.many}.`;
-  if (c.regions.length) h += `<br>Appliqué is the usual way to make ${peel ? 'an orange peel' : 'shapes like these'}: the shape${c.regions.length === 1 ? ' is' : 's are'} sewn on top of the block.
-    <div class="btn-row"><button class="btn small primary" data-act="curvesToApplique">Make ${them} appliqué</button></div>`;
-  if (c.seams.length) h += `<br><b>Advanced:</b> ${plural(c.seams.length, 'seam line')} piece${c.seams.length === 1 ? 's' : ''} ${whole ? 'it' : mid ? 'the middle' : 'this part'} as ${units}. ${c.cuts ? `They cut through ${plural(c.cuts, 'curved shape')}.` : 'They run between the curved shapes, not through them.'}
-    <div class="btn-row">${preview}<button class="btn small${c.regions.length ? '' : ' primary'}" data-act="applySeams" data-arg="curve">Add ${c.seams.length === 1 ? 'the seam' : `${c.seams.length} seams`}</button></div>`;
-  else if (c.regions.length) h += '<br>No straight seams piece them as drawn.';
-  else h += '<br>Change the shapes, or sew this part by hand.';
+  // the ways to make it, in order: the suggested seams, appliqué, English paper piecing
+  const k = c.seams.length, one1 = k === 1;
+  let h = `<b>Curved shapes</b><br>${what} can't be pieced in one piece as drawn: ${CURVE_WHY[c.why] || CURVE_WHY.many}.`;
+  if (k) h += `<br>${plural(k, 'seam line')} piece${one1 ? 's' : ''} ${whole ? 'it' : mid ? 'the middle' : 'this part'} as ${units}. ${one1 ? 'It' : 'They'} ${c.cuts ? `cut${one1 ? 's' : ''} through ${plural(c.cuts, 'curved shape')}` : `run${one1 ? 's' : ''} between the curved shapes`} and will show in the block.
+    <div class="btn-row">${preview}<button class="btn small primary" data-act="applySeams" data-arg="curve">Add ${one1 ? 'the seam' : `${k} seams`}</button></div>`;
+  if (c.regions.length) h += `<br>${k ? 'Or make' : 'Make'} ${c.regions.length === 1 ? 'the shape' : 'the shapes'} appliqué, sewn on top of the block, the usual way for ${peel ? 'an orange peel' : 'shapes like these'}.
+    <div class="btn-row"><button class="btn small${k ? '' : ' primary'}" data-act="curvesToApplique">Make ${them} appliqué</button></div>`;
+  h += `<br>${k || c.regions.length ? 'Or sew' : 'Sew'} this part by hand with English paper piecing${k || c.regions.length ? '' : ', or change the shapes'}.`;
   return h;
 }
 Actions.clearSeams = () => { const b = activeBlock(); b.seams = []; b.appSeams = []; commit(); };
@@ -1501,7 +1502,7 @@ function blockInspector() {
   if (r) {
     selh += section('Selected shape', `<label class="f">Fabric</label>${fabricPicker(r.fab, 'regionFab', { allowBg: true })}
       <label class="check" title="Sewn on top; doesn't cut the pieces underneath"><input type="checkbox" data-change="regionApp" ${r.app ? 'checked' : ''}> Appliqué</label>
-      ${!r.app && analyzeBlock(b, S).units.some(u => u.unit.regions?.includes(sel[0])) ? `<p class="hint warn">Its curves can't be pieced as drawn.</p>` : ''}
+      ${!r.app && analyzeBlock(b, S).units.some(u => u.unit.regions?.includes(sel[0])) ? `<p class="hint warn">Its curves can't be pieced in one piece as drawn.</p>` : ''}
       <label class="f">Add copies around the centre</label>
       <div class="btn-row" style="margin-top:3px">${(hex ? [['rot2', '2'], ['rot3', '3'], ['rot6', '6']] : [['rot2', '2'], ['rot4', '4'], ['rot8', '8']]).map(([k, l]) => `<button class="btn small" data-act="regionCopies" data-arg="${k}">${l}</button>`).join('')}<button class="btn small" data-act="regionCopies" data-arg="h">Mirrored copy ↔</button><button class="btn small" data-act="regionCopies" data-arg="v">Mirrored copy ↕</button><button class="btn small" data-act="regionCopies" data-arg="4">4-way</button></div>`, { key: 'selshape' });
   }
@@ -1550,12 +1551,27 @@ function constructionSection(b, S) {
     : pieces.length > 1 ? (an.height ? `Sews in ${plural(an.height, 'step')}${an.units.some(u => CURVED_UNITS.has(u.unit.type)) ? ', with curved seams' : ''}.` : 'Sews as one unit.') : 'One piece.';
   let body = `<p class="${an.setIn ? 'hint warn' : 'hint'}">${plural(pieces.length, 'piece')} to cut. ${how}</p>
     <dl class="kv">${Object.entries(counts).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}${Object.entries(units).map(([k, v]) => `<dt>${esc(UNIT_NAMES[k] || k)}</dt><dd>${v}</dd>`).join('')}</dl>`;
-  if (an.curveIssue) body += `<p class="hint warn">Its curved shapes can't be sewn as drawn. The Seam tool shows how to fix that.</p>`;
+  // construction seams (curves.js): sewn with the block, not drawn unless asked for
+  const cp = constructionPlan(b);
+  if (cp) body += `<p class="hint">${esc(constructionText(b, cp, fabricLabel, true))}</p><div class="btn-row"><button class="btn small" data-act="addConstructionSeams">Add these seams to the drawing</button></div>`;
+  if (an.curveIssue) {
+    // what the Seam tool offers, in its order, then English paper piecing
+    const c = seamSuggestions(b).curve, ways = [c?.seams.length && 'add the suggested seams', c?.regions.length && 'make them appliqué'].filter(Boolean);
+    body += `<p class="hint warn">Its curved shapes can't be pieced in one piece as drawn. ${ways.length ? `The Seam tool can ${ways.join(' or ')}. Or sew` : 'Sew'} them by hand with English paper piecing.</p>`;
+  }
   for (const p of probs) if (p.kind !== 'curve' && p.kind !== 'sharp') body += `<p class="hint${p.kind === 'tiny' && !p.crumb ? '' : ' warn'}">${esc(p.msg)}</p>`;
   const sharp = uniq(probs.filter(p => p.kind === 'sharp').map(p => p.piece)).length;
   if (sharp) body += `<p class="hint">${plural(sharp, 'piece')} narrow${sharp === 1 ? 's' : ''} to a point under ${SHARP_DEG}° at the end of a curve. That's normal for curves: the tip disappears into the seam allowance.</p>`;
   return section('Construction', body, { key: 'construct', closed: true });
 }
+// The construction seams the block is sewn with, added to the drawing (the pieces stay the same).
+Actions.addConstructionSeams = () => {
+  const b = activeBlock(), cp = b && constructionPlan(b);
+  if (!cp) return;
+  b.seams = [...(b.seams || []), ...cp.seams];
+  commit();
+  toast(`Added ${plural(cp.seams.length, 'seam')}. The pieces stay the same.`);
+};
 
 Actions.polyDone = () => finishPolygon();
 Actions.polyCancel = () => { ui.drawing = []; ed.triPreview = null; refreshEditor(); renderToolbar(); };

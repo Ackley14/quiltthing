@@ -140,7 +140,7 @@ HUD_WIDGETS.seam = {
     const tiny = pieceProblems(b, blockFrameSize(b)).filter(p => p.crumb).length, curve = !!sg?.curve;
     if (!sg?.required.length && !tiny && !curve) return '';
     const t = [sg?.required.length ? `${plural(sg.reqPieces, 'piece')} need${sg.reqPieces === 1 ? 's' : ''} set-in seams as drawn.` : '',
-      curve ? "Curved shapes can't be sewn as drawn." : '',
+      curve ? "Curved shapes can't be pieced in one piece as drawn." : '',
       tiny ? `${plural(tiny, 'piece')} ${tiny === 1 ? 'is' : 'are'} under ${fmtLen(CRUMB)} wide, too small to cut and sew.` : '', curve ? 'Click for options.' : 'Click for the Seam tool.'].filter(Boolean).join(' ');
     return `<button class="seam-flag" data-act="blockTool" data-arg="seam" title="${t}" aria-label="${t}">${icon('warn', 18)}<span>${sg?.required.length ? 'Seams' : curve ? 'Curves' : 'Tiny pieces'}</span></button>`;
   },

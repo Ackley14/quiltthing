@@ -191,7 +191,7 @@ function classifyCurvedUnit(node, fabs) {
   if (mi >= 0) {
     const m = ps[mi], [s1, s2] = S.filter(x => x.s.pi === mi || x.s.nb === mi), [A, B] = ends(s1);
     const corner = e => [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]].findIndex(c => dist(c, e) < tol);
-    if (s1.convex === m && s2.convex === m && ends(s2).every(e => dist(e, A) < tol || dist(e, B) < tol) && corner(A) >= 0 && Math.abs(corner(A) - corner(B)) === 2) {
+    if (s1.convex === m && s2.convex === m && ends(s2).every(e => dist(e, A) < tol || dist(e, B) < tol) && corner(A) >= 0 && corner(B) >= 0 && Math.abs(corner(A) - corner(B)) === 2) {
       const cs = [s1.concave, s2.concave];
       return { type: 'peel', petal: m, corners: cs, seams: [out(s1), out(s2)], tips: [A, B], petalDeg: Math.min(at(m, A), at(m, B)),
         cornerDeg: Math.min(...cs.flatMap(c => [at(c, A), at(c, B)])), fabs };
@@ -291,6 +291,13 @@ function ringSelfCrosses(ring) {
   return false;
 }
 
+// The warning for a block with curved shapes that can't be pieced in one piece as drawn, with the
+// ways to make them in the order to try them (Layout, Fabric & cutting, Pattern, Issues).
+function curveWarning(b) {
+  const seams = b.kind === 'drawn' && seamSuggestions(b).curve?.seams.length;
+  return `${b.name}: its curved shapes can't be pieced in one piece as drawn. In Blocks, ${seams ? 'add the suggested seams, make them appliqué,' : 'make them appliqué,'} or sew them by hand with English paper piecing.`;
+}
+
 /* ---------- fixes for curves that can't be sewn ----------
    What the Seam tool offers for the curved parts that can't be sewn as drawn: the reason, the parts
    (leaves, in block grid units), the drawn shapes that, made appliqué, clear all of them (regions;
@@ -318,19 +325,37 @@ function curvedSeamSuggestions(block) {
 // curve only at the curve's ends (seams through curves are a later, relaxed pass). Cost: 1 a seam,
 // ½ a new piece, 0.3 a new point under 10°, 0.2 a slanted seam, ½ a curved shape cut through, and
 // 1½ a curved unit that isn't a simple pie, peel or inset. → { seams, cuts } or null.
-function curveSeamSearch(leaf, n) {
+// oneFab: only seams with one fabric on both sides all along (construction seams); the result
+// then says which fabrics they run through (fabs).
+function curveSeamSearch(leaf, n, oneFab = false) {
   const R = leaf.region, bb = leaf.rect, e = 1e-4 * Math.max(bb.w, bb.h), ps = leaf.pieces;
   const runs = ps.flatMap(p => [p.pts, ...p.holes].flatMap(r => curveRuns(r)));
   const inside = (v, lo, hi) => v > lo + 10 * e && v < hi - 10 * e;
   const xs = new Set([bb.x + bb.w / 2]), ys = new Set([bb.y + bb.h / 2]);
   for (let k = 1; k < 2 * n; k++) { xs.add(k / 2); ys.add(k / 2); }
-  for (const r of runs) if (!r.closed) for (const q of [r.pts[0], r.pts[r.pts.length - 1]]) if (ringDist(q, R) > e) { xs.add(q[0]); ys.add(q[1]); }
+  // (construction seams, sewn without asking, keep to the grid, its half lines, centre lines and diagonals)
+  if (!oneFab) for (const r of runs) if (!r.closed) for (const q of [r.pts[0], r.pts[r.pts.length - 1]]) if (ringDist(q, R) > e) { xs.add(q[0]); ys.add(q[1]); }
   const lines = [...[...xs].filter(x => inside(x, bb.minX, bb.maxX)).map(x => [[x, bb.minY - 1], [x, bb.maxY + 1]]),
     ...[...ys].filter(y => inside(y, bb.minY, bb.maxY)).map(y => [[bb.minX - 1, y], [bb.maxX + 1, y]])];
   if (Math.abs(bb.w - bb.h) < e) lines.push([[bb.minX, bb.minY], [bb.maxX, bb.maxY]], [[bb.maxX, bb.minY], [bb.minX, bb.maxY]]);
   // each line across the part, kept when it meets curves only at their ends
   const cross = (a, b, c, d) => { const r = [b[0] - a[0], b[1] - a[1]], s = [d[0] - c[0], d[1] - c[1]], den = r[0] * s[1] - r[1] * s[0]; if (Math.abs(den) < 1e-12) return null; const t = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den, u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den; return t > -1e-9 && t < 1 + 1e-9 && u > -1e-9 && u < 1 + 1e-9 ? [a[0] + r[0] * t, a[1] + r[1] * t] : null; };
-  const chords = [];
+  // the fabrics along a chord, a hair to either side of each stretch between piece outlines: null
+  // when the two sides differ anywhere (touching a piece at a single point, a tip, is fine)
+  const fabAt = q => { const p = ps.find(p => q[0] > p.bb.minX && q[0] < p.bb.maxX && q[1] > p.bb.minY && q[1] < p.bb.maxY && pointInPoly(q, p.pts) && !p.holes.some(h => pointInPoly(q, h))); return p ? resolveFab(p.fab) : null; };
+  const chordFabs = (P, Q) => {
+    const L = dist(P, Q), d = [(Q[0] - P[0]) / L, (Q[1] - P[1]) / L], h = 10 * e, ts = [0, L], out = new Set();
+    for (const p of ps) for (const ring of [p.pts, ...p.holes]) ring.forEach((a, i) => { const x = cross(P, Q, a, ring[(i + 1) % ring.length]); if (x) ts.push(dist(P, x)); });
+    ts.sort((a, b) => a - b);
+    for (let i = 0; i + 1 < ts.length; i++) {
+      if (ts[i + 1] - ts[i] < 2 * h) continue;
+      const t = (ts[i] + ts[i + 1]) / 2, m = [P[0] + d[0] * t, P[1] + d[1] * t], f = fabAt([m[0] - d[1] * h, m[1] + d[0] * h]);
+      if (f === null || f !== fabAt([m[0] + d[1] * h, m[1] - d[0] * h])) return null;
+      out.add(f);
+    }
+    return [...out];
+  };
+  const chords = [], fabsOf = new Map();
   for (const [A, B] of lines) {
     const hits = R.map((a, i) => cross(A, B, a, R[(i + 1) % R.length])).filter(Boolean);
     if (hits.length < 2) continue;
@@ -339,7 +364,10 @@ function curveSeamSearch(leaf, n) {
     const P = hits[0], Q = hits[hits.length - 1];
     if (dist(P, Q) < 10 * e) continue;
     if (runs.some(r => r.pts.some((a, i) => i + 1 < r.pts.length && (x => x && (r.closed || (dist(x, r.pts[0]) > 10 * e && dist(x, r.pts[r.pts.length - 1]) > 10 * e)))(cross(P, Q, a, r.pts[i + 1]))))) continue;
-    if (!chords.some(([p, q]) => (dist(p, P) < e && dist(q, Q) < e) || (dist(p, Q) < e && dist(q, P) < e))) chords.push([P, Q]);
+    if (chords.some(([p, q]) => (dist(p, P) < e && dist(q, Q) < e) || (dist(p, Q) < e && dist(q, P) < e))) continue;
+    const f = oneFab && chordFabs(P, Q);
+    if (oneFab && !f) continue;
+    chords.push([P, Q]); fabsOf.set(chords[chords.length - 1], f);
   }
   const sharpN = list => sum(list, p => (p.curved ? tipAngles(p).filter(t => t.deg < SHARP_DEG).length : 0)), sharp0 = sharpN(ps);
   // a work budget (trials × pieces) keeps a big tangle of curves quick
@@ -369,5 +397,64 @@ function curveSeamSearch(leaf, n) {
   let two = one;
   if (one < ps.length) for (let i = 0; i < t15.length; i++) for (let j = i + 1; j < t15.length; j++) if (!best || best.cost > 2) { const r = tryCuts([t15[i], t15[j]]); keep(r); if (r) two = Math.min(two, r.left); }
   if (two < one && ps.length <= 12) for (let i = 0; i < t10.length; i++) for (let j = i + 1; j < t10.length; j++) for (let k = j + 1; k < t10.length; k++) if (!best || best.cost > 3) keep(tryCuts([t10[i], t10[j], t10[k]]));
-  return best;
+  return best && oneFab ? { ...best, fabs: uniq(best.seams.flatMap(c => fabsOf.get(c))) } : best;
+}
+
+/* ---------- construction seams ----------
+   A curved part that can't be pieced in one piece as drawn, made sewable by straight seams that
+   each have one fabric on both sides all along (Gold Star's middle: its centre lines, through the
+   background between the petals, make 4 orange-peel units). Quilters call these construction
+   seams: they don't change the look, so the block is sewn with them without asking (builtBlock in
+   blocks.js) and the saved block keeps none. The editor mentions them in Construction and can add
+   them to the drawing. → { seams (block grid units), units (type → count), leaves (the parts, grid
+   units), fabs (the resolved fabrics they run through), block (the block with them added) } or null. */
+const _constructionCache = new Map(), _builtBlocks = new WeakSet();
+function constructionPlan(b) {
+  if (!b || b.kind !== 'drawn' || _builtBlocks.has(b) || !b.regions.some(r => !r.app && r.b?.some(x => x))) return null;
+  const key = `${blockKey(b)}|${resolveFab(BG)}`;
+  if (_constructionCache.has(key)) return _constructionCache.get(key);
+  let res = null;
+  const n = b.n, an = analyzeBlock(b, n, true);
+  const found = an.units.filter(u => u.unit.type === 'curveComplex').map(u => ({ u, f: curveSeamSearch(u, n, true) })).filter(x => x.f);
+  if (found.length) {
+    const k2 = ([p, q]) => [ptKey(p), ptKey(q)].sort().join('|'), seen = new Set((b.seams || []).map(k2));
+    const seams = found.flatMap(x => x.f.seams).map(sm => sm.map(q => [round(q[0], 6), round(q[1], 6)])).filter(sm => !seen.has(k2(sm)) && seen.add(k2(sm)));
+    const block = { ...b, seams: [...(b.seams || []), ...seams] }, after = analyzeBlock(block, n, true), leaves = found.map(x => x.u.rect);
+    const mine = after.units.filter(u => rectInAny(u.rect, leaves));
+    // every part they're for comes out sewable, and nothing new needs a set-in seam
+    if (seams.length && !(after.setIn && !an.setIn) && mine.every(u => u.unit.type !== 'curveComplex' && u.unit.type !== 'complex')) {
+      const units = {};
+      for (const u of mine) if (u.unit.type !== 'piece') units[u.unit.type] = (units[u.unit.type] || 0) + 1;
+      _builtBlocks.add(block);
+      res = { seams, units, leaves, fabs: uniq(found.flatMap(x => x.f.fabs)), block };
+    }
+  }
+  if (_constructionCache.size > 200) _constructionCache.clear();
+  _constructionCache.set(key, res);
+  return res;
+}
+const rectInAny = (q, rs) => rs.some(r => q.x > r.x - 1e-6 && q.y > r.y - 1e-6 && q.x + q.w < r.x + r.w + 1e-6 && q.y + q.h < r.y + r.h + 1e-6);
+// The construction seams in words: for the pattern, "The middle is made as 4 orange-peel units, sewn
+// along the centre lines, where the seams run through the background only."; short, for the
+// editor, "Made as 4 orange-peel units, joined along …". fabName: how to name a fabric that isn't
+// the background.
+function constructionText(b, cp, fabName, short = false) {
+  const n = b.n, L = cp.leaves, one = L.length === 1, r = L[0], e = 1e-6 * n;
+  const whole = one && r.w > n - e && r.h > n - e, mid = one && Math.abs(r.x + r.w / 2 - n / 2) < 0.1 * n && Math.abs(r.y + r.h / 2 - n / 2) < 0.1 * n;
+  const units = Object.entries(cp.units).map(([t, k]) => `${k} ${UNIT_NAMES[t] || t}${k === 1 ? '' : 's'}`).join(' and ');
+  // each seam is a centre line or a diagonal of its part, or neither
+  const kind = ([A, B]) => {
+    const q = L.find(z => [A, B].every(p => p[0] > z.x - e && p[0] < z.x + z.w + e && p[1] > z.y - e && p[1] < z.y + z.h + e));
+    if (!q) return '';
+    const cx = q.x + q.w / 2, cy = q.y + q.h / 2, at = (p, x, y) => Math.abs(p[0] - x) < e && Math.abs(p[1] - y) < e;
+    if ((Math.abs(A[0] - cx) < e && Math.abs(B[0] - cx) < e) || (Math.abs(A[1] - cy) < e && Math.abs(B[1] - cy) < e)) return 'centre line';
+    const c = [[q.x, q.y], [q.x + q.w, q.y], [q.x + q.w, q.y + q.h], [q.x, q.y + q.h]];
+    return [0, 1].some(i => (at(A, ...c[i]) && at(B, ...c[i + 2])) || (at(B, ...c[i]) && at(A, ...c[i + 2]))) ? 'diagonal' : '';
+  };
+  const kinds = uniq(cp.seams.map(kind)), k = cp.seams.length, many = k > 1;
+  const along = kinds.length === 1 && kinds[0] ? `the ${kinds[0]}${many ? 's' : ''}` : k === 1 ? 'one straight seam' : `${k} straight seams`;
+  const fabs = cp.fabs.map(f => (f === resolveFab(BG) ? 'the background' : fabName(f)));
+  const through = `where the seam${many ? 's run' : ' runs'} through ${fabs.length > 1 ? `${fabs.slice(0, -1).join(', ')} and ${fabs[fabs.length - 1]}` : fabs[0]} only`;
+  if (short) return `Made as ${units}, joined along ${along}, ${through}.`;
+  return `${whole ? 'The block' : mid ? 'The middle' : one ? 'The curved part' : 'The curved parts'} ${one ? 'is' : 'are'} made as ${units}, sewn along ${along}, ${through}.`;
 }

@@ -191,12 +191,13 @@ function blockDiagramSvg(block, BS, paperIn, opts = {}) {
 }
 
 const UNIT_NAMES = { hst: 'half-square triangle (HST) unit', qst: 'quarter-square triangle (QST) unit', goose: 'flying-geese unit', snowball: 'stitch-and-flip unit', curved: 'curved unit', hrt: 'half-rectangle triangle (HRT) unit', complex: 'set-in unit',
-  peel: 'orange-peel unit', inset: 'inset circle unit', curveComplex: "curved part that can't be pieced" };
+  peel: 'orange-peel unit', inset: 'inset circle unit', curveComplex: "curved part that can't be pieced as drawn" };
 const CURVE_WHY = { meet: 'curved seams meet at a point inside, not at an edge', cross: 'a curve crosses a straight seam', corner: 'a curved seam turns a corner', S: 'a set-in shape bends both ways', many: 'curved shapes overlap' };
 
 // How to make one kind of unit: what it is, then lettered sub-steps (one action each).
-// n = units per block, copies = blocks. Every size is a cut or unfinished size.
-function unitMethodText(type, sample, n, sa, copies = 1) {
+// n = units per block, copies = blocks. Every size is a cut or unfinished size. block: the block it's
+// from, for the ways to make a curved part that can't be pieced as drawn.
+function unitMethodText(type, sample, n, sa, copies = 1, block = null) {
   const r = sample.rect, unf = fmtSize(r.w + 2 * sa, r.h + 2 * sa), S = fmtLen(sa);
   const L = f => `<b>${fabricLetter(resolveFab(f))}</b>`;
   const byLight = uniq((sample.unit.fabs || []).map(resolveFab)).sort((p, q) => luminance(fabricHex(q)) - luminance(fabricHex(p)));
@@ -296,8 +297,14 @@ function unitMethodText(type, sample, n, sa, copies = 1) {
         `Trim to ${unf}, with ${where}.`,
       ]) + `If you'd rather, turn the opening's allowance under over a card template and topstitch it onto the ${shape} from the front. The cutting is the same.`;
     }
-    case 'curveComplex':
-      return `This part has curves that can't be sewn by machine as drawn: ${CURVE_WHY[sample.unit.why] || CURVE_WHY.many}. Appliqué the curved shapes on top of the block instead, the usual way to make shapes like these: in Blocks, select them and tick Appliqué. Or sew it by hand with English paper piecing.`;
+    case 'curveComplex': {
+      // the ways to make it, in order: the suggested seams (when there are some), appliqué, English paper piecing
+      const c = block?.kind === 'drawn' ? seamSuggestions(block).curve : null, k = c?.seams.length || 0;
+      const units = k ? Object.entries(c.units).map(([t, m]) => `${m} ${UNIT_NAMES[t] || t}${m === 1 ? '' : 's'}`).join(' and ') : '';
+      return `This part can't be pieced in one piece as drawn: ${CURVE_WHY[sample.unit.why] || CURVE_WHY.many}. `
+        + (units ? `In Blocks, add the ${k === 1 ? 'suggested seam' : `${k} suggested seams`} to make it ${units}. The seam${k === 1 ? '' : 's'} will show in the block. Or appliqué` : 'Appliqué')
+        + ` the curved shapes on top of the block, the usual way for shapes like these: in Blocks, select them and tick Appliqué. Or sew it by hand with English paper piecing.`;
+    }
     case 'hrt':
       return make('half-rectangle triangle (HRT)', 'half-rectangle triangles (HRTs)', `An HRT is a rectangle cut corner to corner into two long triangles, here ${byLight.map(L).join(' and ')}. The triangles aren't 45°, so their tips don't line up like an HST's.`) + steps([
         `Check the triangles were cut with the fabric right side up (see the cutting list): a mirror-image triangle won't fit.`,
@@ -362,9 +369,13 @@ function blockStepsHtml(block, BS, sa, copies = 1) {
     groups.get(k).push(u);
   }
   let sketched = false;
+  // construction seams (curves.js): said once, with the units they make
+  let cp = block.kind === 'drawn' ? constructionPlan(block) : null;
+  const gk = BS / (block.n || 1), inCp = x => cp && rectInAny({ x: x.rect.x / gk, y: x.rect.y / gk, w: x.rect.w / gk, h: x.rect.h / gk }, cp.leaves);
   for (const list of groups.values()) {
     const u = list[0].unit;
-    let text = unitMethodText(u.type, list[0], list.length, sa, copies);
+    let text = unitMethodText(u.type, list[0], list.length, sa, copies, block);
+    if (list.some(inCp)) { text = `${constructionText(block, cp, f => `fabric <b>${fabricLetter(f)}</b>`)} ${text}`; cp = null; }
     // sketch of the method at the unit's real size, in its own fabrics; the line key only under the block's first sketch
     const howto = ['hst', 'qst', 'goose', 'snowball', 'curved', 'hrt', 'peel', 'inset'].includes(u.type) ? unitHowToSvg(u.type, { sample: list[0], sa, legend: !sketched }) : '';
     if (howto) { text += `<div class="howto-wrap">${howto}</div>`; sketched = true; }
