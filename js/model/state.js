@@ -162,19 +162,26 @@ function sanitizeUi() {
 /* ---------- persistence ---------- */
 let saveStatus = { at: null, ok: true };
 let savePending = false;
+let onSaveScheduled = () => {};   // set by My quilts (projects.js): the open quilt saves into its record too
 const _saveSoon = debounce(() => { if (savePending) saveNow(); }, 400);
-const scheduleSave = () => { savePending = true; _saveSoon(); };
+const scheduleSave = () => { savePending = true; _saveSoon(); onSaveScheduled(); };
 // save when the page is closed or put in the background, so the last edit isn't lost
 if (typeof window !== 'undefined' && window.addEventListener) {
   window.addEventListener('pagehide', () => { if (savePending) saveNow(); if (typeof saveRefs === 'function' && !savePaused) saveRefs(); });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && savePending) saveNow(); });
 }
-let savePaused = false;   // another tab changed the design: don't overwrite it until the person chooses
+let savePaused = false;   // another tab saved this quilt: don't overwrite it until the person chooses
+// Which My quilts record the design in STORE_DOC belongs to, with a fingerprint of that design
+// (so a design changed by v3, which doesn't know about this, isn't taken for the record's) and
+// when it was written (so the newer of the two wins on the next load).
+const STORE_OPEN = 'quiltthing.v4.open';
 function saveNow() {
   savePending = false;
   if (savePaused) { saveStatus = { at: Date.now(), ok: false, paused: true }; if (typeof renderSaveState === 'function') renderSaveState(); return; }
   try {
-    localStorage.setItem(STORE_DOC, snapshot());
+    const s = snapshot();
+    localStorage.setItem(STORE_DOC, s);
+    try { localStorage.setItem(STORE_OPEN, JSON.stringify({ id: ui?.projectId || null, sig: hashStr(s), at: Date.now() })); } catch {}
     saveStatus = { at: Date.now(), ok: true };
   } catch (e) {
     saveStatus = { at: Date.now(), ok: false };
@@ -216,13 +223,15 @@ const saveUi = debounce(() => {
    images don't bloat the undo history; saved in their own storage slot and carried inside
    project and block files. { src (JPEG data URL), ar (width ÷ height), op, sc, dx, dy, on } */
 const STORE_REFS = 'quiltthing.v3.refs';
-let refImgs = {};
+let refImgs = {}, _refsSaved = '{}';
 function loadRefs() {
-  try { refImgs = JSON.parse(localStorage.getItem(STORE_REFS) || '{}') || {}; } catch { refImgs = {}; }
+  try { _refsSaved = localStorage.getItem(STORE_REFS) || '{}'; refImgs = JSON.parse(_refsSaved) || {}; } catch { refImgs = {}; }
 }
 function saveRefs() {
   if (typeof savePaused !== 'undefined' && savePaused) return false;
-  try { localStorage.setItem(STORE_REFS, JSON.stringify(refImgs)); return true; } catch (e) { console.warn('picture save failed', e); return false; }
+  const s = JSON.stringify(refImgs);
+  if (s !== _refsSaved) onSaveScheduled();   // the quilt's record carries its pictures
+  try { localStorage.setItem(STORE_REFS, s); _refsSaved = s; return true; } catch (e) { console.warn('picture save failed', e); return false; }
 }
 const saveRefsSoon = debounce(saveRefs, 400);
 function pruneRefs() {

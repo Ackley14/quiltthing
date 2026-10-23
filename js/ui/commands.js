@@ -5,10 +5,11 @@
 
 // words quilters use that aren't in the command names
 const CMD_SYNONYMS = { stitch: 'quilting', stitching: 'quilting', turn: 'rotate', spin: 'rotate', mirror: 'flip', hst: 'half square triangle seam', qst: 'quarter square triangle', yardage: 'fabric buy shopping', cut: 'cutting plan', binding: 'binding', pdf: 'print pattern', colour: 'color fabric palette', color: 'colour fabric palette', recolour: 'palette swap', recolor: 'palette swap', undo: 'history', layer: 'quilting', applique: 'appliqué', sashing: 'sashing', border: 'border', zoom: 'zoom fit', dark: 'theme', light: 'theme',
-  tessellation: 'tessellation setting', tessellate: 'tessellation', random: 'random', mirror: 'mirror flip', center: 'centre', centre: 'centre center', saved: 'saved', hexagon: 'hexagons hexagon',
+  tessellation: 'tessellation setting', tessellate: 'tessellation', random: 'random', mirror: 'mirror flip', center: 'centre', centre: 'centre center', saved: 'quilts', save: 'quilts copy download', projects: 'quilts project', project: 'quilts project', duplicate: 'copy duplicate', rename: 'quilts', hexagon: 'hexagons hexagon',
   seam: 'seam allowance', seams: 'seam allowance', allowance: 'seam', wof: 'width default fabric', width: 'width', point: 'setting', onpoint: 'setting', diagonal: 'setting', cornerstone: 'sashing', cornerstones: 'sashing', swap: 'swap', exchange: 'swap', fat: 'default fabric bought', quarter: 'default fabric bought', shopping: 'shopping list', buy: 'shopping list', cutting: 'cutting plan', back: 'back', backing: 'back backing', stipple: 'meander', freemotion: 'meander', fmq: 'meander', paper: 'paper', letter: 'paper', a4: 'paper' };
 // settings and views anywhere in the app, so they can be found from any workspace
 const CMD_PLACES = () => [
+  { label: 'Save now', path: 'File', act: 'saveQuilt', kb: 'Ctrl+S' },
   { label: 'Seam allowance', path: 'Fabric & cutting › Seams and appliqué', act: 'goSection', arg: 'fabric|sewing' },
   { label: 'Default fabric width and how it is bought', path: 'Fabric & cutting › Default fabric', act: 'goSection', arg: 'fabric|fabdefaults' },
   ...(ui.view === 'layout' && ui.selCell && cellContent(ui.selCell)?.b ? [] : [{ label: ui.view === 'layout' ? 'Rotate block (in Blocks)' : 'Rotate block 90°', path: 'Blocks', act: 'goRotateBlock' }]),
@@ -115,7 +116,7 @@ document.addEventListener('keydown', e => {
 const SHORTCUTS = [
   ['Everywhere', [
     ['Ctrl K', 'Search commands, panels, blocks and fabrics'], ['1 – 5', 'Go to a workspace'], ['Ctrl Z', 'Undo'], ['Ctrl Shift Z  or  Ctrl Y', 'Redo'],
-    ['Ctrl S', 'Save a copy (File, Open lists it)'], ['Ctrl Shift S', 'Save as'], ['Ctrl O', 'Open a saved quilt'], ['Ctrl P', 'Print the pattern'],
+    ['Ctrl S', 'Save now. Quilts also save as you work.'], ['Ctrl Shift S', 'Make a copy of the quilt'], ['Ctrl O', 'My quilts'], ['Ctrl P', 'Print the pattern'],
     ['G', 'Value view (greys only)'], ['Ctrl .', 'Hide or show panels'], ['F6  /  Shift F6', 'Move between the menus, tool options, tools, panels, canvas and status bar'], ['?', 'Help'], ['Alt + letter', 'Open a menu (Alt F = File…)'], ['Esc', 'Close a menu or dialog, cancel'],
   ]],
   ['Canvas (Blocks, Layout, Quilting)', [

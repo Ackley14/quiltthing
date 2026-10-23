@@ -3,10 +3,12 @@
 /* ---------- sample quilts ---------- */
 // "Midnight Bullseye": a straight set showing library blocks recoloured, a custom curved block
 // turned four ways into a bullseye, borders, quilting and a backing.
-// A sample just as it was loaded: its name, and nothing done to it since.
-// Its fingerprint is taken when it's loaded (the undo history can't tell: it isn't always stored).
+// A sample (or a new blank quilt) just as it was started, with nothing done to it since. It isn't
+// listed in My quilts until it's changed. Its fingerprint is taken when it's started (the undo
+// history can't tell: it isn't always stored).
 const isPristineSample = () => !!ui?.sampleSig && hashStr(snapshot()) === ui.sampleSig && !Object.keys(refImgs).length && !undoStack.past.length && !undoStack.future.length;
 function loadSampleProject() {
+  leaveQuilt();
   doc = newDoc();
   doc.fabrics = [
     makeFabric('#1c2541', 'Midnight'),
@@ -51,13 +53,14 @@ function loadSampleProject() {
   doc.meta = { title: 'Midnight Bullseye', designer: '', description: 'A curved-pieced bullseye in rust, mustard and cream glows in a midnight sky, ringed by sawtooth stars in two colourways with LeMoyne stars in the corners. Concentric quilting ripples out from the centre.', skill: 'auto' };
   ui.activeBlock = ui.placeBlock = quarter.id; ui.fabric = mustard; ui.view = 'layout'; ui.layoutTool = 'place';
   ui.selCell = null; ui.selRegion = null;
-  resetHistory(); ui.sampleSig = hashStr(snapshot()); saveUi(); saveNow(); render();
+  resetHistory(); ui.sampleSig = hashStr(snapshot()); enterQuilt(); saveNow(); render();
 }
 
 // "Hexie Bloom": a hexagon tessellation with colour rings, custom hexagon blocks, an inset panel
 // holding appliqué lettering, edge pieces cut to shape, and area-specific quilting.
 async function loadTessSample() {
   const font = await loadFont('lobster');
+  leaveQuilt();
   doc = newDoc();
   doc.fabrics = [
     makeFabric('#f6efe2', 'Linen'),
@@ -120,22 +123,25 @@ async function loadTessSample() {
   ];
   doc.meta = { title: 'Hexie Bloom', designer: '', description: 'Hexagons ripple out in rings of teal, sage and peach from a framed "Bloom" panel, sprinkled with pieced hexie stars and 3D cubes. The edge pieces are cut to shape, and the panel and the hexagons are quilted differently.', skill: 'auto' };
   ui.activeBlock = ui.placeBlock = star.id; ui.fabric = coral; ui.view = 'layout'; ui.layoutTool = 'place'; ui.selCell = null; ui.selRegion = null;
-  resetHistory(); ui.sampleSig = hashStr(snapshot()); saveUi(); saveNow(); render();
+  resetHistory(); ui.sampleSig = hashStr(snapshot()); enterQuilt(); saveNow(); render();
 }
 
+// A new blank quilt. The one that was open is saved and stays in My quilts.
 function startBlank() {
+  leaveQuilt();
   ui.snapOff = false;
-  doc = newDoc(); ui.projectId = null;
+  doc = newDoc();
   addBlockToDoc(newDrawnBlock('My first block'));
   ui.view = 'block'; ui.tool = 'rect'; ui.fabric = doc.fabrics[1].id;
-  resetHistory(); saveNow(); render();
+  resetHistory(); ui.sampleSig = hashStr(snapshot()); enterQuilt(); saveNow(); render();
 }
 Actions.welcomeBlank = () => { closeModal(); startBlank(); };
-// A new project that starts with a block from the library.
+// A new quilt that starts with a block from the library.
 Actions.welcomeClassic = () => {
   closeModal();
+  leaveQuilt();
   doc = newDoc(); ui.activeBlock = ui.placeBlock = null; ui.view = 'block'; ui.fabric = doc.fabrics[1].id;
-  resetHistory(); saveNow(); render();
+  resetHistory(); ui.sampleSig = hashStr(snapshot()); enterQuilt(); saveNow(); render();
   Actions.libraryPicker();
 };
 
@@ -151,7 +157,7 @@ function init() {
     resetHistory();
     restoreHistory();
     render();
-    window._hadStoredDesign = !isPristineSample();   // a sample nobody has touched isn't work to protect
+    projectsStart();   // find (or make) its record in My quilts
   } else {
     loadSampleProject();
   }

@@ -92,8 +92,11 @@ a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: un
 .doc-title { border: 1px solid transparent; background: transparent; font-weight: 600; font-size: var(--fs-s); padding: 4px 8px; border-radius: var(--radius); width: 180px; color: var(--text); text-overflow: ellipsis; }
 .doc-title:hover { border-color: var(--line-strong); }
 .doc-title:focus { border-color: var(--accent); background: var(--bg-field); outline: none; }
-.save-state { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }
+.save-state { display: inline-flex; align-items: center; gap: 4px; font: inherit; font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; background: none; border: 1px solid transparent; border-radius: var(--radius); padding: 3px 6px; cursor: pointer; }
+.save-state[hidden] { display: none; }
+.save-state:hover { background: var(--bg-hover); color: var(--text); }
 .save-state.bad { color: var(--danger); font-weight: 600; }
+.save-state.paused { color: var(--warn); font-weight: 600; }
 .bar-btn { display: inline-flex; align-items: center; gap: 6px; background: none; border: 1px solid transparent; border-radius: var(--radius); color: var(--text-2); min-height: 30px; min-width: 30px; padding: 0 8px; cursor: pointer; font-size: var(--fs-xs); }
 .bar-btn:hover { background: var(--bg-hover); color: var(--text); }
 .bar-kbd { border: 1px solid var(--line-strong); border-radius: 4px; padding: 0 4px; font-size: var(--fs-xs); color: var(--text-3); }
@@ -429,6 +432,7 @@ details.more ol { margin: 6px 0 0; padding-left: 18px; }
 .proj-open img, .proj-noimg { width: 72px; height: 72px; object-fit: contain; display: block; background: #fff; border-radius: 4px; }
 .proj-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .proj-meta b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-now { align-self: flex-start; font-size: var(--fs-xs); font-weight: 600; color: var(--accent); }
 .proj-acts { display: flex; gap: 4px; }
 
 /* ---------- canvas ---------- */

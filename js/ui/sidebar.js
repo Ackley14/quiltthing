@@ -214,7 +214,7 @@ function myBlocksSection() {
 }
 Actions.addBlockMenu = (a, el) => openMenu(el, [
   { label: 'From the library…', act: 'libraryPicker' },
-  { label: 'From my saved quilts…', act: 'libraryPickerMine' },
+  { label: 'From My quilts…', act: 'libraryPickerMine' },
   { label: 'New block', act: 'newBlock' },
   { label: 'Hexagon block', act: 'newHexBlock' },
   { label: 'Combination of blocks', act: 'newCompound' },
@@ -395,7 +395,7 @@ function savedBlockThumb(rec, id) {
   return _savedThumbs.get(key);
 }
 function savedBlocksGrid(q, fmt) {
-  if (!_savedLib.length) return '<p class="empty">Blocks from the quilts you save in this browser (File, Save) show up here.</p>';
+  if (!_savedLib.length) return '<p class="empty">Blocks from your other quilts in My quilts show up here.</p>';
   let h = '';
   for (const rec of _savedLib) {
     const ids = rec.doc.blockOrder.filter(id => { const b = rec.doc.blocks[id]; return b && (fmt === 'all' || (fmt === 'hex') === isHexBlock(b)) && (!q || b.name.toLowerCase().includes(q)); });
