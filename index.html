@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quilt Designer</title>
+  <meta name="description" content="Design quilt blocks, lay out a quilt, calculate fabric and cutting, plan quilting lines, and print a complete PDF pattern.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231f3a5f'/%3E%3Cpath d='M6 6h10L6 16z' fill='%23e0a930'/%3E%3Cpath d='M26 26H16l10-10z' fill='%23e0a930'/%3E%3Cpath d='M16 6h10v10z M6 16v10h10z' fill='%23f3ead8'/%3E%3C/svg%3E">
+  <script>/* theme before first paint, so a dark-theme user never sees a white flash */
+    try { const p = JSON.parse(localStorage.getItem('quiltthing.v4.prefs') || '{}'), r = document.documentElement;
+      r.dataset.theme = p.theme || 'dark'; r.dataset.density = p.density || 'standard'; r.dataset.toolLabels = p.toolLabels === false ? '' : '1'; } catch (e) {}</script>
+  <link rel="stylesheet" href="css/app.css">
+  <style id="page-size">@page { size: letter portrait; margin: 0.5in; }</style>
+</head>
+<body>
+  <svg id="fabric-defs" width="0" height="0" aria-hidden="true" focusable="false"><defs></defs></svg>
+  <a class="skip-link" href="#main">Skip to the canvas</a>
+
+  <div id="app">
+    <header id="appbar" aria-label="Menus and workspaces">
+      <button class="bar-btn narrow-only" data-act="toggleDrawer" data-arg="left" aria-expanded="false" aria-label="Left panels" title="Left panels"></button>
+      <button class="bar-btn narrow-only" data-act="allMenus" aria-haspopup="menu" aria-label="Menus" title="Menus"></button>
+      <div class="mark" aria-hidden="true"><svg viewBox="0 0 32 32" width="22" height="22"><rect width="32" height="32" rx="6" fill="#e0a930"/><path d="M6 6h10L6 16z" fill="#1f3a5f"/><path d="M26 26H16l10-10z" fill="#1f3a5f"/><path d="M16 6h10v10zM6 16v10h10z" fill="#f3ead8"/></svg></div>
+      <nav id="menubar" aria-label="Menus"></nav>
+      <div id="ws-tabs" role="tablist" aria-label="Workspaces"></div>
+      <div class="appbar-r">
+        <span id="doc-title-slot"></span>
+        <span id="save-state" class="save-state"></span>
+        <button class="bar-btn" data-act="commandPalette" aria-label="Search commands (Ctrl+K)" title="Search commands (Ctrl+K)"></button>
+      </div>
+      <button class="bar-btn narrow-only" data-act="toggleDrawer" data-arg="right" aria-expanded="false" aria-label="Right panels" title="Right panels"></button>
+    </header>
+    <div id="ctxbar" role="toolbar" aria-label="Tool options"></div>
+    <div id="body">
+      <div id="toolstrip" role="toolbar" aria-orientation="vertical" aria-label="Tools"></div>
+      <div id="dock-left" class="dock-side" data-zone="left" role="region" aria-label="Left panels"></div>
+      <main id="docarea" aria-label="Canvas">
+        <div id="doctabs" role="tablist" aria-label="Documents"></div>
+        <div id="docwrap">
+          <div id="main" tabindex="-1"></div>
+          <div id="hud" aria-label="Canvas controls"></div>
+        </div>
+      </main>
+      <div id="dock-right" class="dock-side" data-zone="right" role="region" aria-label="Right panels"></div>
+    </div>
+    <div id="dock-bottom" data-zone="bottom" role="region" aria-label="Bottom panels"></div>
+    <footer id="statusbar" aria-label="Status"></footer>
+  </div>
+
+  <div id="float-layer"></div>
+  <div id="flyout-layer"></div>
+  <div id="drop-layer" aria-hidden="true"></div>
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+  <div id="sr-live" class="sr-only" aria-live="polite"></div>
+  <div id="print-root"></div>
+
+  <script src="vendor/polygon-clipping.js"></script>
+  <script src="js/core/util.js"></script>
+  <script src="js/core/color.js"></script>
+  <script src="js/core/geom.js"></script>
+  <script src="js/model/state.js"></script>
+  <script src="js/model/fabrics.js"></script>
+  <script src="js/model/blocks.js"></script>
+  <script src="js/model/lettering.js"></script>
+  <script src="js/model/library.js"></script>
+  <script src="js/model/palettes-data.js"></script>
+  <script src="js/model/palettes.js"></script>
+  <script src="js/model/layout.js"></script>
+  <script src="js/model/cutting.js"></script>
+  <script src="js/model/backing.js"></script>
+  <script src="js/model/diagrams.js"></script>
+  <script src="js/model/quilting.js"></script>
+  <script src="js/model/pattern.js"></script>
+  <script src="js/ui/shell.js"></script>
+  <script src="js/ui/prefs.js"></script>
+  <script src="js/ui/dockModel.js"></script>
+  <script src="js/ui/dock.js"></script>
+  <script src="js/ui/panels.js"></script>
+  <script src="js/ui/canvasZoom.js"></script>
+  <script src="js/ui/sidebar.js"></script>
+  <script src="js/ui/palettes.js"></script>
+  <script src="js/ui/blockView.js"></script>
+  <script src="js/ui/layoutView.js"></script>
+  <script src="js/ui/quiltingView.js"></script>
+  <script src="js/ui/fabricView.js"></script>
+  <script src="js/ui/cuttingView.js"></script>
+  <script src="js/ui/patternView.js"></script>
+  <script src="js/ui/projects.js"></script>
+  <script src="js/ui/menus.js"></script>
+  <script src="js/ui/globalPanels.js"></script>
+  <script src="js/ui/hud.js"></script>
+  <script src="js/ui/rulers.js"></script>
+  <script src="js/ui/commands.js"></script>
+  <script src="js/ui/extras.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
