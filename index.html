@@ -25,7 +25,7 @@
       <div id="ws-tabs" role="tablist" aria-label="Workspaces"></div>
       <div class="appbar-r">
         <span id="doc-title-slot"></span>
-        <span id="save-state" class="save-state"></span>
+        <button id="save-state" class="save-state" data-act="openBrowser" hidden></button>
         <button class="bar-btn" data-act="commandPalette" aria-label="Search commands (Ctrl+K)" title="Search commands (Ctrl+K)"></button>
       </div>
       <button class="bar-btn narrow-only" data-act="toggleDrawer" data-arg="right" aria-expanded="false" aria-label="Right panels" title="Right panels"></button>
@@ -62,6 +62,7 @@
   <script src="js/model/state.js"></script>
   <script src="js/model/fabrics.js"></script>
   <script src="js/model/blocks.js"></script>
+  <script src="js/model/curves.js"></script>
   <script src="js/model/lettering.js"></script>
   <script src="js/model/library.js"></script>
   <script src="js/model/palettes-data.js"></script>

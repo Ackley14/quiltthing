@@ -2,7 +2,7 @@
 
 A free, browser-based quilt design tool. Design blocks, arrange them into a quilt, plan the quilting, work out exactly what fabric to buy and how to cut it, then print a complete step-by-step pattern as a PDF.
 
-Everything runs in the browser and nothing is uploaded. The design you're working on autosaves, File > Save keeps named copies in the browser (with a picture of each, under File > Open), and you can download or open projects as `.quilt.json` files.
+Everything runs in the browser and nothing is uploaded. Every quilt saves itself as you work, in the browser, and File > My quilts lists them all with a picture of each. You can download or open projects as `.quilt.json` files to back them up or move them to another computer.
 
 ## What it does
 

@@ -1,15 +1,16 @@
-/* Smaller pieces of the v4 interface: the welcome screen, the second-tab guard, F6 region
+/* Smaller pieces of the v4 interface: the welcome screen, F6 region
    cycling, length fields that step and explain mistakes, the cursor position in the status bar,
    and the selection-size HUD widget. */
 
 /* ---------- welcome: one screen for new people and for v3 users ---------- */
 function welcomeV4(whatsNew) {
   const v3 = !!localStorage.getItem('quiltthing.v3.ui') || whatsNew;
-  // starting over replaces the design in this browser, so only offer it when there's nothing to lose
-  const fresh = !whatsNew && !v3 && !window._hadStoredDesign;
+  // starting a new quilt loses nothing: the one that's open stays in My quilts
+  const fresh = !whatsNew;
   const theme = t => `<button class="btn" data-act="welcomeTheme" data-arg="${t}" aria-pressed="${prefs.theme === t}">${t === 'dark' ? 'Dark' : 'Light'}</button>`;
   openModal(`<h2>${v3 ? 'Welcome to the new Quilt Designer' : 'Quilt Designer'}</h2>
-    <p>${v3 ? 'Everything you had is here, in a new layout. Your quilts, fabrics and saved designs carry over.' : 'Design blocks, lay out a quilt and print the pattern. Your work saves in this browser.'}</p>
+    <p>${v3 ? 'Everything you had is here, in a new layout. Your quilts and fabrics carry over, and File, My quilts lists every quilt.' : 'Design blocks, lay out a quilt and print the pattern.'}</p>
+    <p class="hint">Your quilts save as you work, in this browser. Download a project file to back one up or move it to another computer.</p>
     ${v3 ? `<div class="welcome-moved"><h4>Where things moved</h4><ul>
       <li><b>Steps</b> are the tabs at the top: Blocks, Layout, Quilting, Fabric &amp; cutting, Pattern.</li>
       <li><b>Tools</b> are the strip down the left; their options are in the bar above the canvas.</li>
@@ -28,17 +29,6 @@ Actions.welcomeTheme = t => { prefs.theme = t; savePrefs(); applyPrefs(); render
 let _welcomeWhatsNew = false;
 Actions.welcomeLarge = v => { prefs.density = v ? 'large' : 'standard'; savePrefs(); applyPrefs(); render(); };
 Actions.whatsNew = () => { _welcomeWhatsNew = true; welcomeV4(true); };
-
-/* ---------- second tab: warn when the design changes somewhere else ---------- */
-window.addEventListener('storage', e => {
-  if (!['quiltthing.v3.doc', 'quiltthing.v3.refs'].includes(e.key) || !e.newValue || (e.key === 'quiltthing.v3.doc' ? e.newValue === snapshot() : e.newValue === JSON.stringify(refImgs))) return;
-  savePaused = true;
-  let bar = $('#tab-guard');
-  if (!bar) { bar = document.createElement('div'); bar.id = 'tab-guard'; bar.setAttribute('role', 'alert'); document.body.appendChild(bar); }
-  bar.innerHTML = `${icon('warn', 16)}<span>This design was changed in another tab or window. Saving here is paused so that work isn't replaced.</span><button class="btn small primary" data-act="tabGuardLoad">Load the other version</button><button class="btn small" data-act="tabGuardKeep">Keep this one</button>`;
-});
-Actions.tabGuardLoad = () => location.reload();
-Actions.tabGuardKeep = () => { $('#tab-guard')?.remove(); savePaused = false; saveNow(); saveRefs(); renderSaveState(); toast('Kept this version; saving again'); };
 
 /* ---------- F6: jump between regions (app bar, tool options, tools, panels, canvas, status) ---------- */
 const REGIONS = ['#appbar', '#ctxbar', '#toolstrip', '#dock-left', '#flyout-layer', '#docarea', '#dock-right', '#dock-bottom', '#float-layer', '#statusbar'];
@@ -147,11 +137,12 @@ HUD_WIDGETS.seam = {
   html: () => {
     const b = activeBlock(); if (!b || b.kind !== 'drawn' || ui.tool === 'seam') return '';
     const sg = _seamState.block === b.id && _seamState.key === blockKey(b) ? _seamState.s : null;
-    const tiny = pieceProblems(b, blockFrameSize(b)).filter(p => p.crumb).length;
-    if (!sg?.required.length && !tiny) return '';
+    const tiny = pieceProblems(b, blockFrameSize(b)).filter(p => p.crumb).length, curve = !!sg?.curve;
+    if (!sg?.required.length && !tiny && !curve) return '';
     const t = [sg?.required.length ? `${plural(sg.reqPieces, 'piece')} need${sg.reqPieces === 1 ? 's' : ''} set-in seams as drawn.` : '',
-      tiny ? `${plural(tiny, 'piece')} ${tiny === 1 ? 'is' : 'are'} under ${fmtLen(CRUMB)} wide, too small to cut and sew.` : '', 'Click for the Seam tool.'].filter(Boolean).join(' ');
-    return `<button class="seam-flag" data-act="blockTool" data-arg="seam" title="${t}" aria-label="${t}">${icon('warn', 18)}<span>${sg?.required.length ? 'Seams' : 'Tiny pieces'}</span></button>`;
+      curve ? "Curved shapes can't be pieced in one piece as drawn." : '',
+      tiny ? `${plural(tiny, 'piece')} ${tiny === 1 ? 'is' : 'are'} under ${fmtLen(CRUMB)} wide, too small to cut and sew.` : '', curve ? 'Click for options.' : 'Click for the Seam tool.'].filter(Boolean).join(' ');
+    return `<button class="seam-flag" data-act="blockTool" data-arg="seam" title="${t}" aria-label="${t}">${icon('warn', 18)}<span>${sg?.required.length ? 'Seams' : curve ? 'Curves' : 'Tiny pieces'}</span></button>`;
   },
 };
 
@@ -169,7 +160,7 @@ const TOUR = [
   ['#toolstrip', 'Tools', 'Drawing and painting tools. The bar above the canvas shows the options for the tool you pick.'],
   ['#dock-right', 'Panels', 'Settings for whatever is selected are in Properties. Panels can be folded, moved or closed; the Window menu brings any panel back.'],
   ['#ws-tabs [data-arg="pattern"]', 'Pattern', 'When the quilt is ready, Pattern makes the printable pattern: materials, cutting, block steps, assembly, quilting and binding.'],
-  ['#appbar [data-act="commandPalette"]', 'Search', 'Press Ctrl K and type what you want to do, like "border", "print" or "palette". Your work saves as you go; File, Save keeps a named copy.'],
+  ['#appbar [data-act="commandPalette"]', 'Search', 'Press Ctrl K and type what you want to do, like "border", "print" or "palette". Your quilts save as you work, and File, My quilts lists them all.'],
 ];
 let _tour = -1;
 Actions.startTour = () => { closeModal(); if (ui.view !== 'layout') Actions.view('layout'); _tour = 0; setTimeout(showTour, 60); };

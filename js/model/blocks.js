@@ -143,12 +143,14 @@ function blockKey(block, depth = 0) {
 }
 
 const _pieceCache = new Map();
-function clearBlockCaches() { _pieceCache.clear(); _analysisCache.clear(); }
+function clearBlockCaches() { _pieceCache.clear(); _analysisCache.clear(); _constructionCache.clear(); }
 
-// Visible cut pieces of a block rendered at w×h inches. Fabric ids may be BG.
-function blockPieces(block, w, h, depth = 0) {
+// Visible cut pieces of a block rendered at w×h inches. Fabric ids may be BG. These are the pieces
+// as sewn, construction seams included (builtBlock); asDrawn: without them, as the editor draws it.
+function blockPieces(block, w, h, depth = 0, asDrawn = false) {
   if (!block || depth > 6) return [];
-  const key = `${blockKey(block)}|${round(w, 4)}|${round(h, 4)}`;
+  if (!asDrawn && block.kind === 'drawn') return blockPieces(builtBlock(block), w, h, depth, true);
+  const key = `${blockKey(block)}|${round(w, 4)}|${round(h, 4)}${block.kind === 'compound' ? (asDrawn ? '|d' : `|${resolveFab(BG)}`) : ''}`;
   if (_pieceCache.has(key)) return _pieceCache.get(key);
   let pieces;
   if (block.kind === 'compound') {
@@ -163,7 +165,7 @@ function blockPieces(block, w, h, depth = 0) {
         return;
       }
       const fr = slotFrame(rect, slot.r || 0, !!slot.f);
-      for (const p of blockPieces(child, fr.cw, fr.ch, depth + 1)) {
+      for (const p of blockPieces(child, fr.cw, fr.ch, depth + 1, asDrawn)) {
         let pts = p.pts.map(fr.map), holes = p.holes.map(hh => hh.map(fr.map));
         pieces.push(makePiece(pts, holes, p.fab, p.app, p.curved));
       }
@@ -175,8 +177,12 @@ function blockPieces(block, w, h, depth = 0) {
   _pieceCache.set(key, pieces);
   return pieces;
 }
+// The block as it's sewn: a drawn block with its construction seams added, straight seams that only
+// ever have one fabric on both sides, so they don't change the look (constructionPlan in curves.js).
+// Pattern, cutting, templates and warnings all see these; the saved block and the drawing don't.
+function builtBlock(b) { return (b?.kind === 'drawn' && constructionPlan(b)?.block) || b; }
 function makePiece(pts, holes, fab, app, curved) {
-  const cls = classifyPiece(curved ? pts : dropSpikes(pts), { curved });
+  const cls = classifyPiece(curved ? cleanCurvePts(pts) : dropSpikes(pts), { curved });
   if (holes.length) cls.shape = 'holed';
   return { pts: cls.pts, holes, fab, app: !!app, curved: !!curved, cls, bb: bounds(cls.pts) };
 }
@@ -187,6 +193,8 @@ function drawnPieces(block, w, h) {
   const full = blockOutline(block, w, h);
   const rings = block.regions.map(r => regionRing(r, sx, sy, arcKeys));
   const isCurved = (outer, holes) => [outer, ...holes].some(ring => ring.some(p => arcKeys.has(ptKey(p))));
+  // shapes that touch themselves at a point (petals meeting) come apart there
+  const parts = mp => fromPC(mp).flatMap(pg => splitPinches(pg.outer, pg.holes, 1e-7 * Math.max(w, h)));
   const raw = [];
   const pieced = block.regions.map((r, i) => ({ r, i })).filter(x => !x.r.app && x.r.pts.length >= 2);
   const applique = block.regions.map((r, i) => ({ r, i })).filter(x => x.r.app && x.r.pts.length >= 2);
@@ -196,19 +204,19 @@ function drawnPieces(block, w, h) {
     const above = pieced.slice(k + 1).map(x => toPC(rings[x.i]));
     let mp = pcSafe('intersection', toPC(rings[i]), toPC(full));
     if (mp && above.length) mp = pcSafe('difference', mp, ...above);
-    for (const pg of fromPC(mp)) raw.push({ outer: pg.outer, holes: pg.holes, fab: r.fab, app: false });
+    for (const pg of parts(mp)) raw.push({ outer: pg.outer, holes: pg.holes, fab: r.fab, app: false });
   }
   // background = whatever no pieced region covers
   const allPieced = pieced.map(x => toPC(rings[x.i]));
   const bgMp = allPieced.length ? pcSafe('difference', toPC(full), ...allPieced) : [toPC(full)];
-  for (const pg of fromPC(bgMp)) raw.push({ outer: pg.outer, holes: pg.holes, fab: BG, app: false });
+  for (const pg of parts(bgMp)) raw.push({ outer: pg.outer, holes: pg.holes, fab: BG, app: false });
   // appliqué stacks only among itself
   for (let k = 0; k < applique.length; k++) {
     const { r, i } = applique[k];
     const above = applique.slice(k + 1).map(x => toPC(rings[x.i]));
     let mp = pcSafe('intersection', toPC(rings[i]), toPC(full));
     if (mp && above.length) mp = pcSafe('difference', mp, ...above);
-    for (const pg of fromPC(mp)) raw.push({ outer: pg.outer, holes: pg.holes, fab: r.fab, app: true });
+    for (const pg of parts(mp)) raw.push({ outer: pg.outer, holes: pg.holes, fab: r.fab, app: true });
   }
   // seams split pieced (not appliqué) pieces
   const seams = (block.seams || []).map(([A, B]) => [[A[0] * sx, A[1] * sy], [B[0] * sx, B[1] * sy]]);
@@ -225,16 +233,21 @@ function drawnPieces(block, w, h) {
 }
 
 // Pieces that can't be sewn with straight seams as drawn (need seam lines added).
+// 'curve' (curved pieces that can't be pieced in one piece as drawn) and 'sharp' (a curved piece narrowing to a fine
+// point, which is only worth knowing) come from the sewing analysis.
 function pieceProblems(block, size) {
   if (!block || block.kind !== 'drawn') return [];
-  const out = [];
+  const out = [], an = analyzeBlock(block, size), bad = new Set(), inset = new Set();
+  for (const u of an.units) { if (u.unit.type === 'curveComplex') u.pieces.forEach(p => bad.add(p)); if (u.unit.type === 'inset') inset.add(u.unit.outer); }
   for (const p of blockPieces(block, size, size)) {
     // a crumb (appliqué too) is a problem; a narrow pieced strip is only worth knowing about
     const w = pieceWidth(p);
     if (w < CRUMB) out.push({ piece: p, kind: 'tiny', crumb: true, msg: `Piece too small to cut and sew (${fmtLen(w)} finished)` });
     if (p.app) continue;
-    if (p.holes.length) out.push({ piece: p, kind: 'hole', msg: 'Piece surrounds another piece (has a hole)' });
+    if (bad.has(p)) out.push({ piece: p, kind: 'curve', msg: "Curved shapes that can't be pieced in one piece as drawn" });
+    if (p.holes.length && !inset.has(p)) out.push({ piece: p, kind: 'hole', msg: 'Piece surrounds another piece (has a hole)' });
     else if (!p.curved && !isConvex(p.pts)) out.push({ piece: p, kind: 'concave', msg: 'Piece has an inside corner (needs a set-in seam)' });
+    if (p.curved) for (const t of tipAngles(p)) if (t.deg < SHARP_DEG) out.push({ piece: p, kind: 'sharp', at: t.p, deg: t.deg, msg: `Narrows to a ${Math.round(t.deg)}° point at the end of a curve` });
     if (w >= CRUMB && w < 0.249) out.push({ piece: p, kind: 'tiny', msg: `Very narrow piece (${fmtLen(w)} finished)` });
   }
   return out;
@@ -256,8 +269,9 @@ function crumbBlocks(Q) {
 // these while you draw; Layout, Fabric & cutting and Pattern mention them. Given the quilt, also
 // the blocks with pieces too small to cut.
 function seamWarnings(Q) {
-  return [...doc.blockOrder.map(id => doc.blocks[id]).filter(b => b?.kind === 'drawn' && blockUseCount(b.id) && pieceProblems(b, blockFrameSize(b)).some(p => p.kind !== 'tiny'))
-    .map(b => `${b.name} needs set-in seams as drawn. The Seam tool in Blocks can fix that.`),
+  const used = doc.blockOrder.map(id => doc.blocks[id]).filter(b => b?.kind === 'drawn' && blockUseCount(b.id)).map(b => ({ b, kinds: new Set(pieceProblems(b, blockFrameSize(b)).map(p => p.kind)) }));
+  return [...used.filter(x => x.kinds.has('hole') || x.kinds.has('concave')).map(({ b }) => `${b.name} needs set-in seams as drawn. The Seam tool in Blocks can fix that.`),
+    ...used.filter(x => x.kinds.has('curve')).map(({ b }) => curveWarning(b)),
     ...(Q ? crumbBlocks(Q) : []).map(({ b, n }) => crumbText(b, n))];
 }
 const crumbText = (b, n) => `${b.name} has ${n === 1 ? 'a piece' : `${n} pieces`} under ${fmtLen(CRUMB)} wide, too small to cut and sew. Change ${n === 1 ? 'it' : 'them'} in Blocks.`;
@@ -369,6 +383,7 @@ function seamSuggestions(block) {
     if (!trial([...req2, ...opt2]).setIn) { res.required = req2; res.optional = opt2; res.extended = true; }
   }
   res.setInAfter = all.length ? trial([...res.required, ...res.optional]).setIn : false;
+  res.curve = curvedSeamSuggestions(block);
   if (_seamCache.size > 200) _seamCache.clear();
   _seamCache.set(key, res);
   return res;
@@ -419,7 +434,7 @@ function blockSvg(block, w, h, opts = {}, depth = 0) {
   // Paint only the background that is actually uncovered (not a full square underneath):
   // a square under everything bleeds through the anti-aliased block edges as a faint line.
   const bgFill = fabricFill(BG);
-  for (const p of blockPieces(block, w, h)) {
+  for (const p of blockPieces(block, w, h, 0, true)) {
     if (p.fab === BG && !p.app) s += `<path d="${polyToPath(p.pts)}${p.holes.map(hh => polyToPath(hh)).join('')}" fill="${bgFill}" fill-rule="evenodd" stroke="${bgFill}" stroke-width="${hair}" stroke-linejoin="round"/>`;
   }
   const order = [...block.regions.map((r, i) => ({ r, i })).filter(x => !x.r.app), ...block.regions.map((r, i) => ({ r, i })).filter(x => x.r.app)];
@@ -464,10 +479,12 @@ function blockFabrics(block, depth = 0) {
    crosses, split there, recurse. Leaves are units (HST, flying geese…) or single pieces.
    A leaf that still holds several pieces with no straight split needs set-in (Y) seams. */
 const _analysisCache = new Map();
-function analyzeBlock(block, size) {
-  const key = `${blockKey(block)}|${round(size, 4)}`;
+// As sewn, construction seams included; asDrawn: the block exactly as drawn.
+function analyzeBlock(block, size, asDrawn = false) {
+  if (!asDrawn && block?.kind === 'drawn') block = builtBlock(block);
+  const key = `${blockKey(block)}|${round(size, 4)}${block?.kind === 'compound' ? `|${resolveFab(BG)}` : ''}`;
   if (_analysisCache.has(key)) return _analysisCache.get(key);
-  const all = blockPieces(block, size, size);
+  const all = blockPieces(block, size, size, 0, block?.kind === 'drawn');
   const pieced = all.filter(p => !p.app);
   const applique = all.filter(p => p.app);
   const root = splitNode(pieced, blockOutline(block, size), size * 1e-5);
@@ -475,6 +492,7 @@ function analyzeBlock(block, size) {
   walkTree(root, n => { if (!n.children.length) { n.unit = n.unit || classifyUnit(n); units.push(n); } });
   const height = treeHeight(root);
   const res = { root, units, height, applique, setIn: units.some(u => u.unit.type === 'complex'), size };
+  curvesAnalyse(block, res, all);
   if (_analysisCache.size > 300) _analysisCache.clear();
   _analysisCache.set(key, res);
   return res;
@@ -522,10 +540,10 @@ function splitNode(pieces, region, tol) {
   let choice = pickBest(valid.filter(v => v.axis));
   if (!choice) {
     const unit = classifyUnit(node);
-    if (unit.type !== 'complex') { node.unit = unit; return node; }
+    if (unit.type !== 'complex' && unit.type !== 'curveComplex') { node.unit = unit; return node; }
     choice = pickBest(valid);
+    if (!choice) { node.unit = unit; return node; }
   }
-  if (!choice) return node;
   const [nx, ny] = choice.n;
   node.normal = choice.n;
   node.dir = choice.axis ? (choice.rows ? 'rows' : 'cols') : 'diag';
@@ -550,7 +568,7 @@ function classifyUnit(node) {
   const count = s => shapes.filter(x => x === s).length;
   const fabs = uniq(ps.map(p => resolveFab(p.fab)));
   if (ps.length === 1) return { type: 'piece' };
-  if (ps.some(p => p.curved)) return { type: 'curved', fabs };
+  if (ps.some(p => p.curved)) return classifyCurvedUnit(node, fabs);
   const square = Math.abs(r.w - r.h) < 1e-3 * r.w;
   if (ps.length === 2 && count('hst') === 2 && square) return { type: 'hst', fabs };
   if (ps.length === 2 && count('rtri') === 2 && Math.abs(polyArea(node.region) - r.w * r.h) < 1e-3 * r.w * r.h) return { type: 'hrt', fabs };

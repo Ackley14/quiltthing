@@ -28,17 +28,17 @@ new MutationObserver(() => { if (_barMenu && !_menuEl) { _barMenu = null; $$('#m
 const tick = (label, act, arg, on, kb) => ({ label, act, arg, checked: !!on, kb });
 const MENUS = {
   file: () => [
-    { label: 'New project…', act: 'newProject' },
-    { label: 'Open…', act: 'openBrowser', kb: 'Ctrl+O' },
-    { label: 'Save', act: 'saveBrowser', kb: 'Ctrl+S' },
-    { label: 'Save as…', act: 'saveBrowserAs', kb: 'Ctrl+Shift+S' },
+    // every quilt saves itself into My quilts, so there's no Save here (Ctrl+S still saves at once)
+    { label: 'New quilt', act: 'newProject' },
+    { label: 'My quilts…', act: 'openBrowser', kb: 'Ctrl+O' },
+    { label: 'Make a copy…', act: 'makeCopy', kb: 'Ctrl+Shift+S' },
     '-',
     { label: 'Download project file', act: 'saveProject' },
     { label: 'Open project file…', act: 'openProject' },
     '-',
     { header: 'Samples' },
-    { label: 'Midnight Bullseye…', act: 'loadSample' },
-    { label: 'Hexie Bloom…', act: 'loadTessSample' },
+    { label: 'Midnight Bullseye', act: 'loadSample' },
+    { label: 'Hexie Bloom', act: 'loadTessSample' },
     '-',
     { label: 'Import blocks…', act: 'importBlocks' },
     { label: 'Export all blocks…', act: 'exportBlocks', arg: 'all', disabled: !doc.blockOrder.length },

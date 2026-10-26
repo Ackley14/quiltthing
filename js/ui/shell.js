@@ -204,15 +204,24 @@ function renderTopbar() {
   for (const b of $$('#appbar [data-act="toggleDrawer"]')) setHtml(b, icon(b.dataset.arg === 'left' ? 'panelLeft' : 'panelRight'));
   for (const b of $$('#appbar [data-act="allMenus"]')) setHtml(b, icon('menu'));
 }
+// Whether the open quilt is saved in My quilts. Clicking it opens My quilts.
+const SAVE_STATES = {
+  saved: ['check', 'Saved', 'Saved in My quilts in this browser. Download a project file to back it up or move it.'],
+  pending: ['history', 'Saving…', 'Saving to My quilts in this browser'],
+  failed: ['warn', 'Not saved', ''],
+  paused: ['warn', 'Saving paused', 'This quilt was changed in another tab, so this tab has stopped saving it. Reload it, or keep this version to save it here again.'],
+};
 function renderSaveState() {
   const el = $('#save-state'); if (!el) return;
-  const bad = saveStatus.at && !saveStatus.ok;
-  const key = `${bad}|${saveStatus.paused}|${!!saveStatus.at}`;
+  const st = typeof projectSaveState === 'function' ? projectSaveState() : { kind: 'idle' }, s = SAVE_STATES[st.kind];
+  const title = st.kind === 'failed' ? `Couldn't save in My quilts. ${st.why || ''} Download a project file to keep this quilt.` : s?.[2] || '';
+  const key = `${st.kind}|${title}`;
   if (el.dataset.k === key) return;
   el.dataset.k = key;
-  el.className = `save-state${bad ? ' bad' : ''}`;
-  el.innerHTML = saveStatus.paused ? `${icon('warn', 14)}<span>Saving paused</span>` : bad ? `${icon('warn', 14)}<span>Not saved</span>` : saveStatus.at ? `${icon('check', 14)}<span>Autosaved</span>` : '';
-  el.title = bad ? "This browser couldn't save the design. Download a project file to keep it." : 'Your work is kept as you go, in this browser';
+  el.className = `save-state${st.kind === 'failed' ? ' bad' : st.kind === 'paused' ? ' paused' : ''}`;
+  el.innerHTML = s ? `${icon(s[0], 14)}<span>${s[1]}</span>` : '';
+  el.title = title;
+  el.hidden = !s;
 }
 // Document tabs above the canvas: the documents of this workspace.
 function renderDocTabs() {
@@ -548,37 +557,38 @@ Actions.setUi = (arg) => { const [k, v] = arg.split('='); ui[k] = v === 'true' ?
 Actions.toggleUi = k => { ui[k] = !ui[k]; saveUi(); render(); };
 
 Actions.fileMenu = (a, el) => openMenu(el, MENUS.file());   // the phone-width File button
+// New quilt, a sample, or a project file: each just opens. The quilt that was open is already in My quilts.
 Actions.newProject = () => {
-  const go = () => {
-    doc = newDoc(); ui.activeBlock = null; ui.projectId = null; ui.fabric = doc.fabrics[1].id; ui.view = 'block';
-    addBlockToDoc(newDrawnBlock('My first block')); ui.snapOff = false;
-    resetHistory(); saveNow(); render(); toast('New project started');
-  };
-  // replacing a sample nobody has changed needs no warning
-  confirmReplace('Starting a new project replaces it.', 'Start new', go);
+  closeModal();
+  const was = leaveQuilt();
+  startBlank();
+  toast(`New quilt started.${inList(was)}`, was ? 4000 : 2600);
 };
-Actions.loadSample = () => confirmModal('Load the sample quilt?', "This replaces the design you're working on. Save it first (File, Save) to keep it; quilts you've saved aren't affected.", 'Load sample', () => {
-  ui.projectId = null; loadSampleProject(); toast('Sample quilt loaded');
-});
-Actions.loadTessSample = () => confirmModal('Load the Hexie Bloom sample?', "This replaces the design you're working on. Save it first (File, Save) to keep it; quilts you've saved aren't affected.", 'Load sample', () => {
-  ui.projectId = null; loadTessSample().then(() => toast('Hexie Bloom loaded')).catch(err => toast(err.message));
-});
+Actions.loadSample = () => { closeModal(); const was = leaveQuilt(); loadSampleProject(); toast(`Opened the Midnight Bullseye sample.${inList(was)}`, was ? 4000 : 2600); };
+Actions.loadTessSample = () => {
+  closeModal();
+  loadFont('lobster').then(() => { const was = leaveQuilt(); return loadTessSample().then(() => toast(`Opened the Hexie Bloom sample.${inList(was)}`, was ? 4000 : 2600)); }).catch(err => toast(err.message));
+};
 Actions.saveProject = () => { exportProject(); toast('Project file downloaded'); };
-Actions.openProject = () => confirmReplace('Opening a project file replaces it. Save a copy first (File, Save) to keep it.', 'Choose a file', pickProjectFile);
+Actions.openProject = () => pickProjectFile();
+// A project file is added to My quilts and opened.
 function pickProjectFile() {
   const inp = document.createElement('input');
   inp.type = 'file'; inp.accept = '.json,application/json';
   inp.onchange = () => {
     const file = inp.files[0];
     if (!file) return;
-    file.text().then(text => {
+    file.text().then(async text => {
       try {
-        doc = parseProjectFile(text);
-        ui.projectId = null; closeModal();
+        const d = parseProjectFile(text);
+        closeModal();
+        const was = leaveQuilt();
+        doc = d;
         sanitizeUi();
-        ui.view = 'layout';
-        resetHistory(); saveNow(); render();
-        toast(`Opened “${doc.meta.title}”`);
+        ui.view = 'layout'; ui.sampleSig = null;
+        resetHistory(); enterQuilt(); saveNow(); render();
+        const ok = await projectSaveNow('force', true);
+        toast(ok ? `Opened “${quiltName()}” and added it to My quilts.${inList(was)}` : `Opened “${quiltName()}”`, 4000);
       } catch (err) {
         openModal(`<h2>Couldn't open that file</h2><p>${esc(err.message)}</p><div class="actions"><button class="btn primary" data-act="closeModal">OK</button></div>`);
       }
@@ -657,12 +667,12 @@ Actions.help = () => openModal(`<h2>How it works</h2>
     <li><b>Fabric &amp; cutting.</b> What to buy, what you already have, and how to cut every piece.</li>
     <li><b>Pattern.</b> Print the full pattern or save it as a PDF.</li>
   </ol>
-  <p class="hint">Your work autosaves in this browser. File, Save keeps named copies here; File, Download project file makes a file you can move to another computer.</p>
+  <p class="hint">Your quilts save as you work, in this browser. File, My quilts lists them all. Download a project file to back one up or move it to another computer.</p>
   <div class="actions"><button class="btn" data-act="shortcuts">Keyboard shortcuts</button><button class="btn primary" data-act="closeModal">Close</button></div>`);
 // The keyboard shortcut sheet lives in commands.js (one list for every binding).
 Actions.about = () => openModal(`<h2>Quilt Designer ${APP_VERSION}</h2>
   <p>Design blocks, lay out a quilt, work out fabric and cutting, plan the quilting and print the pattern. Free.</p>
-  <p>Your project saves in this browser. To keep a copy or move it to another computer, use File, Save project file.</p>
+  <p>Your quilts save as you work, in this browser. Download a project file to back one up or move it to another computer.</p>
   <p><a href="https://github.com/Ackley14/quiltthing" target="_blank" rel="noopener">Source code on GitHub</a> · <a href="https://github.com/Ackley14/quiltthing/blob/main/LICENSE" target="_blank" rel="noopener">PolyForm Shield licence</a> · Uses <a href="https://github.com/mfogel/polygon-clipping" target="_blank" rel="noopener">polygon-clipping</a> (MIT).</p>
   <div class="actions"><button class="btn primary" data-act="closeModal">Close</button></div>`);
 
@@ -684,7 +694,7 @@ document.addEventListener('keydown', e => {
     Views[ui.view]?.key?.(e);
     return;
   }
-  if (ctrl && (e.key === 's' || e.key === 'S')) { e.preventDefault(); e.shiftKey ? Actions.saveBrowserAs() : Actions.saveBrowser(); return; }
+  if (ctrl && (e.key === 's' || e.key === 'S')) { e.preventDefault(); e.shiftKey ? Actions.makeCopy() : Actions.saveQuilt(); return; }
   if (ctrl && (e.key === 'o' || e.key === 'O')) { e.preventDefault(); Actions.openBrowser(); return; }
   if (ctrl && (e.key === 'p' || e.key === 'P')) { e.preventDefault(); Actions.printPattern(); return; }
   // a dropdown has no undo of its own, so Ctrl+Z still undoes there
